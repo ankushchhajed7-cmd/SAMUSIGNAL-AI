@@ -5,7 +5,7 @@ import {analyze, evaluate, isWin, isLoss} from './engine.js';
 import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.1';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -64,7 +64,10 @@ async function srcPill(){
   const td = !!K().tdKey && LS.get('src', 'auto') !== 'off';
   p.className = 'live ' + (f.ok && LS.get('src', 'auto') !== 'td' ? 'on' : td ? 'td' : 'off');
   p.innerHTML = '<i></i>' + (f.ok && LS.get('src', 'auto') !== 'td' ? 'LIVE' : td ? 'TD' : 'OFF');
-  $('hSrc').textContent = f.ok ? `📡 MT5 feed · account ${f.meta.acct || '—'} · Exness exact bhaav` : td ? 'TwelveData (MT5 feed band)' : 'Data nahi — Settings me keys dekhein';
+  const k = K();
+  $('hSrc').innerHTML = f.ok ? `📡 MT5 feed · account ${esc(f.meta.acct || '—')} · Exness exact bhaav`
+    : (td ? 'TwelveData chal raha hai' : '<b style="color:var(--dn2)">Live data नहीं</b>') + ` <br>📡 MT5 feed: ${esc(f.why)}` +
+      (!k.samuN ? '<br><b style="color:var(--gold)">⚠ इस browser में SamuSignal नहीं मिला</b> — ये link उसी Chrome में खोलें जिसमें SamuSignal चलता है (WhatsApp / Claude ऐप के अंदर नहीं), या Settings में keys खुद डालें' : '');
 }
 
 /* ---------------- HOME ---------------- */
@@ -318,10 +321,10 @@ async function renderSet(){
   const s = K(), F = s.from;
   const kr = (name, ok, from) => `<div class="sr">${name}<em style="color:${ok ? 'var(--up)' : 'var(--dn2)'}">${ok ? '✓ ' + (from === 'samu' ? 'SamuSignal से' : from === 'manual' ? 'खुद डाली' : 'default') : '✗ नहीं मिली'}</em></div>`;
   const f = await feedStatus(s, true);
-  $('kList').innerHTML = kr('Firebase URL', !!s.fbUrl, F.fbUrl) + kr('Firebase Auth', !!s.fbAuth || true, F.fbAuth || 'default').replace('✓ default', s.fbAuth ? '✓' : '— (बिना auth)') +
+  $('kList').innerHTML = `<div class="sr">SamuSignal इस browser में<em style="color:${s.samuN ? 'var(--up)' : 'var(--dn2)'}">${s.samuN ? '✓ मिला (' + s.samuN + ' settings)' : '✗ नहीं मिला'}</em></div><div class="sr" style="font-size:12px;font-weight:500">Address<em>${esc(location.host + location.pathname)}</em></div>` + kr('Firebase URL', !!s.fbUrl, F.fbUrl) + kr('Firebase Auth', !!s.fbAuth || true, F.fbAuth || 'default').replace('✓ default', s.fbAuth ? '✓' : '— (बिना auth)') +
     kr('TwelveData', !!s.tdKey, F.tdKey) + kr('Gemini (AI)', !!s.gKey, F.gKey) +
-    `<div class="sr">📡 MT5 Data Feed<em style="color:${f.ok ? 'var(--up)' : 'var(--gold)'}">${f.ok ? 'ON · ' + esc(f.meta.n || '') + ' symbols' : 'बंद — TwelveData चलेगा'}</em></div>` +
-    (!F.tdKey && !F.gKey && !F.fbAuth ? `<div class="sr" style="font-size:12px;color:var(--gold);font-weight:500">SamuSignal की keys नहीं मिलीं — दोनों ऐप इसी फ़ोन के एक ही browser (Chrome) में और ankushchhajed7-cmd.github.io पर खुलें, या नीचे खुद डालें।</div>` : '');
+    `<div class="sr">📡 MT5 Data Feed<em style="color:${f.ok ? 'var(--up)' : 'var(--gold)'}">${f.ok ? 'ON · ' + esc(f.meta.n || '') + ' symbols' : esc(f.why)}</em></div>` +
+    (!s.samuN ? `<div class="sr" style="font-size:12px;color:var(--gold);font-weight:500">SamuSignal की keys नहीं मिलीं — दोनों ऐप इसी फ़ोन के एक ही browser (Chrome) में और ankushchhajed7-cmd.github.io पर खुलें, या नीचे खुद डालें।</div>` : '');
   $('aList').innerHTML = '<div class="sr note">Loading…</div>';
   accounts(s).then(A => { $('aList').innerHTML = A.length ? A.map(a => `<div class="sr"><span style="width:8px;height:8px;border-radius:50%;background:${a.online ? 'var(--up)' : 'var(--mu2)'}"></span><div><b style="color:${a.real ? 'var(--up)' : 'var(--gold)'}">${a.real ? 'REAL' : 'DEMO'} ${esc(a.login)}</b><div class="note">${esc(a.server || '')} · lot ${(+a.lot || 0).toFixed(2)} · ${a.online ? 'online' : 'offline'}</div></div><em class="mono" style="color:var(--tx);font-size:14px;font-weight:800">${esc(a.cur || '')} ${(+a.bal || 0).toFixed(2)}</em></div>`).join('')
     : '<div class="sr note">कोई PERSONAL FX account नहीं मिला</div>' }).catch(e => { $('aList').innerHTML = `<div class="sr note">${esc(e.message)}</div>` });
@@ -368,6 +371,12 @@ function boot(){
     LS.set('ov', ov); toast('Saved'); renderSet() };
   $('clrHist').onclick = async () => { if(await dlg('History साफ़ करें?', 'सारे signals और नतीजे इस फ़ोन से हट जाएँगे।', 'साफ़ करो', 'Cancel')){ st.hist = []; saveHist(); toast('साफ़ हो गया') } };
   $('shotIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if(f) fromShot(f) };
+  /* v1.0.1: "#keys=<base64 JSON>" link se keys (SamuSignal doosre browser / address par ho tab) — hash server pe nahi jaata, padhte hi URL se hata dete hain */
+  if(location.hash.startsWith('#keys=')){
+    try{ const j = JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(6).replace(/-/g, '+').replace(/_/g, '/'))))), ov = LS.get('ov', {});
+      ['fbUrl', 'fbAuth', 'tdKey', 'gKey'].forEach(k => { if(j[k]) ov[k] = String(j[k]).trim() }); LS.set('ov', ov); toast('✅ Keys आ गईं') }catch(e){ toast('Keys link गलत है') }
+    history.replaceState(null, '', location.pathname + location.search);
+  }
   setTimeout(() => $('splash').classList.add('hide'), 900);
   loadHome();
   setInterval(() => { if(document.hidden) return;

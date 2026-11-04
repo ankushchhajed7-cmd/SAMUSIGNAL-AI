@@ -15,7 +15,8 @@ export function keys(){
   const ov = LS.get('ov', {});
   const pick = (k, sk) => (ov[k] !== undefined && ov[k] !== '') ? {v: ov[k], from: 'manual'} : (SAMU(sk) ? {v: SAMU(sk), from: 'samu'} : {v: '', from: ''});
   const td = pick('tdKey', 'key'), fb = pick('fbUrl', 'fbUrl'), fa = pick('fbAuth', 'fbAuth'), g = pick('gKey', 'gKey');
-  return {tdKey: td.v, fbUrl: fb.v || DEFAULT_FB, fbAuth: fa.v, gKey: g.v, gModel: SAMU('gModel') || '',
+  let samuN = 0; try{ for(let i = 0; i < localStorage.length; i++) if(String(localStorage.key(i)).startsWith('samu_')) samuN++ }catch(e){}
+  return {tdKey: td.v, fbUrl: fb.v || DEFAULT_FB, fbAuth: fa.v, gKey: g.v, gModel: SAMU('gModel') || '', samuN,
     from: {tdKey: td.from, fbUrl: fb.from || 'default', fbAuth: fa.from, gKey: g.from}};
 }
 export function fbBase(s){ let u = String(s.fbUrl || '').trim().replace(/\/+$/, ''); if(!u) return ''; if(!/^https?:\/\//.test(u)) u = 'https://' + u; return u }
@@ -27,10 +28,13 @@ export async function feedStatus(s, force){
   if(!fbBase(s)) return {ok: false, why: 'Firebase URL nahi'};
   if(force || Date.now() - FEED.metaAt > 15000){
     FEED.metaAt = Date.now();
-    try{ const r = await fetch(fbUrl(s, 'feed/meta'), {cache: 'no-store'}); FEED.meta = r.ok ? await r.json() : null }catch(e){ FEED.meta = null }
+    FEED.err = '';
+    try{ const r = await fetch(fbUrl(s, 'feed/meta'), {cache: 'no-store'}); FEED.meta = r.ok ? await r.json() : null;
+      if(!r.ok) FEED.err = r.status === 401 || r.status === 403 ? 'Firebase ne mana kiya (Auth chahiye)' : 'HTTP ' + r.status }catch(e){ FEED.meta = null; FEED.err = 'Firebase tak nahi pahunche' }
   }
   const m = FEED.meta, ok = !!(m && m.at && Date.now() - m.at * 1000 < 120000);
-  return {ok, meta: m, why: ok ? '' : (m && m.at ? 'feed purana' : 'feed nahi mila')};
+  const ago = m && m.at ? Math.round((Date.now() - m.at * 1000) / 60000) : 0;
+  return {ok, meta: m, why: ok ? '' : FEED.err || (m && m.at ? `VPS ka Data Feed EA ${ago >= 120 ? Math.round(ago / 60) + ' ghante' : ago + ' min'} se band` : 'Data Feed EA ka data nahi mila')};
 }
 async function feedLive(s){
   if(FEED.live && Date.now() - FEED.liveAt < 4000) return FEED.live;
