@@ -99,7 +99,7 @@ export function analyze({b15, b1h, live, spec, now = Date.now()}){
   const zone = dir > 0 ? [entry - w, entry] : [entry, entry + w];
   const raw = Math.abs(entry - (fib(0.786) - dir * 0.2 * A));
   const risk = Math.min(2 * A, Math.max(0.8 * A, raw));
-  const sl = entry - dir * risk, tp = [1, 2, 3].map(k => entry + dir * k * risk);
+  const sl = entry - dir * risk, tp = [entry + dir * risk];   /* v1.4.0: sirf TP1 (1R) — TP2/TP3 hata diye */
   const ax = adx(b15).adx;
   const aSer = atrSeries(b15), base = aSer.slice(-100).reduce((s, v) => s + v, 0) / Math.min(100, aSer.length);
   const dRatio = base ? A / base : 1;
@@ -120,7 +120,7 @@ export function analyze({b15, b1h, live, spec, now = Date.now()}){
   if(counter) reasons.push('Counter-trend vs 1H — Grade C, small size');
   const d = spec.d;
   return {dir: D, type: D + ' LIMIT', entry: r(entry, d), zone: zone.map(v => r(v, d)), sl: r(sl, d), tp: tp.map(v => r(v, d)),
-    rr: '1 : 2', grade, buyPct, sellPct: 100 - buyPct, adx: +ax.toFixed(1),
+    rr: '1 : 1', grade, buyPct, sellPct: 100 - buyPct, adx: +ax.toFixed(1),
     regime: ax >= 25 ? 'Trend' : ax < 20 ? 'Range' : 'Weak trend', danger: dRatio > 1.6 ? 'high' : dRatio > 1.2 ? 'medium' : 'calm',
     live: r(live, d), atr: A, fibX: pick ? pick.x : null, leg: {hi: r(leg.hi, d), lo: r(leg.lo, d)}, t15, t1h, reasons,
     at: now, exp: VALID_MIN, expiresAt: now + VALID_MIN * 60000};
@@ -137,15 +137,15 @@ export function evaluate(sig, bars, now = Date.now(), pip = 0.0001){
     if(B > 0 ? after[i].l <= sig.entry : after[i].h >= sig.entry){ fi = i; break }
   }
   if(fi < 0) return {state: now > fillBy && (after.length && after[after.length - 1].t > fillBy || now - fillBy > 10 * 60000) ? 'EXPIRED' : 'PENDING', done: now > fillBy};
-  let best = 0;
+  /* v1.4.0: sirf TP1 — TP1 = jeet (band), SL = haar. Ek candle me dono = SL (savdhaan).
+     Fill wali candle pe TP tabhi jab close bhi TP ke paar ho (high/low fill se pehle ho sakta hai). */
+  const tp = sig.tp[0];
   for(let i = fi; i < after.length; i++){
     const b = after[i];
-    const slHit = B > 0 ? b.l <= sig.sl : b.h >= sig.sl;
-    if(slHit){ return best ? res(best, b.t) : {state: 'SL', done: true, filledAt: after[fi].t, exitAt: b.t, pips: -Math.abs(sig.entry - sig.sl) / pip} }
-    for(let k = 3; k > best; k--) if(B > 0 ? b.h >= sig.tp[k - 1] : b.l <= sig.tp[k - 1]){ best = k; break }
-    if(best === 3) return res(3, b.t);
+    if(B > 0 ? b.l <= sig.sl : b.h >= sig.sl) return {state: 'SL', done: true, filledAt: after[fi].t, exitAt: b.t, pips: -Math.abs(sig.entry - sig.sl) / pip};
+    const hit = i === fi ? (B > 0 ? b.c >= tp : b.c <= tp) : (B > 0 ? b.h >= tp : b.l <= tp);
+    if(hit) return {state: 'TP1', done: true, filledAt: after[fi].t, exitAt: b.t, pips: Math.abs(tp - sig.entry) / pip};
   }
-  return best ? Object.assign(res(best, null), {done: false}) : {state: 'OPEN', done: false, filledAt: after[fi].t};
-  function res(k, t){ return {state: 'TP' + k, done: true, filledAt: after[fi].t, exitAt: t, pips: Math.abs(sig.tp[k - 1] - sig.entry) / pip} }
+  return {state: 'OPEN', done: false, filledAt: after[fi].t};
 }
 export const isWin = st => /^TP/.test(st || ''), isLoss = st => st === 'SL';

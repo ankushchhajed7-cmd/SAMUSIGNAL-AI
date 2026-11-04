@@ -32,7 +32,7 @@ async function ask(key, parts, pref){
 export async function aiCheck(s, sym, sig, b15){
   const rows = b15.slice(-60).map(b => [b.o, b.h, b.l, b.c].map(v => +v.toFixed(5)).join(',')).join('\n');
   const prompt = `You are a strict forex price-action reviewer. Pair ${sym}, 15-minute candles (oldest first, o,h,l,c):\n${rows}\n\n` +
-    `Proposed trade: ${sig.dir} LIMIT at ${sig.entry}, stop ${sig.sl}, targets ${sig.tp.join(' / ')}, current price ${sig.live}. Valid 60 minutes.\n` +
+    `Proposed trade: ${sig.dir} LIMIT at ${sig.entry}, stop ${sig.sl}, target ${sig.tp[0]}, current price ${sig.live}. Valid 60 minutes.\n` +
     `Judge ONLY from the candles: is this direction and pullback entry sensible right now?\n` +
     `Reply JSON only: {"agree": true or false, "confidence": 0-100 integer, "reason": "one short sentence in simple Hinglish (Hindi in Roman letters)"}`;
   const j = await ask(s.gKey, [{text: prompt}], s.gModel);
@@ -42,11 +42,11 @@ export async function aiShot(s, b64, mime, names){
   const prompt = `You are a professional price-action trader reading a trading chart screenshot.
 Give ONE pending LIMIT order only (never market, never stop): trend direction, wait for the pullback.
 BUY LIMIT entry must be BELOW the current price; SELL LIMIT entry must be ABOVE the current price.
-Entry at the 50-61.8% pullback zone of the last impulse, stop beyond the pullback (tight), targets 1R / 2R / 3R.
+Entry at the 50-61.8% pullback zone of the last impulse, stop beyond the pullback (tight), one target at 1R.
 Always give a trade (no "no trade"); if the setup is weak or counter-trend, set grade "C".
 Read every number from the price axis — never invent levels. If it is not a price chart set "dir" to "UNREADABLE".
 Use this exact symbol spelling if it matches: ${names}
 Reply JSON only:
-{"symbol":"", "timeframe":"", "dir":"BUY or SELL or UNREADABLE", "current_price":0, "entry":0, "sl":0, "tp1":0, "tp2":0, "tp3":0, "grade":"A or B or C", "reason":"one short sentence in simple Hinglish"}`;
+{"symbol":"", "timeframe":"", "dir":"BUY or SELL or UNREADABLE", "current_price":0, "entry":0, "sl":0, "tp1":0, "grade":"A or B or C", "reason":"one short sentence in simple Hinglish"}`;
   return ask(s.gKey, [{text: prompt}, {inline_data: {mime_type: mime, data: b64}}], s.gModel);
 }

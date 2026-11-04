@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.3.0';
+export const VERSION = '1.4.0';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -53,7 +53,7 @@ function mkChart(el){
     priceLineColor: 'rgba(243,239,230,0.35)', priceLineStyle: 2,
     /* v1.0.6: auto-scale me SL se T3 tak saare level shaamil — har line chart pe dikhe */
     autoscaleInfoProvider: orig => { const r = orig(), g = LV.sig; if(!r || !r.priceRange || !g) return r;
-      const all = [g.sl, ...g.tp, ...g.zone].filter(v => isFinite(v));
+      const all = [g.sl, g.tp[0], ...g.zone].filter(v => isFinite(v));
       r.priceRange.minValue = Math.min(r.priceRange.minValue, ...all); r.priceRange.maxValue = Math.max(r.priceRange.maxValue, ...all); return r }});
   const ov = document.createElement('div');
   ov.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:2;overflow:hidden';
@@ -69,7 +69,7 @@ function mkChart(el){
     ch.priceScale('right').applyOptions({autoScale: true});
     if(sig){
       const L = (price, color, style) => C.lines.push(s.createPriceLine({price, color, lineStyle: style, lineWidth: 1, axisLabelVisible: false, title: ''}));
-      L(sig.sl, 'rgba(255,93,108,0.75)', 2); sig.tp.forEach(p => L(p, 'rgba(47,224,138,0.65)', 2));
+      L(sig.sl, 'rgba(255,93,108,0.75)', 2); L(sig.tp[0], 'rgba(47,224,138,0.75)', 2);
     }
     C.draw();
   };
@@ -86,7 +86,7 @@ function mkChart(el){
     }
     const tags = [{p: (g.zone[0] + g.zone[1]) / 2, t: (g.dir === 'BUY' ? 'BUY ' : 'SELL ') + f(g.entry), bg: 'linear-gradient(120deg,#f7e08a,#c9971f 45%,#fff6cf 60%,#e8c35a)', c: '#1a1408', k: 0},
       {p: g.sl, t: 'SL ' + f(g.sl), bg: '#ff5d6c', c: '#2a0a0e', k: 1}]
-      .concat(g.tp.map((p, i) => ({p, t: 'T' + (i + 1), bg: 'rgba(7,8,11,0.85)', c: '#2fe08a', bd: '1px solid rgba(47,224,138,0.7)', sm: 1, k: 2 + i})));   /* v1.0.5: TP = sirf T1/T2/T3 */
+      .concat([{p: g.tp[0], t: 'TP', bg: 'rgba(7,8,11,0.85)', c: '#2fe08a', bd: '1px solid rgba(47,224,138,0.7)', sm: 1, k: 2}]);   /* v1.4.0: sirf TP1 */
     const PH = 18, GAP = 2;
     tags.forEach(x => { const c = y(x.p); x.out = c === null ? 0 : c < PH / 2 ? -1 : c > H - PH / 2 ? 1 : 0; x.y = c === null ? H / 2 : Math.min(H - PH / 2, Math.max(PH / 2, c)) });
     /* v1.0.6: BUY / SL = daayein, T1-T3 = baayein (ulti taraf) — dono group alag-alag, aapas me takraate nahi */
@@ -102,7 +102,7 @@ function mkChart(el){
   };
   ch.timeScale().subscribeVisibleLogicalRangeChange(() => C.draw());
   let last = '';
-  setInterval(() => { if(!C.sig || document.hidden) return; const k = [s.priceToCoordinate(C.sig.sl), s.priceToCoordinate(C.sig.tp[2]), el.clientHeight].join('|'); if(k !== last){ last = k; C.draw() } }, 250);
+  setInterval(() => { if(!C.sig || document.hidden) return; const k = [s.priceToCoordinate(C.sig.sl), s.priceToCoordinate(C.sig.tp[0]), el.clientHeight].join('|'); if(k !== last){ last = k; C.draw() } }, 250);
   return C;
 }
 
@@ -127,15 +127,15 @@ function lastSig(sym){ return st.hist.find(r => r.sym === sym && Date.now() < r.
 function sigCard(r, compact){
   const S = r.sym, live = st.q[S] && st.q[S].p;
   return `<div class="gb"><div class="gi">
-<div style="display:flex;align-items:center;gap:8px"><span class="dirb ${r.dir}">${r.dir} LIMIT</span><span class="grade">Grade ${r.grade}</span>${r.src === 'shot' ? '<span class="kind k-shot">📷</span>' : ''}<span style="margin-left:auto;font-size:12px;color:var(--mu)">R:R ${r.rr || '1 : 2'}</span></div>
+<div style="display:flex;align-items:center;gap:8px"><span class="dirb ${r.dir}">${r.dir} LIMIT</span><span class="grade">Grade ${r.grade}</span>${r.src === 'shot' ? '<span class="kind k-shot">📷</span>' : ''}<span style="margin-left:auto;font-size:12px;color:var(--mu)">R:R 1 : 1</span></div>
 <div class="lbl" style="margin-top:12px">Entry zone ${compact ? '· ' + esc(SPECS[S] ? SPECS[S].n : S) + ' · ' + ist(r.at) : ''}</div>
 <div class="big mt">${fmtS(S, r.zone[0])} – ${fmtS(S, r.zone[1])}</div>
-<div style="display:flex;gap:6px;margin-top:10px"><div class="chip"><span class="lbl">SL</span><b style="color:var(--dn2)">${fmtS(S, r.sl)}</b></div>${r.tp.map((p, i) => `<div class="chip"><span class="lbl">TP${i + 1}</span><b style="color:var(--up)">${fmtS(S, p)}</b></div>`).join('')}</div>
+<div style="display:flex;gap:6px;margin-top:10px"><div class="chip"><span class="lbl">SL</span><b style="color:var(--dn2)">${fmtS(S, r.sl)}</b></div><div class="chip"><span class="lbl">TP</span><b style="color:var(--up)">${fmtS(S, r.tp[0])}</b></div></div>
 ${compact ? `<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:12px"><span style="color:var(--mu)">${resLabel(r)}</span><b style="color:var(--gold)">Open ›</b></div>` : ''}</div></div>`;
 }
 function resLabel(r){
   const s = r.res && r.res.state;
-  if(s) return {PENDING: '⏳ Entry का इंतज़ार', OPEN: '🟢 Trade चालू', EXPIRED: '⌛ Fill नहीं हुआ', SL: '🔴 SL hit'}[s] || ('✅ ' + s + ' hit');
+  if(s) return {PENDING: '⏳ Entry का इंतज़ार', OPEN: '🟢 Trade चालू', EXPIRED: '⌛ Fill नहीं हुआ', SL: '🔴 SL hit'}[s] || '✅ TP hit';
   return Date.now() < r.expiresAt ? 'Valid ' + Math.max(0, Math.round((r.expiresAt - Date.now()) / 60000)) + ' min' : 'Expired';
 }
 function renderHomeCard(){
@@ -194,7 +194,7 @@ async function evalSym(sym, recs){
     try{ const x = await series(s, sym, '1min', 250); if(x.src === 'mt5' && x.bars.length && x.bars[0].t <= oldest) d = x }catch(e){}
   }
   if(!d) d = await series(s, sym, '5min', 300);
-  recs.forEach(r => { r.res = Object.assign(evaluate(r, d.bars, now, SPECS[sym].pip), {src: d.src, at: now}) });
+  recs.forEach(r => { r.res = Object.assign(evaluate(Object.assign({}, r, {tp: r.tp.slice(0, 1)}), d.bars, now, SPECS[sym].pip), {src: d.src, at: now}) });
 }
 async function activeFor(sym){
   const todo = st.hist.filter(r => r.sym === sym && !(r.res && r.res.done));
@@ -242,7 +242,7 @@ async function fromShot(file){
     const d = sym ? SPECS[sym].d : 5, r = v => +(+v).toFixed(d);
     const w = Math.abs(entry - +j.sl) * 0.2;
     const rec = {id: 'r' + Date.now().toString(36), sym: sym || String(j.symbol || '?'), tf: j.timeframe || '?', src: 'shot', dir: j.dir, type: j.dir + ' LIMIT',
-      entry: r(entry), zone: (D > 0 ? [entry - w, entry] : [entry, entry + w]).map(r), sl: r(j.sl), tp: [j.tp1, j.tp2, j.tp3].map(r), rr: '1 : 2', grade,
+      entry: r(entry), zone: (D > 0 ? [entry - w, entry] : [entry, entry + w]).map(r), sl: r(j.sl), tp: [r(j.tp1)], rr: '1 : 1', grade,
       buyPct: D > 0 ? 60 : 40, sellPct: D > 0 ? 40 : 60, regime: '—', danger: '—', live: r(cur), reasons: [String(j.reason || 'Screenshot analysis').slice(0, 160)],
       at: Date.now(), exp: 60, expiresAt: Date.now() + 3600e3, sent: [], taken: {at: Date.now(), px: r(entry), auto: true}, res: null, ai: null};
     st.hist.unshift(rec); saveHist(); $('scan').classList.remove('on'); openRes(rec.id);
@@ -281,7 +281,7 @@ function renderStatus(r){
   const box = $('rStatus');
   const rows = r.sent.map(o => { const s = ORDER_ST[o.status || 'NEW'] || [o.status, 'mu'];
     return `<div class="sr">🚀 ${o.acct ? (o.real ? 'REAL ' : 'DEMO ') + esc(o.acct) : 'PERSONAL FX'}<em style="color:var(--${s[1] === 'mu' ? 'mu' : s[1] === 'up' ? 'up' : s[1] === 'dn' ? 'dn2' : 'gold'})">${esc(s[0])}</em></div>` }).join('');
-  const tk = r.taken ? `<div class="sr">📋 Trade record · ${ist(r.taken.at)}<em>${r.dir} LIMIT @ ${fmtS(r.sym, r.entry)} · SL ${fmtS(r.sym, r.sl)} · TP ${r.tp.map(p => fmtS(r.sym, p)).join(' / ')}</em></div>` : '';
+  const tk = r.taken ? `<div class="sr">📋 Trade record · ${ist(r.taken.at)}<em>${r.dir} LIMIT @ ${fmtS(r.sym, r.entry)} · SL ${fmtS(r.sym, r.sl)} · TP ${fmtS(r.sym, r.tp[0])}</em></div>` : '';
   const res = r.res ? `<div class="sr">📊 नतीजा${r.res.at ? ` <span class="note">· ${ist(r.res.at, true)} ${r.res.src === 'mt5' ? 'MT5' : 'TD'}</span>` : ''}<em><b style="color:${isWin(r.res.state) ? 'var(--up)' : isLoss(r.res.state) ? 'var(--dn2)' : 'var(--gold)'}">${esc(resLabel(r))}</b>${r.res.pips ? ' · ' + (r.res.pips > 0 ? '+' : '') + r.res.pips.toFixed(1) + ' pips' : ''}</em></div>` : '';
   box.innerHTML = rows || tk || res ? `<div class="card" style="margin:12px 18px 0">${rows}${tk}${res}</div>` : '';
 }
@@ -353,7 +353,7 @@ function renderHis(){
     return true }).slice(0, 80);
   $('hList').innerHTML = L.length ? L.map(r => {
     const s = r.res && r.res.state, B = r.dir === 'BUY';
-    const [bc, bt] = isWin(s) ? ['b-win', s + ' HIT'] : isLoss(s) ? ['b-loss', 'SL HIT'] : s === 'EXPIRED' ? ['b-exp', 'EXPIRED'] : s === 'OPEN' ? ['b-open', 'OPEN'] : ['b-pend', 'PENDING'];
+    const [bc, bt] = isWin(s) ? ['b-win', 'TP HIT'] : isLoss(s) ? ['b-loss', 'SL HIT'] : s === 'EXPIRED' ? ['b-exp', 'EXPIRED'] : s === 'OPEN' ? ['b-open', 'OPEN'] : ['b-pend', 'PENDING'];
     const pip = r.res && r.res.pips ? (r.res.pips > 0 ? '+' : '') + r.res.pips.toFixed(1) + ' pips' : s === 'EXPIRED' ? 'not filled' : '—';
     return `<div class="row" data-open="${r.id}"><span style="width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:${B ? 'var(--up)' : 'var(--dn)'};background:${B ? 'rgba(47,224,138,0.12)' : 'rgba(255,93,108,0.12)'}">${r.dir}</span>
 <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:14px">${esc(SPECS[r.sym] ? SPECS[r.sym].n : r.sym)} <span style="font-size:11px;font-weight:600;color:var(--mu)">LIMIT · ${istD(r.at)} ${ist(r.at)}</span></div>
