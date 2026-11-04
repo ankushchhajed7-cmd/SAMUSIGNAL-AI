@@ -1,12 +1,12 @@
 /* SAMUSIGNAL AI — personal app. SamuSignal ki keys + MT5 feed + PERSONAL FX bridge. */
 import {SPECS, PAIRS, fmt, fmtS, fromName} from './symbols.js';
-import {LS, keys, feedStatus, series, quotes} from './data.js';
+import {LS, keys, feedStatus, series, quotes, fbUrl} from './data.js';
 import {analyze, evaluate, isWin, isLoss} from './engine.js';
 import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.4.1';
+export const VERSION = '1.5.0';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -224,8 +224,9 @@ async function runAnalyze(sym = st.pair){
     else { rec.taken = {at: rec.at, px: rec.entry, auto: true}; st.hist.unshift(rec); saveHist() }   /* v1.3.0: apne aap trade record */
     scanUI(4); await wait(200);
     $('scan').classList.remove('on');
+    if(!act) paperSync();
     openRes(rec.id); if(act) toast(busyMsg(act).replace('TP या SL आने तक नया नहीं', 'ये नया analysis History में नहीं जुड़ा'), 4500);
-    if(LS.get('aiOn', true) && s.gKey) aiCheck(s, sym, sig, a.bars).then(ai => { rec.ai = ai; saveHist(); if(st.cur === rec.id) renderAi(rec) })
+    if(LS.get('aiOn', true) && s.gKey) aiCheck(s, sym, sig, a.bars).then(ai => { rec.ai = ai; saveHist(); paperSync(); if(st.cur === rec.id) renderAi(rec) })
       .catch(e => { rec.ai = {err: e.message}; if(st.cur === rec.id) renderAi(rec) });
   }catch(e){ $('scan').classList.remove('on'); dlg('Analysis नहीं हुआ', esc(e.message), 'OK', '') }
   finally{ st.busy = false }
@@ -247,7 +248,7 @@ async function fromShot(file){
       entry: r(entry), zone: (D > 0 ? [entry - w, entry] : [entry, entry + w]).map(r), sl: r(j.sl), tp: [r(j.tp1)], rr: '1 : 1', grade,
       buyPct: D > 0 ? 60 : 40, sellPct: D > 0 ? 40 : 60, regime: '—', danger: '—', live: r(cur), reasons: [String(j.reason || 'Screenshot analysis').slice(0, 160)],
       at: Date.now(), exp: 60, expiresAt: Date.now() + 3600e3, sent: [], taken: {at: Date.now(), px: r(entry), auto: true}, res: null, ai: null};
-    if(act){ rec.preview = act.id; delete rec.taken; st.preview = rec } else { st.hist.unshift(rec); saveHist() }
+    if(act){ rec.preview = act.id; delete rec.taken; st.preview = rec } else { st.hist.unshift(rec); saveHist(); paperSync() }
     $('scan').classList.remove('on'); openRes(rec.id);
   }catch(e){ $('scan').classList.remove('on'); dlg('Screenshot नहीं पढ़ा गया', esc(e.message), 'OK', '') }
 }
@@ -340,7 +341,7 @@ async function refreshResults(){
     try{ await evalSym(sym, todo.filter(r => r.sym === sym)) }catch(e){}
   }
   st.hist.filter(r => !(r.res && r.res.done) && now - r.at >= 48 * 3600e3).forEach(r => { r.res = Object.assign({}, r.res || {state: 'EXPIRED'}, {done: true}) });
-  saveHist(); await refreshOrders();
+  saveHist(); await refreshOrders(); paperSync();
 }
 function renderHis(){
   const wk = st.hist.filter(r => Date.now() - r.at < 7 * 864e5), fin = wk.filter(r => r.res && (isWin(r.res.state) || isLoss(r.res.state)));
@@ -401,6 +402,8 @@ async function renderSet(){
 <div class="sr">Signal timeframe<em>15m + 1H</em></div><div class="sr">Order type<em>सिर्फ़ BUY LIMIT / SELL LIMIT</em></div>`;
   $('srcSel').value = LS.get('src', 'auto');
   $('ver').textContent = 'v' + VERSION;
+  const pk = LS.get('paperOk', 0), pe = LS.get('paperErr', '');
+  $('paperSt').innerHTML = pe ? `<span style="color:var(--dn2)">✗ ${esc(pe)}</span>` : pk ? `<span style="color:var(--up)">✓ ${istD(pk)} ${ist(pk)}</span>` : '<span class="note">अभी तक नहीं</span>';
 }
 
 /* ---------------- SamuSignal keys: "SAI1:<code>" / "#keys=<code>" link / JSON ---------------- */
@@ -418,6 +421,30 @@ function importKeys(str){
   const k = parseKeys(str), ov = Object.assign(LS.get('ov', {}), k); LS.set('ov', ov);
   toast('✅ Keys आ गईं: ' + Object.keys(k).map(x => ({fbUrl: 'Firebase', fbAuth: 'Auth', tdKey: 'TwelveData', gKey: 'Gemini'}[x])).join(', '));
   return k;
+}
+
+/* ---------------- 📤 v1.5.0: paper trades -> Firebase /samuai/paper/<id> ----------------
+   GitHub Action (INVESTOR-ID repo) har 15 min yahan se uthakar data/paper/paper.json me rakhta hai — wahan se roz ki report.
+   Sirf signal + nateeja jaata hai (koi key / paisa nahi). Preview (doosra analysis) nahi jaata. Badla na ho to dobara nahi bhejte. */
+const paperRow = r => ({id: r.id, sym: r.sym, dir: r.dir, entry: r.entry, sl: r.sl, tp: r.tp[0], grade: r.grade, buyPct: r.buyPct,
+  adx: r.adx === undefined ? null : r.adx, regime: r.regime || '', danger: r.danger || '', fibX: r.fibX === undefined ? null : r.fibX, src: r.src || '',
+  at: r.at, expiresAt: r.expiresAt, ai: r.ai && !r.ai.err ? {agree: !!r.ai.agree, conf: r.ai.conf || 0} : null, mt5: r.sent.length > 0,
+  res: r.res ? {state: r.res.state, done: !!r.res.done, pips: r.res.pips === undefined ? null : +(+r.res.pips).toFixed(1),
+    filledAt: r.res.filledAt || null, exitAt: r.res.exitAt || null} : null, v: VERSION});
+let paperBusy = false;
+async function paperSync(){
+  if(paperBusy) return; paperBusy = true;
+  try{
+    const s = K(); if(!fbUrl(s, 'x')) return;
+    for(const r of st.hist.slice(0, 300)){
+      if(r.preview) continue;
+      const body = JSON.stringify(paperRow(r)); if(r._pk === body) continue;
+      try{ const x = await fetch(fbUrl(s, 'samuai/paper/' + r.id), {method: 'PUT', headers: {'Content-Type': 'application/json'}, body});
+        if(x.ok){ r._pk = body; LS.set('paperOk', Date.now()); LS.set('paperErr', '') } else { LS.set('paperErr', x.status === 401 || x.status === 403 ? 'Firebase ने मना किया (Auth)' : 'HTTP ' + x.status); break } }
+      catch(e){ LS.set('paperErr', 'Firebase तक नहीं पहुँचे'); break }
+    }
+    saveHist();
+  }finally{ paperBusy = false }
 }
 
 /* ---------------- refresh: purana cache hatao, naya version lo ---------------- */
