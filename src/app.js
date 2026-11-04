@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.4.0';
+export const VERSION = '1.4.1';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -35,6 +35,9 @@ function dlg(title, html, okTxt = 'OK', noTxt = 'Cancel'){
 const st = {pair: SPECS[LS.get('pair')] ? LS.get('pair') : 'EUR/USD', tf: LS.get('tf', '15min'), favs: LS.get('favs', ['EUR/USD', 'GBP/USD', 'USD/JPY', 'XAU/USD']),
   hist: LS.get('hist', []), cur: null, q: {}, src: '', ptab: 'fav', hf: 'all', hk: 'all', scr: 'home', busy: false, home: null};
 const saveHist = () => LS.set('hist', st.hist.slice(0, 300));
+/* v1.4.1: pehla paper trade chaalu ho to naya analysis "preview" — dikhta hai, MT5 pe ja sakta hai, par History me nahi judta */
+st.preview = null;
+const getRec = id => st.hist.find(x => x.id === id) || (st.preview && st.preview.id === id ? st.preview : null);
 const K = () => keys();
 
 /* ---------------- charts ---------------- */
@@ -209,7 +212,6 @@ async function runAnalyze(sym = st.pair){
   try{
     const act = await activeFor(sym);
     if(cancelled) return;
-    if(act){ $('scan').classList.remove('on'); openRes(act.id); toast(busyMsg(act), 4500); return }
     const s = K();
     const [a, b, q] = await Promise.all([series(s, sym, '15min', 250), series(s, sym, '1h', 250), quotes(s, [sym])]);
     Object.assign(st.q, q); if(cancelled) return;
@@ -218,11 +220,11 @@ async function runAnalyze(sym = st.pair){
     const sig = analyze({b15: a.bars, b1h: b.bars, live, spec: SPECS[sym]});
     scanUI(2); await wait(350); scanUI(3); await wait(300); if(cancelled) return;
     const rec = Object.assign({id: 'r' + Date.now().toString(36), sym, tf: '15m', src: a.src, sent: [], res: null, ai: null}, sig);
-    rec.taken = {at: rec.at, px: rec.entry, auto: true};   /* v1.3.0: har analysis apne aap "trade liya" (app record) — button nahi */
-    st.hist.unshift(rec); saveHist();
+    if(act){ rec.preview = act.id; st.preview = rec }                       /* v1.4.1: pehla trade chaalu -> sirf preview */
+    else { rec.taken = {at: rec.at, px: rec.entry, auto: true}; st.hist.unshift(rec); saveHist() }   /* v1.3.0: apne aap trade record */
     scanUI(4); await wait(200);
     $('scan').classList.remove('on');
-    openRes(rec.id);
+    openRes(rec.id); if(act) toast(busyMsg(act).replace('TP या SL आने तक नया नहीं', 'ये नया analysis History में नहीं जुड़ा'), 4500);
     if(LS.get('aiOn', true) && s.gKey) aiCheck(s, sym, sig, a.bars).then(ai => { rec.ai = ai; saveHist(); if(st.cur === rec.id) renderAi(rec) })
       .catch(e => { rec.ai = {err: e.message}; if(st.cur === rec.id) renderAi(rec) });
   }catch(e){ $('scan').classList.remove('on'); dlg('Analysis नहीं हुआ', esc(e.message), 'OK', '') }
@@ -236,7 +238,7 @@ async function fromShot(file){
     const j = await aiShot(s, b64, file.type || 'image/png', PAIRS.map(p => SPECS[p].n).join(', '));
     if(!/^(BUY|SELL)$/.test(j.dir)) throw new Error('Chart पढ़ा नहीं गया — साफ़ screenshot भेजें');
     const sym = fromName(j.symbol), cur = +j.current_price, D = j.dir === 'BUY' ? 1 : -1;
-    if(sym){ const act = await activeFor(sym); if(act){ $('scan').classList.remove('on'); openRes(act.id); toast(busyMsg(act), 4500); return } }
+    const act = sym ? await activeFor(sym) : null;
     let entry = +j.entry, grade = /^[ABC]$/.test(j.grade) ? j.grade : 'C';
     if(!(D > 0 ? entry < cur : entry > cur)){ grade = 'C' }
     const d = sym ? SPECS[sym].d : 5, r = v => +(+v).toFixed(d);
@@ -245,18 +247,21 @@ async function fromShot(file){
       entry: r(entry), zone: (D > 0 ? [entry - w, entry] : [entry, entry + w]).map(r), sl: r(j.sl), tp: [r(j.tp1)], rr: '1 : 1', grade,
       buyPct: D > 0 ? 60 : 40, sellPct: D > 0 ? 40 : 60, regime: '—', danger: '—', live: r(cur), reasons: [String(j.reason || 'Screenshot analysis').slice(0, 160)],
       at: Date.now(), exp: 60, expiresAt: Date.now() + 3600e3, sent: [], taken: {at: Date.now(), px: r(entry), auto: true}, res: null, ai: null};
-    st.hist.unshift(rec); saveHist(); $('scan').classList.remove('on'); openRes(rec.id);
+    if(act){ rec.preview = act.id; delete rec.taken; st.preview = rec } else { st.hist.unshift(rec); saveHist() }
+    $('scan').classList.remove('on'); openRes(rec.id);
   }catch(e){ $('scan').classList.remove('on'); dlg('Screenshot नहीं पढ़ा गया', esc(e.message), 'OK', '') }
 }
 
 /* ---------------- RESULT ---------------- */
 let leftT;
 async function openRes(id){
-  const r = st.hist.find(x => x.id === id); if(!r) return;
+  const r = getRec(id); if(!r) return;
   st.cur = id; show('res');
   const S = r.sym, sp = SPECS[S];
   $('rMeta').innerHTML = `<b style="color:var(--tx);font-size:16px">${esc(sp ? sp.n : S)}</b> · ${esc(r.tf)} · ${istD(r.at)} ${ist(r.at)}`;
   $('resKind').innerHTML = r.sent.length ? '<span class="kind k-mt5">MT5</span>' : '';
+  const pv = r.preview ? st.hist.find(x => x.id === r.preview) : null;
+  $('rPrev').innerHTML = r.preview ? `<div class="card" style="margin:10px 18px 0;padding:10px 14px;border-color:rgba(232,195,90,0.6);font-size:12px;line-height:1.5"><b style="color:var(--gold)">👀 सिर्फ़ देखने के लिए</b> — ${esc(S ? (sp ? sp.n : S) : '')} पर ${pv ? ist(pv.at) + ' वाला' : 'पहला'} paper trade चालू है, इसलिए ये analysis History में नहीं जुड़ा। REAL पर लगाना हो तो नीचे <b>🚀 MT5 पे लगाओ</b>।${pv ? ` <a href="#" data-open="${pv.id}" style="color:var(--gold);font-weight:800">पहला trade देखें ›</a>` : ''}</div>` : '';
   $('rCard').innerHTML = sigCard(r);
   $('rWhy').innerHTML = r.reasons.map(t => `<div style="display:flex;gap:8px"><span style="color:var(--gold)">◆</span>${esc(t)}</div>`).join('') +
     (r.src !== 'shot' ? `<div style="display:flex;gap:8px"><span style="color:var(--gold)">◆</span>Regime: ${esc(r.regime)} · Danger: ${esc(r.danger)} · Buy ${r.buyPct}% / Sell ${r.sellPct}%</div>` : '');
@@ -268,7 +273,7 @@ async function openRes(id){
   if(!resChart) resChart = mkChart($('rChart'));
   resChart.levels(null);
   if(sp){ try{ const d = await series(K(), S, '15min', 250); if(st.cur !== id) return; resChart.set(d.bars, S); resChart.levels(r); resChart.fit() }catch(e){} }
-  if(sp && !(r.res && r.res.done)){ await activeFor(S); if(st.cur === id) renderStatus(r) }   /* v1.2.1: khulte hi taaza nateeja */
+  if(sp && !r.preview && !(r.res && r.res.done)){ await activeFor(S); if(st.cur === id) renderStatus(r) }   /* v1.2.1: khulte hi taaza nateeja */
   if(r.sent.length) refreshOrders();
 }
 function renderAi(r){
@@ -286,15 +291,15 @@ function renderStatus(r){
   box.innerHTML = rows || tk || res ? `<div class="card" style="margin:12px 18px 0">${rows}${tk}${res}</div>` : '';
 }
 async function refreshOrders(){
-  const pend = st.hist.filter(r => r.sent.some(o => !o.status || o.status === 'NEW' || o.status === 'PLACED') && Date.now() - r.at < 26 * 3600e3);
+  const pend = [...st.hist, st.preview].filter(r => r && r.sent.some(o => !o.status || o.status === 'NEW' || o.status === 'PLACED') && Date.now() - r.at < 26 * 3600e3);
   if(!pend.length) return;
   try{ const all = await orders(K());
     pend.forEach(r => r.sent.forEach(o => { if(all[o.key]) o.status = all[o.key].status || o.status }));
-    saveHist(); const cur = st.hist.find(x => x.id === st.cur); if(cur && st.scr === 'res') renderStatus(cur);
+    saveHist(); const cur = getRec(st.cur); if(cur && st.scr === 'res') renderStatus(cur);
   }catch(e){}
 }
 async function onMt5(){
-  const r = st.hist.find(x => x.id === st.cur); if(!r || !SPECS[r.sym]) return;
+  const r = getRec(st.cur); if(!r || !SPECS[r.sym]) return;
   const s = K(); let acc = [];
   try{ acc = (await accounts(s)).filter(a => a.online) }catch(e){ return dlg('Firebase नहीं खुला', esc(e.message), 'OK', '') }
   let pick = acc;
@@ -529,7 +534,7 @@ function boot(){
   document.addEventListener('visibilitychange', () => { if(st.scr !== 'flow') return; if(document.hidden) flowStop(); else flowStart() });
   document.body.addEventListener('click', e => { const o = e.target.closest('[data-open]'); if(o) openRes(o.dataset.open) });
   $('resBack').onclick = () => show(st.hist.find(x => x.id === st.cur && x.sym === st.pair) ? 'home' : 'his');
-  $('bRe').onclick = () => { const r = st.hist.find(x => x.id === st.cur); if(r && SPECS[r.sym]){ st.pair = r.sym; LS.set('pair', r.sym); runAnalyze(r.sym) } };
+  $('bRe').onclick = () => { const r = getRec(st.cur); if(r && SPECS[r.sym]){ st.pair = r.sym; LS.set('pair', r.sym); runAnalyze(r.sym) } };
   $('bMt5').onclick = onMt5;
   $('hisRef').onclick = async () => { toast('Refreshing…'); await refreshResults(); renderHis() };
   $('hf').onclick = e => { const b = e.target.closest('[data-hf]'); if(b){ st.hf = b.dataset.hf; renderHis() } };
@@ -563,8 +568,8 @@ function boot(){
     try{
       const now = Date.now(), fast = st.src !== 'td';
       if(st.scr === 'home' && now - T.home > (fast ? 12e3 : 60e3)){ T.home = now; loadHome(true) }
-      if(st.scr === 'res' && now - T.res > (fast ? 15e3 : 60e3)){ T.res = now; const r = st.hist.find(x => x.id === st.cur);
-        if(r && SPECS[r.sym] && !(r.res && r.res.done)){ await activeFor(r.sym); if(st.cur === r.id) renderStatus(r) } refreshOrders() }
+      if(st.scr === 'res' && now - T.res > (fast ? 15e3 : 60e3)){ T.res = now; const r = getRec(st.cur);
+        if(r && !r.preview && SPECS[r.sym] && !(r.res && r.res.done)){ await activeFor(r.sym); if(st.cur === r.id) renderStatus(r) } refreshOrders() }
       if(st.scr === 'his' && now - T.his > (fast ? 30e3 : 120e3)){ T.his = now; await refreshResults(); if(st.scr === 'his') renderHis() }
       if(now - T.all > (fast ? 60e3 : 180e3)){ T.all = now; await refreshResults(); if(st.scr === 'his') renderHis(); renderHomeCard() }
     }finally{ tickBusy = false }
