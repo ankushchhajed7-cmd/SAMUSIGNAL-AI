@@ -5,7 +5,7 @@ import {analyze, evaluate, isWin, isLoss} from './engine.js';
 import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 
-export const VERSION = '1.0.3';
+export const VERSION = '1.0.4';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -37,25 +37,62 @@ const saveHist = () => LS.set('hist', st.hist.slice(0, 300));
 const K = () => keys();
 
 /* ---------------- charts ---------------- */
+/* v1.0.4: saaf levels — entry = halki gold patti, TP/SL = patli line + chhote pill (aapas me takraate nahi),
+   chart ke bahar wala level kinare pe ↑/↓ ke saath. Pill ke daam right price-scale ke andar nahi (khichdi khatam). */
 function mkChart(el){
   const ch = LightweightCharts.createChart(el, {autoSize: true,
-    layout: {background: {type: 'solid', color: 'rgba(0,0,0,0)'}, textColor: '#a39a86', fontFamily: 'Manrope', fontSize: 10},
-    grid: {vertLines: {color: 'rgba(232,195,90,0.05)'}, horzLines: {color: 'rgba(232,195,90,0.05)'}},
-    rightPriceScale: {borderColor: 'rgba(232,195,90,0.15)', scaleMargins: {top: 0.08, bottom: 0.18}},
-    timeScale: {borderColor: 'rgba(232,195,90,0.15)', timeVisible: true, secondsVisible: false, rightOffset: 4},
+    layout: {background: {type: 'solid', color: 'rgba(0,0,0,0)'}, textColor: '#8f8775', fontFamily: 'Manrope', fontSize: 10, attributionLogo: false},
+    grid: {vertLines: {visible: false}, horzLines: {color: 'rgba(232,195,90,0.05)'}},
+    rightPriceScale: {borderVisible: false, scaleMargins: {top: 0.12, bottom: 0.22}},
+    timeScale: {borderVisible: false, timeVisible: true, secondsVisible: false, rightOffset: 14, barSpacing: 7},
     localization: {locale: 'en-US', timeFormatter: t => new Date(t * 1000).toISOString().slice(11, 16)},
     crosshair: {mode: 0}, handleScale: {axisPressedMouseMove: true}});
-  const s = ch.addCandlestickSeries({upColor: '#2fe08a', downColor: '#ff5d6c', borderVisible: false, wickUpColor: '#2fe08a', wickDownColor: '#ff5d6c'});
-  return {ch, s, lines: [], sym: '', set(bars, sym){
-    const sp = SPECS[sym]; if(sym !== this.sym){ s.applyOptions({priceFormat: {type: 'price', precision: sp.d, minMove: Math.pow(10, -sp.d)}}); this.sym = sym; ch.priceScale('right').applyOptions({autoScale: true}) }
+  const s = ch.addCandlestickSeries({upColor: '#2fe08a', downColor: '#ff5d6c', borderVisible: false, wickUpColor: '#2fe08a', wickDownColor: '#ff5d6c',
+    priceLineColor: 'rgba(243,239,230,0.35)', priceLineStyle: 2});
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:2;overflow:hidden';
+  el.appendChild(ov);
+  const C = {ch, s, lines: [], sym: '', sig: null, n: 0, ov};
+  C.set = (bars, sym) => {
+    const sp = SPECS[sym]; if(sym !== C.sym){ s.applyOptions({priceFormat: {type: 'price', precision: sp.d, minMove: Math.pow(10, -sp.d)}}); C.sym = sym; ch.priceScale('right').applyOptions({autoScale: true}) }
     s.setData(bars.map(b => ({time: Math.floor(b.t / 1000) + 19800, open: b.o, high: b.h, low: b.l, close: b.c})));
-  }, levels(sig){
-    this.lines.forEach(l => s.removePriceLine(l)); this.lines = [];
-    if(!sig) return;
-    const L = (price, color, title, style = 2, w = 1) => this.lines.push(s.createPriceLine({price, color, title, lineStyle: style, lineWidth: w, axisLabelVisible: true}));
-    L(sig.zone[0], '#e8c35a', '', 0, 1); L(sig.zone[1], '#e8c35a', 'ENTRY', 0, 2);
-    L(sig.sl, '#ff5d6c', 'SL'); sig.tp.forEach((p, i) => L(p, i ? 'rgba(47,224,138,0.7)' : '#2fe08a', 'TP' + (i + 1), i ? 3 : 2));
-  }, fit(){ ch.timeScale().fitContent() }};
+    C.n = bars.length; C.draw();
+  };
+  C.levels = sig => {
+    C.lines.forEach(l => s.removePriceLine(l)); C.lines = []; C.sig = sig || null;
+    if(sig){
+      const L = (price, color, style) => C.lines.push(s.createPriceLine({price, color, lineStyle: style, lineWidth: 1, axisLabelVisible: false, title: ''}));
+      L(sig.sl, 'rgba(255,93,108,0.75)', 2); sig.tp.forEach((p, i) => L(p, `rgba(47,224,138,${[0.8, 0.55, 0.4][i]})`, i ? 1 : 2));
+    }
+    C.draw();
+  };
+  C.fit = () => { const n = C.n; if(n > 100) ch.timeScale().setVisibleLogicalRange({from: n - 80, to: n + 14}); else ch.timeScale().fitContent() };
+  C.draw = () => {
+    const g = C.sig; if(!g || !C.sym){ ov.innerHTML = ''; return }
+    let W = 0, H = el.clientHeight; try{ W = ch.priceScale('right').width(); H = el.clientHeight - ch.timeScale().height() }catch(e){}
+    const y = p => s.priceToCoordinate(p), f = v => fmtS(C.sym, v);
+    const top = y(Math.max(g.zone[0], g.zone[1])), bot = y(Math.min(g.zone[0], g.zone[1]));
+    let html = '';
+    if(top !== null && bot !== null){
+      const t = Math.max(0, Math.min(top, bot)), h = Math.max(3, Math.abs(bot - top));
+      if(t < H) html += `<div style="position:absolute;left:0;right:${W}px;top:${t}px;height:${h}px;background:linear-gradient(90deg,rgba(232,195,90,0.04),rgba(232,195,90,0.22));border-top:1px solid rgba(232,195,90,0.85);border-bottom:1px solid rgba(232,195,90,0.45)"></div>`;
+    }
+    const tags = [{p: (g.zone[0] + g.zone[1]) / 2, t: (g.dir === 'BUY' ? 'BUY ' : 'SELL ') + f(g.entry), bg: 'linear-gradient(120deg,#f7e08a,#c9971f 45%,#fff6cf 60%,#e8c35a)', c: '#1a1408', k: 0},
+      {p: g.sl, t: 'SL ' + f(g.sl), bg: '#ff5d6c', c: '#2a0a0e', k: 1}]
+      .concat(g.tp.map((p, i) => ({p, t: 'TP' + (i + 1) + ' ' + f(p), bg: ['#2fe08a', 'rgba(47,224,138,0.8)', 'rgba(47,224,138,0.62)'][i], c: '#06140d', k: 2 + i})));
+    const PH = 18, GAP = 2;
+    tags.forEach(x => { const c = y(x.p); x.out = c === null ? 0 : c < PH / 2 ? -1 : c > H - PH / 2 ? 1 : 0; x.y = c === null ? H / 2 : Math.min(H - PH / 2, Math.max(PH / 2, c)) });
+    tags.sort((a, b) => a.y - b.y);
+    for(let i = 1; i < tags.length; i++) if(tags[i].y - tags[i - 1].y < PH + GAP) tags[i].y = tags[i - 1].y + PH + GAP;
+    const over = tags[tags.length - 1].y - (H - PH / 2);
+    if(over > 0) tags.forEach(x => x.y -= over);
+    tags.forEach(x => { html += `<span style="position:absolute;right:${W + 4}px;top:${(x.y - PH / 2).toFixed(1)}px;height:${PH}px;line-height:${PH}px;padding:0 7px;border-radius:6px;font:800 10px Manrope,sans-serif;letter-spacing:.3px;white-space:nowrap;color:${x.c};background:${x.bg};box-shadow:0 2px 8px rgba(0,0,0,0.45)">${x.out < 0 ? '↑ ' : x.out > 0 ? '↓ ' : ''}${x.t}</span>` });
+    ov.innerHTML = html;
+  };
+  ch.timeScale().subscribeVisibleLogicalRangeChange(() => C.draw());
+  let last = '';
+  setInterval(() => { if(!C.sig || document.hidden) return; const k = [s.priceToCoordinate(C.sig.sl), s.priceToCoordinate(C.sig.tp[2]), el.clientHeight].join('|'); if(k !== last){ last = k; C.draw() } }, 250);
+  return C;
 }
 
 /* ---------------- source pill ---------------- */
