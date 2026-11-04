@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#07080b">
+<title>SAMUSIGNAL AI</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#07080b;--card:#0b0c10;--tx:#f3efe6;--mu:#a39a86;--mu2:#7f7866;--gold:#e8c35a;--up:#2fe08a;--dn:#ff5d6c;--dn2:#ff7a86;--line:rgba(232,195,90,0.2);
+--metal:linear-gradient(120deg,#f7e08a 0%,#c9971f 30%,#fff6cf 48%,#b8bcc4 66%,#e8c35a 100%)}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--tx);font-family:Manrope,system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+body{min-height:100dvh;background-color:#07080b;background-image:radial-gradient(circle at 50% 330px, rgba(7,8,11,0) 0 130px, rgba(7,8,11,0.92) 300px),repeating-radial-gradient(circle at 50% 330px, rgba(232,195,90,0.11) 0 1px, rgba(0,0,0,0) 1px 16px),linear-gradient(115deg,rgba(0,0,0,0) 38%,rgba(255,246,207,0.05) 48%,rgba(0,0,0,0) 58%),radial-gradient(120% 50% at 50% -10%, rgba(232,195,90,0.24), rgba(7,8,11,0) 60%),linear-gradient(180deg,#0b0c10 0%,#07080b 100%);background-attachment:fixed}
+button{font-family:inherit;cursor:pointer}
+input,select{font-family:inherit}
+#app{max-width:480px;margin:0 auto;min-height:100dvh;padding-bottom:96px;position:relative}
+.metal{background:var(--metal)}
+.mt{background:var(--metal);-webkit-background-clip:text;background-clip:text;color:transparent}
+.lbl{font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:var(--mu)}
+.h1{font-family:Cinzel,serif;font-weight:700;font-size:22px;letter-spacing:1.5px}
+.mono{font-variant-numeric:tabular-nums}
+.scr{display:none}.scr.on{display:block;animation:fade .25s ease}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+header.top{display:flex;align-items:center;gap:12px;padding:calc(14px + env(safe-area-inset-top)) 18px 6px}
+.ib{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.04);border:1px solid var(--line);color:var(--tx)}
+.live{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;letter-spacing:1px;border-radius:999px;padding:5px 10px;white-space:nowrap}
+.live i{width:6px;height:6px;border-radius:50%}
+.live.on{color:var(--up);border:1px solid rgba(47,224,138,0.55);box-shadow:0 0 12px rgba(47,224,138,0.25)}.live.on i{background:var(--up);box-shadow:0 0 8px var(--up)}
+.live.td{color:var(--gold);border:1px solid rgba(232,195,90,0.55)}.live.td i{background:var(--gold)}
+.live.off{color:var(--dn2);border:1px solid rgba(255,93,108,0.5)}.live.off i{background:var(--dn)}
+.tfs{display:flex;gap:6px;padding:12px 18px 0}
+.tf{flex:1;text-align:center;font-size:12px;font-weight:700;padding:8px 0;border-radius:10px;color:var(--mu);background:rgba(255,255,255,0.04);border:1px solid rgba(232,195,90,0.16)}
+.tf.on{color:#1a1408;border-color:transparent;background:var(--metal)}
+.chartbox{position:relative;height:300px;margin-top:6px}
+.chartbox .fadeb{position:absolute;left:0;right:0;bottom:0;height:70px;background:linear-gradient(180deg,rgba(7,8,11,0),#07080b);pointer-events:none;z-index:3}
+.chartbox .msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--mu);font-size:13px;text-align:center;padding:30px;z-index:2}
+.gb{padding:1px;border-radius:20px;background:var(--metal);box-shadow:0 14px 40px rgba(0,0,0,0.55),0 0 26px rgba(232,195,90,0.16)}
+.gi{border-radius:19px;background:linear-gradient(180deg,#14151a,#0b0c10);padding:14px}
+.card{border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015));border:1px solid rgba(232,195,90,0.22)}
+.chip{flex:1;border-radius:10px;padding:7px 8px;background:rgba(255,255,255,0.05);min-width:0}
+.chip b{display:block;font-size:13px;margin-top:2px;font-variant-numeric:tabular-nums}
+.dirb{font-weight:800;font-size:12px;letter-spacing:1px;border-radius:8px;padding:5px 10px}
+.dirb.BUY{color:#07140d;background:var(--up);box-shadow:0 0 14px rgba(47,224,138,0.35)}
+.dirb.SELL{color:#2a0a0e;background:var(--dn);box-shadow:0 0 14px rgba(255,93,108,0.35)}
+.grade{font-size:12px;font-weight:700;color:var(--gold);border:1px solid rgba(232,195,90,0.5);border-radius:8px;padding:4px 8px}
+.big{font-size:30px;font-weight:800;line-height:1.15;font-variant-numeric:tabular-nums}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 18px 0}
+.tile{border-radius:16px;padding:12px;background:linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015));border:1px solid rgba(232,195,90,0.22)}
+.btn{height:50px;border-radius:14px;border:0;font-weight:800;font-size:14px;letter-spacing:.4px}
+.btn.gold{background:var(--metal);color:#1a1408;box-shadow:0 8px 24px rgba(232,195,90,0.3)}
+.btn.out{background:rgba(232,195,90,0.06);border:1px solid rgba(232,195,90,0.6);color:var(--gold)}
+.btn.green{background:rgba(47,224,138,0.12);border:1px solid rgba(47,224,138,0.6);color:var(--up)}
+.btn:disabled{opacity:.45}
+.pill{font-size:11px;font-weight:700;border-radius:999px;padding:7px 12px;border:1px solid var(--line);color:var(--mu);background:rgba(255,255,255,0.03);white-space:nowrap}
+.pill.on{background:rgba(232,195,90,0.14);color:var(--gold);border-color:rgba(232,195,90,0.55)}
+.chips{display:flex;gap:8px;padding:12px 18px 0;overflow-x:auto;scrollbar-width:none}
+.row{display:flex;align-items:center;gap:12px;padding:12px 14px;border-top:1px solid rgba(232,195,90,0.10)}
+.row:first-child{border-top:0}
+.sr{display:flex;align-items:center;gap:12px;padding:13px 14px;font-size:14px;font-weight:600}.sr+.sr{border-top:1px solid rgba(232,195,90,0.10)}
+.sr em{font-style:normal;margin-left:auto;font-size:12px;color:var(--mu);font-weight:600;text-align:right}
+.tg{width:44px;height:24px;border-radius:999px;position:relative;flex:none;border:0;background:rgba(255,255,255,0.12)}
+.tg i{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--mu);transition:.2s}
+.tg.on{background:var(--up);box-shadow:0 0 10px rgba(47,224,138,0.4)}.tg.on i{left:23px;background:var(--tx)}
+.sec{padding:18px 22px 8px}
+.badge{font-size:11px;font-weight:800;border-radius:6px;padding:3px 7px;white-space:nowrap}
+.b-win{color:#07140d;background:var(--up)}.b-loss{color:#2a0a0e;background:var(--dn2)}.b-pend{color:var(--gold);border:1px solid rgba(232,195,90,0.6)}.b-exp{color:var(--mu);border:1px solid rgba(163,154,134,0.5)}.b-open{color:var(--up);border:1px solid rgba(47,224,138,0.6)}
+.kind{font-size:10px;font-weight:800;border-radius:5px;padding:2px 5px;margin-left:4px}
+.k-mt5{color:#1a1408;background:var(--gold)}.k-man{color:var(--up);border:1px solid rgba(47,224,138,0.6)}.k-shot{color:var(--mu);border:1px solid var(--line)}
+input.f{width:100%;height:44px;border-radius:12px;background:rgba(255,255,255,0.04);border:1px solid rgba(232,195,90,0.25);color:var(--tx);padding:0 12px;font-size:14px}
+nav.bar{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:min(480px,100%);display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-items:end;padding:14px 8px calc(14px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:linear-gradient(180deg,rgba(11,12,16,0.85),#0b0c10);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);z-index:20}
+nav.bar a{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10px;font-weight:700;color:var(--mu);text-decoration:none}
+nav.bar a.on{color:var(--gold)}
+nav.bar .fab{position:relative}
+nav.bar .fab span.c{position:absolute;top:-64px;width:62px;height:62px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--metal);box-shadow:0 0 0 5px #0b0c10,0 10px 28px rgba(232,195,90,0.4)}
+nav.bar .fab b{font-size:10px;font-weight:800;color:var(--gold);letter-spacing:.5px}
+#splash{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:inherit;background-color:#07080b;transition:opacity .4s}
+#splash.hide{opacity:0;pointer-events:none}
+.ov{position:fixed;inset:0;z-index:40;display:none;align-items:flex-end;justify-content:center;background:rgba(3,4,6,0.6);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.ov.on{display:flex}
+.sheet{width:min(480px,100%);max-height:88dvh;overflow:auto;padding:18px 18px calc(18px + env(safe-area-inset-bottom));border-radius:24px 24px 0 0;background:linear-gradient(180deg,#14151a,#0b0c10);border-top:1px solid rgba(232,195,90,0.45);box-shadow:0 -20px 60px rgba(0,0,0,0.6)}
+.step{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mu)}.step.ok{color:var(--tx)}
+.spin{width:16px;height:16px;border-radius:50%;border:2px solid var(--gold);border-right-color:transparent;animation:sp 0.8s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+.prog{height:4px;border-radius:4px;background:rgba(232,195,90,0.15);overflow:hidden}.prog i{display:block;height:100%;background:var(--metal);transition:width .3s}
+#toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%);z-index:70;max-width:90%;padding:10px 16px;border-radius:12px;background:#1b1c22;border:1px solid var(--line);font-size:13px;font-weight:600;display:none;text-align:center}
+.warn{border-radius:12px;padding:10px 12px;font-size:12px;line-height:1.5;background:rgba(255,93,108,0.10);border:1px solid rgba(255,93,108,0.45);color:#ffc3c9}
+.note{font-size:11px;color:var(--mu2);line-height:1.5}
+.acc{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:8px}
+.acc input{width:22px;height:22px;accent-color:#e8c35a}
+</style>
+</head>
+<body>
+<div id="splash"><span id="splashLogo"></span>
+<div class="mt" style="margin-top:12px;font-family:Cinzel,serif;font-weight:700;font-size:30px;letter-spacing:3px">SAMUSIGNAL AI</div>
+<div class="lbl" style="letter-spacing:5px">AI chart signals</div>
+<div style="width:200px;margin-top:30px" class="prog"><i style="width:65%"></i></div>
+<div class="note" style="margin-top:6px">Loading live markets…</div></div>
+
+<div id="app">
+<!-- HOME -->
+<section class="scr on" id="s-home">
+<header class="top"><span id="hLogo"></span>
+<div style="flex:1;min-width:0"><div class="mt" style="font-family:Cinzel,serif;font-weight:700;font-size:19px;letter-spacing:1.5px;white-space:nowrap">SAMUSIGNAL AI</div><div class="lbl">AI chart signals</div></div>
+<span class="live off" id="srcPill"><i></i>OFF</span></header>
+<section style="display:flex;justify-content:space-between;align-items:flex-end;padding:8px 18px 0">
+<button id="pairBtn" style="background:none;border:0;color:inherit;padding:0;text-align:left"><div style="font-size:24px;font-weight:800;display:flex;align-items:center;gap:6px"><span id="hPair">EURUSD</span><span id="icDown"></span></div><div style="font-size:12px;color:var(--mu)" id="hTitle"></div></button>
+<div style="text-align:right"><div style="font-size:26px;font-weight:800" class="mono" id="hPx">—</div><div style="font-size:12px;font-weight:700" id="hChg"></div></div></section>
+<div class="tfs" id="tfs"></div>
+<div class="chartbox" id="hChart"><div class="msg" id="hMsg">Loading…</div><div class="fadeb"></div></div>
+<div id="hCard" style="position:relative;margin:-56px 18px 0;z-index:4"></div>
+<div class="tiles"><div class="tile" style="display:flex;align-items:center;gap:10px"><span id="hGauge"></span><div><div class="lbl">Sentiment</div><div style="font-weight:800;font-size:15px;color:var(--up);white-space:nowrap" id="hBuy">BUY —</div><div style="font-size:11px;font-weight:700;color:var(--dn2)" id="hSell">SELL —</div></div></div>
+<div class="tile"><div class="lbl">Market</div><div style="font-size:14px;font-weight:800;margin-top:4px" id="hReg">—</div><div style="font-size:11px;color:var(--mu);margin-top:3px" id="hReg2">15m + 1H</div></div></div>
+<div class="note" style="text-align:center;padding:14px 18px 0" id="hSrc"></div>
+</section>
+
+<!-- RESULT -->
+<section class="scr" id="s-res">
+<header class="top"><button class="ib" id="resBack"></button><div class="h1 mt" style="flex:1">Signal</div><span id="resKind"></span></header>
+<div style="display:flex;justify-content:space-between;align-items:baseline;padding:10px 18px 0"><div style="font-size:13px;color:var(--mu)" id="rMeta"></div><div style="font-size:12px;font-weight:700;color:var(--gold)" id="rLeft"></div></div>
+<div class="chartbox" id="rChart" style="height:250px"><div class="fadeb"></div></div>
+<div id="rCard" style="position:relative;margin:-48px 18px 0;z-index:4"></div>
+<div class="card" style="margin:12px 18px 0;padding:12px 14px"><div class="lbl">Why this signal</div><div id="rWhy" style="display:flex;flex-direction:column;gap:6px;margin-top:8px;font-size:13px"></div><div id="rAi" style="margin-top:10px;font-size:12px"></div></div>
+<div id="rStatus"></div>
+<div style="display:flex;gap:10px;padding:12px 18px 0"><button class="btn out" style="flex:1" id="bRe">🔄 Re-analyze</button><button class="btn gold" style="flex:1.4" id="bMt5">🚀 MT5 पे लगाओ</button></div>
+<div style="padding:10px 18px 0"><button class="btn green" style="width:100%" id="bTook">✋ मैंने ट्रेड लिया</button></div>
+<div class="note" style="padding:10px 22px 0">MT5 order PERSONAL FX लगाता है — lot, TP/SL और grid PERSONAL FX के अपने नियम से। ऊपर का SL/TP सिग्नल का है (History में नतीजा इसी से)।</div>
+</section>
+
+<!-- HISTORY -->
+<section class="scr" id="s-his">
+<header class="top"><div class="h1 mt" style="flex:1">History</div><button class="ib" id="hisRef"></button></header>
+<div class="gb" style="margin:12px 18px 0"><div class="gi"><div style="display:flex;align-items:flex-end;gap:14px"><div><div class="lbl">Win rate · 7 days</div><div class="mt" style="font-size:38px;font-weight:800;line-height:1.05" id="stWin">—</div></div>
+<div style="margin-left:auto;display:grid;grid-template-columns:repeat(3,auto);gap:4px 16px;text-align:right" class="mono"><span class="lbl">Signals</span><span class="lbl">Won</span><span class="lbl">Lost</span><b style="font-size:17px" id="stN">0</b><b style="font-size:17px;color:var(--up)" id="stW">0</b><b style="font-size:17px;color:var(--dn2)" id="stL">0</b></div></div>
+<div class="lbl" style="margin-top:12px">Last 10 results</div><div style="display:flex;gap:4px;margin-top:6px" id="stDots"></div></div></div>
+<div class="chips" id="hf"></div><div class="chips" id="hk" style="padding-top:8px"></div>
+<div class="card" style="margin:12px 18px 0;overflow:hidden" id="hList"></div>
+<div class="note" style="text-align:center;padding-top:10px">नतीजा live candles से अपने आप भरता है (fill → TP / SL)</div>
+</section>
+
+<!-- PAIRS -->
+<section class="scr" id="s-pairs">
+<header class="top"><div class="h1 mt" style="flex:1">Pairs</div></header>
+<div style="margin:12px 18px 0"><input class="f" id="pSearch" placeholder="Search pair…" autocomplete="off"></div>
+<div class="chips" id="ptabs"></div>
+<div style="margin:12px 18px 0" id="pList"></div>
+</section>
+
+<!-- SETTINGS -->
+<section class="scr" id="s-set">
+<header class="top"><div class="h1 mt" style="flex:1">Settings</div></header>
+<div class="lbl sec">Keys · SamuSignal से अपने आप</div><div class="card" style="margin:0 18px" id="kList"></div>
+<div class="lbl sec">MT5 accounts · PERSONAL FX</div><div class="card" style="margin:0 18px" id="aList"></div>
+<div class="lbl sec">Signals</div><div class="card" style="margin:0 18px" id="prefs"></div>
+<div class="lbl sec">Keys खुद डालें (सिर्फ़ अगर SamuSignal से नहीं आ रहीं)</div>
+<div class="card" style="margin:0 18px;padding:14px;display:flex;flex-direction:column;gap:8px">
+<input class="f" type="password" id="ovFb" placeholder="Firebase URL" autocomplete="off"><input class="f" type="password" id="ovFa" placeholder="Firebase Auth" autocomplete="off">
+<input class="f" type="password" id="ovTd" placeholder="TwelveData key" autocomplete="off"><input class="f" type="password" id="ovG" placeholder="Gemini key" autocomplete="off">
+<button class="btn out" id="ovSave">Save</button><div class="note">ये keys सिर्फ़ इसी फ़ोन के browser में रहती हैं — कहीं भेजी नहीं जातीं। खाली छोड़ें = SamuSignal वाली।</div></div>
+<div class="lbl sec">App</div><div class="card" style="margin:0 18px"><div class="sr">Version<em id="ver"></em></div><div class="sr" id="clrHist" style="color:var(--dn2)">History साफ़ करें</div></div>
+<div class="note" style="padding:14px 22px 0">Trading में जोखिम है। ये सिग्नल analysis हैं, गारंटी नहीं। REAL account पर छोटा lot रखें।</div>
+</section>
+</div>
+
+<nav class="bar" id="nav">
+<a href="#" data-s="home" class="on"><span data-ic="chart"></span>Chart</a><a href="#" data-s="his"><span data-ic="clock"></span>History</a>
+<a href="#" class="fab" id="fab"><span class="c" data-ic="spark"></span><b>ANALYZE</b></a>
+<a href="#" data-s="pairs"><span data-ic="list"></span>Pairs</a><a href="#" data-s="set"><span data-ic="gear"></span>Settings</a></nav>
+
+<!-- SCAN -->
+<div class="ov" id="scan"><div class="sheet"><div style="display:flex;align-items:center;gap:10px"><span class="metal" style="width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center" data-ic="spark"></span>
+<div><div style="font-weight:800;font-size:15px">AI is reading the chart…</div><div class="note" id="scSub"></div></div><span class="mt" style="margin-left:auto;font-size:20px;font-weight:800" id="scPct">0%</span></div>
+<div class="prog" style="margin-top:12px"><i id="scBar" style="width:0"></i></div>
+<div id="scSteps" style="display:flex;flex-direction:column;gap:9px;margin-top:14px"></div>
+<div style="display:flex;gap:8px;margin-top:16px"><label class="btn out" style="flex:1;display:flex;align-items:center;justify-content:center">📷 Screenshot<input type="file" accept="image/*" id="shotIn" hidden></label><button class="btn out" style="flex:1" id="scCancel">Cancel</button></div></div></div>
+
+<!-- GENERIC SHEET -->
+<div class="ov" id="dlg"><div class="sheet"><div class="h1 mt" id="dlgT" style="font-size:19px"></div><div id="dlgB" style="margin-top:12px;font-size:14px;line-height:1.55"></div>
+<div style="display:flex;gap:10px;margin-top:16px"><button class="btn out" style="flex:1" id="dlgNo">Cancel</button><button class="btn gold" style="flex:1.4" id="dlgOk">OK</button></div></div></div>
+<div id="toast"></div>
+
+<script src="vendor/lightweight-charts-4.2.0.js"></script>
+<script type="module" src="src/app.js"></script>
+<script>if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{})</script>
+</body>
+</html>
