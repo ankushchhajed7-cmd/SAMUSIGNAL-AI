@@ -19,7 +19,7 @@ test('uptrend -> BUY LIMIT below live, SL below, TPs above', () => {
   const s = analyze({b15, b1h, live, spec, now: 1.8e12});
   assert.equal(s.dir, 'BUY');
   assert.ok(s.entry < live, 'buy limit below live');
-  assert.ok(s.sl < s.entry && s.tp[0] > s.entry && s.tp[2] > s.tp[1]);
+  assert.ok(s.sl < s.entry && s.tp[0] > s.entry); assert.equal(s.tp.length, 1);
   assert.ok(['A', 'B', 'C'].includes(s.grade));
 });
 test('downtrend -> SELL LIMIT above live', () => {
@@ -39,15 +39,17 @@ test('impulse leg order', () => {
   const L = impulse(b, 1, 48);
   assert.ok(L.iS <= L.iE && L.hi > L.lo);
 });
-test('evaluate: fill then TP2, SL, expired', () => {
-  const sig = {dir: 'BUY', entry: 1.1000, sl: 1.0980, tp: [1.1020, 1.1040, 1.1060], at: 0, exp: 60};
-  const bar = (t, h, l) => ({t: t * 60000, o: l, h, l, c: h});
-  assert.equal(evaluate(sig, [bar(5, 1.1010, 1.0999), bar(10, 1.1045, 1.1001), bar(15, 1.1030, 1.0970)], 1e9).state, 'TP2');
-  assert.equal(evaluate(sig, [bar(5, 1.1010, 1.0999), bar(10, 1.1005, 1.0975)], 1e9).state, 'SL');
+test('evaluate: TP1 only — fill then TP, SL, expired, pending', () => {
+  const sig = {dir: 'BUY', entry: 1.1000, sl: 1.0980, tp: [1.1020], at: 0, exp: 60};
+  const bar = (t, h, l, c) => ({t: t * 60000, o: l, h, l, c: c === undefined ? h : c});
+  assert.equal(evaluate(sig, [bar(5, 1.1010, 1.0999, 1.1005), bar(10, 1.1025, 1.1001)], 1e9).state, 'TP1');
+  assert.equal(evaluate(sig, [bar(5, 1.1010, 1.0999, 1.1005), bar(10, 1.1005, 1.0975)], 1e9).state, 'SL');
   assert.equal(evaluate(sig, [bar(5, 1.1050, 1.1010), bar(70, 1.1050, 1.0990)], 1e9).state, 'EXPIRED');
   assert.equal(evaluate(sig, [bar(5, 1.1050, 1.1010)], 30 * 60000).state, 'PENDING');
-  const sell = {dir: 'SELL', entry: 1.1, sl: 1.102, tp: [1.098, 1.096, 1.094], at: 0, exp: 60};
-  assert.equal(evaluate(sell, [bar(5, 1.1001, 1.099), bar(9, 1.099, 1.0935)], 1e9).state, 'TP3');
+  /* fill wali candle ka high TP se upar, par close neeche -> TP nahi maana */
+  assert.equal(evaluate(sig, [bar(5, 1.1030, 1.0999, 1.1001)], 1e9).state, 'OPEN');
+  const sell = {dir: 'SELL', entry: 1.1, sl: 1.102, tp: [1.098], at: 0, exp: 60};
+  assert.equal(evaluate(sell, [bar(5, 1.1001, 1.099, 1.0995), bar(9, 1.099, 1.0975)], 1e9).state, 'TP1');
 });
 
 test('78.6% entry is never Grade A', () => {
