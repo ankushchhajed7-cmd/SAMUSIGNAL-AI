@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.2.0';
+export const VERSION = '1.3.0';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -185,11 +185,20 @@ function scanUI(i, sub){
 const wait = ms => new Promise(r => setTimeout(r, ms));
 /* v1.2.0: ek pair pe ek hi chaalu signal — TP / SL (ya fill na hua = EXPIRED) aane tak naya History me nahi */
 const isActive = r => r.res ? (r.res.state === 'PENDING' || r.res.state === 'OPEN') : Date.now() < r.expiresAt;
+/* v1.2.2: real-time nateeja — MT5 feed chalu ho to 1-min candles (Exness ka exact bhaav, ~4 ghante tak), warna 5-min */
+async function evalSym(sym, recs){
+  if(!recs.length || !SPECS[sym]) return;
+  const s = K(), now = Date.now(), oldest = Math.min(...recs.map(r => r.at));
+  let d = null;
+  if(LS.get('src', 'auto') !== 'td' && now - oldest < 3.8 * 3600e3 && (await feedStatus(s)).ok){
+    try{ const x = await series(s, sym, '1min', 250); if(x.src === 'mt5' && x.bars.length && x.bars[0].t <= oldest) d = x }catch(e){}
+  }
+  if(!d) d = await series(s, sym, '5min', 300);
+  recs.forEach(r => { r.res = Object.assign(evaluate(r, d.bars, now, SPECS[sym].pip), {src: d.src, at: now}) });
+}
 async function activeFor(sym){
   const todo = st.hist.filter(r => r.sym === sym && !(r.res && r.res.done));
-  if(todo.length && SPECS[sym]){
-    try{ const d = await series(K(), sym, '5min', 300), now = Date.now(); todo.forEach(r => { r.res = evaluate(r, d.bars, now, SPECS[sym].pip) }); saveHist() }catch(e){}
-  }
+  if(todo.length && SPECS[sym]){ try{ await evalSym(sym, todo); saveHist() }catch(e){} }
   return st.hist.find(r => r.sym === sym && isActive(r)) || null;
 }
 const busyMsg = r => `⏳ ${SPECS[r.sym] ? SPECS[r.sym].n : r.sym} पर पहला signal अभी चालू है (${r.res && r.res.state === 'OPEN' ? 'trade चालू' : 'entry का इंतज़ार'}) — TP या SL आने तक नया नहीं`;
@@ -208,7 +217,8 @@ async function runAnalyze(sym = st.pair){
     const live = (q[sym] && q[sym].p) || a.bars[a.bars.length - 1].c;
     const sig = analyze({b15: a.bars, b1h: b.bars, live, spec: SPECS[sym]});
     scanUI(2); await wait(350); scanUI(3); await wait(300); if(cancelled) return;
-    const rec = Object.assign({id: 'r' + Date.now().toString(36), sym, tf: '15m', src: a.src, sent: [], taken: null, res: null, ai: null}, sig);
+    const rec = Object.assign({id: 'r' + Date.now().toString(36), sym, tf: '15m', src: a.src, sent: [], res: null, ai: null}, sig);
+    rec.taken = {at: rec.at, px: rec.entry, auto: true};   /* v1.3.0: har analysis apne aap "trade liya" (app record) — button nahi */
     st.hist.unshift(rec); saveHist();
     scanUI(4); await wait(200);
     $('scan').classList.remove('on');
@@ -234,7 +244,7 @@ async function fromShot(file){
     const rec = {id: 'r' + Date.now().toString(36), sym: sym || String(j.symbol || '?'), tf: j.timeframe || '?', src: 'shot', dir: j.dir, type: j.dir + ' LIMIT',
       entry: r(entry), zone: (D > 0 ? [entry - w, entry] : [entry, entry + w]).map(r), sl: r(j.sl), tp: [j.tp1, j.tp2, j.tp3].map(r), rr: '1 : 2', grade,
       buyPct: D > 0 ? 60 : 40, sellPct: D > 0 ? 40 : 60, regime: '—', danger: '—', live: r(cur), reasons: [String(j.reason || 'Screenshot analysis').slice(0, 160)],
-      at: Date.now(), exp: 60, expiresAt: Date.now() + 3600e3, sent: [], taken: null, res: null, ai: null};
+      at: Date.now(), exp: 60, expiresAt: Date.now() + 3600e3, sent: [], taken: {at: Date.now(), px: r(entry), auto: true}, res: null, ai: null};
     st.hist.unshift(rec); saveHist(); $('scan').classList.remove('on'); openRes(rec.id);
   }catch(e){ $('scan').classList.remove('on'); dlg('Screenshot नहीं पढ़ा गया', esc(e.message), 'OK', '') }
 }
@@ -246,18 +256,19 @@ async function openRes(id){
   st.cur = id; show('res');
   const S = r.sym, sp = SPECS[S];
   $('rMeta').innerHTML = `<b style="color:var(--tx);font-size:16px">${esc(sp ? sp.n : S)}</b> · ${esc(r.tf)} · ${istD(r.at)} ${ist(r.at)}`;
-  $('resKind').innerHTML = (r.sent.length ? '<span class="kind k-mt5">MT5</span>' : '') + (r.taken ? '<span class="kind k-man">✋ लिया</span>' : '');
+  $('resKind').innerHTML = r.sent.length ? '<span class="kind k-mt5">MT5</span>' : '';
   $('rCard').innerHTML = sigCard(r);
   $('rWhy').innerHTML = r.reasons.map(t => `<div style="display:flex;gap:8px"><span style="color:var(--gold)">◆</span>${esc(t)}</div>`).join('') +
     (r.src !== 'shot' ? `<div style="display:flex;gap:8px"><span style="color:var(--gold)">◆</span>Regime: ${esc(r.regime)} · Danger: ${esc(r.danger)} · Buy ${r.buyPct}% / Sell ${r.sellPct}%</div>` : '');
   renderAi(r); renderStatus(r);
-  $('bMt5').disabled = !sp; $('bTook').textContent = r.taken ? '✋ लिया हुआ ✓ (हटाने के लिए दबाएँ)' : '✋ मैंने ट्रेड लिया';
+  $('bMt5').disabled = !sp;
   clearInterval(leftT);
   const tick = () => { const ms = r.expiresAt - Date.now(); $('rLeft').textContent = ms > 0 ? `Valid ${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')} left` : 'Expired'; };
   tick(); leftT = setInterval(tick, 1000);
   if(!resChart) resChart = mkChart($('rChart'));
   resChart.levels(null);
   if(sp){ try{ const d = await series(K(), S, '15min', 250); if(st.cur !== id) return; resChart.set(d.bars, S); resChart.levels(r); resChart.fit() }catch(e){} }
+  if(sp && !(r.res && r.res.done)){ await activeFor(S); if(st.cur === id) renderStatus(r) }   /* v1.2.1: khulte hi taaza nateeja */
   if(r.sent.length) refreshOrders();
 }
 function renderAi(r){
@@ -270,8 +281,8 @@ function renderStatus(r){
   const box = $('rStatus');
   const rows = r.sent.map(o => { const s = ORDER_ST[o.status || 'NEW'] || [o.status, 'mu'];
     return `<div class="sr">🚀 ${o.acct ? (o.real ? 'REAL ' : 'DEMO ') + esc(o.acct) : 'PERSONAL FX'}<em style="color:var(--${s[1] === 'mu' ? 'mu' : s[1] === 'up' ? 'up' : s[1] === 'dn' ? 'dn2' : 'gold'})">${esc(s[0])}</em></div>` }).join('');
-  const tk = r.taken ? `<div class="sr">✋ आपने लिया · ${ist(r.taken.at)}<em>@ ${fmt(r.sym, r.taken.px)}</em></div>` : '';
-  const res = r.res ? `<div class="sr">📊 नतीजा<em><b style="color:${isWin(r.res.state) ? 'var(--up)' : isLoss(r.res.state) ? 'var(--dn2)' : 'var(--gold)'}">${esc(resLabel(r))}</b>${r.res.pips ? ' · ' + (r.res.pips > 0 ? '+' : '') + r.res.pips.toFixed(1) + ' pips' : ''}</em></div>` : '';
+  const tk = r.taken ? `<div class="sr">📋 Trade record · ${ist(r.taken.at)}<em>${r.dir} LIMIT @ ${fmtS(r.sym, r.entry)} · SL ${fmtS(r.sym, r.sl)} · TP ${r.tp.map(p => fmtS(r.sym, p)).join(' / ')}</em></div>` : '';
+  const res = r.res ? `<div class="sr">📊 नतीजा${r.res.at ? ` <span class="note">· ${ist(r.res.at, true)} ${r.res.src === 'mt5' ? 'MT5' : 'TD'}</span>` : ''}<em><b style="color:${isWin(r.res.state) ? 'var(--up)' : isLoss(r.res.state) ? 'var(--dn2)' : 'var(--gold)'}">${esc(resLabel(r))}</b>${r.res.pips ? ' · ' + (r.res.pips > 0 ? '+' : '') + r.res.pips.toFixed(1) + ' pips' : ''}</em></div>` : '';
   box.innerHTML = rows || tk || res ? `<div class="card" style="margin:12px 18px 0">${rows}${tk}${res}</div>` : '';
 }
 async function refreshOrders(){
@@ -315,24 +326,13 @@ ${real ? '<div class="warn" style="margin-top:10px">💰 REAL account — अस
     setTimeout(refreshOrders, 8000); setTimeout(refreshOrders, 25000);
   }catch(e){ dlg('नहीं भेजा', esc(e.message), 'OK', '') }
 }
-async function onTook(){
-  const r = st.hist.find(x => x.id === st.cur); if(!r) return;
-  if(r.taken){ if(await dlg('Record हटाएँ?', '"मैंने ट्रेड लिया" का निशान हटेगा।', 'हटाओ', 'Cancel')){ r.taken = null; saveHist(); openRes(r.id) } return }
-  const ok = await dlg('✋ मैंने ट्रेड लिया', `${esc(SPECS[r.sym] ? SPECS[r.sym].n : r.sym)} · ${r.dir}<div class="lbl" style="margin-top:12px">किस भाव पर लिया?</div><input class="f mono" id="tkPx" inputmode="decimal" value="${r.entry}" style="margin-top:6px">`, 'Save', 'Cancel');
-  if(!ok) return;
-  const px = parseFloat(String(document.getElementById('tkPx').value).replace(',', '.'));
-  r.taken = {at: Date.now(), px: isFinite(px) ? px : r.entry}; saveHist(); toast('✅ Record हो गया — नतीजा History में'); openRes(r.id);
-}
-
 /* ---------------- HISTORY ---------------- */
 async function refreshResults(){
   const s = K(), now = Date.now();
   const todo = st.hist.filter(r => SPECS[r.sym] && !(r.res && r.res.done) && now - r.at < 48 * 3600e3);
   const syms = [...new Set(todo.map(r => r.sym))].slice(0, (await feedStatus(s)).ok ? 12 : 3);
   for(const sym of syms){
-    try{ const d = await series(s, sym, '5min', 300);
-      todo.filter(r => r.sym === sym).forEach(r => { r.res = evaluate(r, d.bars, now, SPECS[sym].pip) });
-    }catch(e){}
+    try{ await evalSym(sym, todo.filter(r => r.sym === sym)) }catch(e){}
   }
   st.hist.filter(r => !(r.res && r.res.done) && now - r.at >= 48 * 3600e3).forEach(r => { r.res = Object.assign({}, r.res || {state: 'EXPIRED'}, {done: true}) });
   saveHist(); await refreshOrders();
@@ -344,12 +344,12 @@ function renderHis(){
   const last = st.hist.filter(r => r.res && (isWin(r.res.state) || isLoss(r.res.state))).slice(0, 10);
   $('stDots').innerHTML = last.length ? last.map(r => `<span style="flex:1;height:16px;border-radius:4px;background:${isWin(r.res.state) ? 'var(--up)' : 'var(--dn)'}"></span>`).join('') : '<span class="note">अभी कोई पूरा नतीजा नहीं</span>';
   $('hf').innerHTML = [['all', 'All'], ['won', 'Won'], ['lost', 'Lost'], ['pend', 'Pending']].map(([k, t]) => `<button class="pill${st.hf === k ? ' on' : ''}" data-hf="${k}">${t}</button>`).join('');
-  $('hk').innerHTML = [['all', 'सब'], ['mt5', '🚀 MT5'], ['man', '✋ खुद लिया'], ['sig', 'सिर्फ़ signal']].map(([k, t]) => `<button class="pill${st.hk === k ? ' on' : ''}" data-hk="${k}">${t}</button>`).join('');
+  $('hk').innerHTML = [['all', 'सब'], ['mt5', '🚀 MT5 पे गए'], ['app', '📱 सिर्फ़ app']].map(([k, t]) => `<button class="pill${st.hk === k ? ' on' : ''}" data-hk="${k}">${t}</button>`).join('');
   const L = st.hist.filter(r => {
     const s = r.res && r.res.state;
     if(st.hf === 'won' && !isWin(s)) return false; if(st.hf === 'lost' && !isLoss(s)) return false;
     if(st.hf === 'pend' && (isWin(s) || isLoss(s) || s === 'EXPIRED')) return false;
-    if(st.hk === 'mt5' && !r.sent.length) return false; if(st.hk === 'man' && !r.taken) return false; if(st.hk === 'sig' && (r.sent.length || r.taken)) return false;
+    if(st.hk === 'mt5' && !r.sent.length) return false; if(st.hk === 'app' && r.sent.length) return false;
     return true }).slice(0, 80);
   $('hList').innerHTML = L.length ? L.map(r => {
     const s = r.res && r.res.state, B = r.dir === 'BUY';
@@ -357,7 +357,7 @@ function renderHis(){
     const pip = r.res && r.res.pips ? (r.res.pips > 0 ? '+' : '') + r.res.pips.toFixed(1) + ' pips' : s === 'EXPIRED' ? 'not filled' : '—';
     return `<div class="row" data-open="${r.id}"><span style="width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:${B ? 'var(--up)' : 'var(--dn)'};background:${B ? 'rgba(47,224,138,0.12)' : 'rgba(255,93,108,0.12)'}">${r.dir}</span>
 <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:14px">${esc(SPECS[r.sym] ? SPECS[r.sym].n : r.sym)} <span style="font-size:11px;font-weight:600;color:var(--mu)">LIMIT · ${istD(r.at)} ${ist(r.at)}</span></div>
-<div style="font-size:11px;color:var(--mu)" class="mono">Entry ${fmtS(r.sym, r.entry)} · Grade ${r.grade}${r.sent.length ? '<span class="kind k-mt5">MT5</span>' : ''}${r.taken ? '<span class="kind k-man">✋</span>' : ''}${r.src === 'shot' ? '<span class="kind k-shot">📷</span>' : ''}</div></div>
+<div style="font-size:11px;color:var(--mu)" class="mono">Entry ${fmtS(r.sym, r.entry)} · Grade ${r.grade}${r.sent.length ? '<span class="kind k-mt5">MT5</span>' : ''}${r.src === 'shot' ? '<span class="kind k-shot">📷</span>' : ''}</div></div>
 <div style="text-align:right"><span class="badge ${bc}">${bt}</span><div class="mono" style="font-size:12px;font-weight:700;margin-top:4px;color:${isWin(s) ? 'var(--up)' : isLoss(s) ? 'var(--dn2)' : 'var(--mu)'}">${pip}</div></div></div>` }).join('')
     : '<div class="row" style="justify-content:center;color:var(--mu);font-size:13px;padding:24px">अभी कुछ नहीं — ANALYZE दबाकर पहला signal लें</div>';
 }
@@ -530,7 +530,7 @@ function boot(){
   document.body.addEventListener('click', e => { const o = e.target.closest('[data-open]'); if(o) openRes(o.dataset.open) });
   $('resBack').onclick = () => show(st.hist.find(x => x.id === st.cur && x.sym === st.pair) ? 'home' : 'his');
   $('bRe').onclick = () => { const r = st.hist.find(x => x.id === st.cur); if(r && SPECS[r.sym]){ st.pair = r.sym; LS.set('pair', r.sym); runAnalyze(r.sym) } };
-  $('bMt5').onclick = onMt5; $('bTook').onclick = onTook;
+  $('bMt5').onclick = onMt5;
   $('hisRef').onclick = async () => { toast('Refreshing…'); await refreshResults(); renderHis() };
   $('hf').onclick = e => { const b = e.target.closest('[data-hf]'); if(b){ st.hf = b.dataset.hf; renderHis() } };
   $('hk').onclick = e => { const b = e.target.closest('[data-hk]'); if(b){ st.hk = b.dataset.hk; renderHis() } };
@@ -557,9 +557,17 @@ function boot(){
   if(!LS.get('reset120', false)){ st.hist = []; saveHist(); LS.set('reset120', true) }
   setTimeout(() => $('splash').classList.add('hide'), 900);
   loadHome();
-  setInterval(() => { if(document.hidden) return;
-    if(st.scr === 'home') loadHome(true);
-    if(st.scr === 'res') refreshOrders() }, st.src === 'td' ? 60000 : 12000);
-  setInterval(() => { if(!document.hidden) refreshResults().then(() => { if(st.scr === 'his') renderHis(); renderHomeCard() }) }, 120000);
+  /* v1.2.2: real-time tick — MT5 feed (free) pe tez, TwelveData pe credit bachakar */
+  const T = {home: 0, res: 0, his: 0, all: 0}; let tickBusy = false;
+  setInterval(async () => { if(document.hidden || tickBusy) return; tickBusy = true;
+    try{
+      const now = Date.now(), fast = st.src !== 'td';
+      if(st.scr === 'home' && now - T.home > (fast ? 12e3 : 60e3)){ T.home = now; loadHome(true) }
+      if(st.scr === 'res' && now - T.res > (fast ? 15e3 : 60e3)){ T.res = now; const r = st.hist.find(x => x.id === st.cur);
+        if(r && SPECS[r.sym] && !(r.res && r.res.done)){ await activeFor(r.sym); if(st.cur === r.id) renderStatus(r) } refreshOrders() }
+      if(st.scr === 'his' && now - T.his > (fast ? 30e3 : 120e3)){ T.his = now; await refreshResults(); if(st.scr === 'his') renderHis() }
+      if(now - T.all > (fast ? 60e3 : 180e3)){ T.all = now; await refreshResults(); if(st.scr === 'his') renderHis(); renderHomeCard() }
+    }finally{ tickBusy = false }
+  }, 5000);
 }
 boot();
