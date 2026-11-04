@@ -5,7 +5,7 @@ import {analyze, evaluate, isWin, isLoss} from './engine.js';
 import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 
-export const VERSION = '1.0.5';
+export const VERSION = '1.0.6';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -40,6 +40,7 @@ const K = () => keys();
 /* v1.0.4: saaf levels — entry = halki gold patti, TP/SL = patli line + chhote pill (aapas me takraate nahi),
    chart ke bahar wala level kinare pe ↑/↓ ke saath. Pill ke daam right price-scale ke andar nahi (khichdi khatam). */
 function mkChart(el){
+  const LV = {sig: null};
   const ch = LightweightCharts.createChart(el, {autoSize: true,
     layout: {background: {type: 'solid', color: 'rgba(0,0,0,0)'}, textColor: '#8f8775', fontFamily: 'Manrope', fontSize: 10, attributionLogo: false},
     grid: {vertLines: {visible: false}, horzLines: {color: 'rgba(232,195,90,0.05)'}},
@@ -48,7 +49,11 @@ function mkChart(el){
     localization: {locale: 'en-US', timeFormatter: t => new Date(t * 1000).toISOString().slice(11, 16)},
     crosshair: {mode: 0}, handleScale: {axisPressedMouseMove: true}});
   const s = ch.addCandlestickSeries({upColor: '#2fe08a', downColor: '#ff5d6c', borderVisible: false, wickUpColor: '#2fe08a', wickDownColor: '#ff5d6c',
-    priceLineColor: 'rgba(243,239,230,0.35)', priceLineStyle: 2});
+    priceLineColor: 'rgba(243,239,230,0.35)', priceLineStyle: 2,
+    /* v1.0.6: auto-scale me SL se T3 tak saare level shaamil — har line chart pe dikhe */
+    autoscaleInfoProvider: orig => { const r = orig(), g = LV.sig; if(!r || !r.priceRange || !g) return r;
+      const all = [g.sl, ...g.tp, ...g.zone].filter(v => isFinite(v));
+      r.priceRange.minValue = Math.min(r.priceRange.minValue, ...all); r.priceRange.maxValue = Math.max(r.priceRange.maxValue, ...all); return r }});
   const ov = document.createElement('div');
   ov.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:2;overflow:hidden';
   el.appendChild(ov);
@@ -59,7 +64,8 @@ function mkChart(el){
     C.n = bars.length; C.draw();
   };
   C.levels = sig => {
-    C.lines.forEach(l => s.removePriceLine(l)); C.lines = []; C.sig = sig || null;
+    C.lines.forEach(l => s.removePriceLine(l)); C.lines = []; C.sig = sig || null; LV.sig = C.sig;
+    ch.priceScale('right').applyOptions({autoScale: true});
     if(sig){
       const L = (price, color, style) => C.lines.push(s.createPriceLine({price, color, lineStyle: style, lineWidth: 1, axisLabelVisible: false, title: ''}));
       L(sig.sl, 'rgba(255,93,108,0.75)', 2); sig.tp.forEach(p => L(p, 'rgba(47,224,138,0.65)', 2));
@@ -82,11 +88,15 @@ function mkChart(el){
       .concat(g.tp.map((p, i) => ({p, t: 'T' + (i + 1), bg: 'rgba(7,8,11,0.85)', c: '#2fe08a', bd: '1px solid rgba(47,224,138,0.7)', sm: 1, k: 2 + i})));   /* v1.0.5: TP = sirf T1/T2/T3 */
     const PH = 18, GAP = 2;
     tags.forEach(x => { const c = y(x.p); x.out = c === null ? 0 : c < PH / 2 ? -1 : c > H - PH / 2 ? 1 : 0; x.y = c === null ? H / 2 : Math.min(H - PH / 2, Math.max(PH / 2, c)) });
-    tags.sort((a, b) => a.y - b.y);
-    for(let i = 1; i < tags.length; i++) if(tags[i].y - tags[i - 1].y < PH + GAP) tags[i].y = tags[i - 1].y + PH + GAP;
-    const over = tags[tags.length - 1].y - (H - PH / 2);
-    if(over > 0) tags.forEach(x => x.y -= over);
-    tags.forEach(x => { html += `<span style="position:absolute;right:${W + 4}px;top:${(x.y - PH / 2).toFixed(1)}px;height:${PH}px;line-height:${PH}px;padding:0 ${x.sm ? 6 : 7}px;border-radius:6px;font:800 10px Manrope,sans-serif;letter-spacing:.3px;white-space:nowrap;color:${x.c};background:${x.bg};${x.bd ? 'border:' + x.bd + ';box-sizing:border-box;' : ''}box-shadow:0 2px 8px rgba(0,0,0,0.45)">${x.out < 0 ? '↑ ' : x.out > 0 ? '↓ ' : ''}${x.t}</span>` });
+    /* v1.0.6: BUY / SL = daayein, T1-T3 = baayein (ulti taraf) — dono group alag-alag, aapas me takraate nahi */
+    [tags.filter(x => !x.sm), tags.filter(x => x.sm)].forEach(G => {
+      if(!G.length) return;
+      G.sort((a, b) => a.y - b.y);
+      for(let i = 1; i < G.length; i++) if(G[i].y - G[i - 1].y < PH + GAP) G[i].y = G[i - 1].y + PH + GAP;
+      const over = G[G.length - 1].y - (H - PH / 2);
+      if(over > 0) G.forEach(x => x.y -= over);
+    });
+    tags.forEach(x => { html += `<span style="position:absolute;${x.sm ? 'left:6px' : 'right:' + (W + 4) + 'px'};top:${(x.y - PH / 2).toFixed(1)}px;height:${PH}px;line-height:${PH}px;padding:0 ${x.sm ? 6 : 7}px;border-radius:6px;font:800 10px Manrope,sans-serif;letter-spacing:.3px;white-space:nowrap;color:${x.c};background:${x.bg};${x.bd ? 'border:' + x.bd + ';box-sizing:border-box;' : ''}box-shadow:0 2px 8px rgba(0,0,0,0.45)">${x.out < 0 ? '↑ ' : x.out > 0 ? '↓ ' : ''}${x.t}</span>` });
     ov.innerHTML = html;
   };
   ch.timeScale().subscribeVisibleLogicalRangeChange(() => C.draw());
