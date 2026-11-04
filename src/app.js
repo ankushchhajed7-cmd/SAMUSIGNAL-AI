@@ -5,7 +5,7 @@ import {analyze, evaluate, isWin, isLoss} from './engine.js';
 import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 
-export const VERSION = '1.0.2';
+export const VERSION = '1.0.3';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -67,7 +67,7 @@ async function srcPill(){
   const k = K();
   $('hSrc').innerHTML = f.ok ? `📡 MT5 feed · account ${esc(f.meta.acct || '—')} · Exness exact bhaav`
     : (td ? 'TwelveData chal raha hai' : '<b style="color:var(--dn2)">Live data नहीं</b>') + ` <br>📡 MT5 feed: ${esc(f.why)}` +
-      (!k.samuN ? '<br><b style="color:var(--gold)">⚠ इस browser में SamuSignal नहीं मिला</b> — ये link उसी Chrome में खोलें जिसमें SamuSignal चलता है (WhatsApp / Claude ऐप के अंदर नहीं), या Settings में keys खुद डालें' : '');
+      (!k.samuN && !k.tdKey && !k.fbAuth ? '<br><b style="color:var(--gold)">⚠ इस browser में SamuSignal नहीं मिला</b> — ये link उसी Chrome में खोलें जिसमें SamuSignal चलता है (WhatsApp / Claude ऐप के अंदर नहीं), या Settings में keys खुद डालें' : '');
 }
 
 /* ---------------- HOME ---------------- */
@@ -324,7 +324,7 @@ async function renderSet(){
   $('kList').innerHTML = `<div class="sr">SamuSignal इस browser में<em style="color:${s.samuN ? 'var(--up)' : 'var(--dn2)'}">${s.samuN ? '✓ मिला (' + s.samuN + ' settings)' : '✗ नहीं मिला'}</em></div><div class="sr" style="font-size:12px;font-weight:500">Address<em>${esc(location.host + location.pathname)}</em></div>` + kr('Firebase URL', !!s.fbUrl, F.fbUrl) + kr('Firebase Auth', !!s.fbAuth || true, F.fbAuth || 'default').replace('✓ default', s.fbAuth ? '✓' : '— (बिना auth)') +
     kr('TwelveData', !!s.tdKey, F.tdKey) + kr('Gemini (AI)', !!s.gKey, F.gKey) +
     `<div class="sr">📡 MT5 Data Feed<em style="color:${f.ok ? 'var(--up)' : 'var(--gold)'}">${f.ok ? 'ON · ' + esc(f.meta.n || '') + ' symbols' : esc(f.why)}</em></div>` +
-    (!s.samuN ? `<div class="sr" style="font-size:12px;color:var(--gold);font-weight:500">SamuSignal की keys नहीं मिलीं — दोनों ऐप इसी फ़ोन के एक ही browser (Chrome) में और ankushchhajed7-cmd.github.io पर खुलें, या नीचे खुद डालें।</div>` : '');
+    (!s.samuN && !s.tdKey && !s.gKey && !s.fbAuth ? `<div class="sr" style="font-size:12px;color:var(--gold);font-weight:500">SamuSignal की keys नहीं मिलीं — दोनों ऐप इसी फ़ोन के एक ही browser (Chrome) में और ankushchhajed7-cmd.github.io पर खुलें, या नीचे खुद डालें।</div>` : '');
   $('aList').innerHTML = '<div class="sr note">Loading…</div>';
   accounts(s).then(A => { $('aList').innerHTML = A.length ? A.map(a => `<div class="sr"><span style="width:8px;height:8px;border-radius:50%;background:${a.online ? 'var(--up)' : 'var(--mu2)'}"></span><div><b style="color:${a.real ? 'var(--up)' : 'var(--gold)'}">${a.real ? 'REAL' : 'DEMO'} ${esc(a.login)}</b><div class="note">${esc(a.server || '')} · lot ${(+a.lot || 0).toFixed(2)} · ${a.online ? 'online' : 'offline'}</div></div><em class="mono" style="color:var(--tx);font-size:14px;font-weight:800">${esc(a.cur || '')} ${(+a.bal || 0).toFixed(2)}</em></div>`).join('')
     : '<div class="sr note">कोई PERSONAL FX account नहीं मिला</div>' }).catch(e => { $('aList').innerHTML = `<div class="sr note">${esc(e.message)}</div>` });
@@ -334,6 +334,23 @@ async function renderSet(){
 <div class="sr">Signal timeframe<em>15m + 1H</em></div><div class="sr">Order type<em>सिर्फ़ BUY LIMIT / SELL LIMIT</em></div>`;
   $('srcSel').value = LS.get('src', 'auto');
   $('ver').textContent = 'v' + VERSION;
+}
+
+/* ---------------- SamuSignal keys: "SAI1:<code>" / "#keys=<code>" link / JSON ---------------- */
+export function parseKeys(str){
+  let t = String(str || '').trim();
+  const h = t.indexOf('#keys='); if(h >= 0) t = t.slice(h + 6);
+  if(t.startsWith('SAI1:')) t = t.slice(5);
+  t = t.replace(/\s+/g, '');
+  const j = t.startsWith('{') ? JSON.parse(t) : JSON.parse(decodeURIComponent(escape(atob(t.replace(/-/g, '+').replace(/_/g, '/')))));
+  const out = {}; ['fbUrl', 'fbAuth', 'tdKey', 'gKey'].forEach(k => { if(j[k]) out[k] = String(j[k]).trim() });
+  if(!Object.keys(out).length) throw new Error('code me koi key nahi');
+  return out;
+}
+function importKeys(str){
+  const k = parseKeys(str), ov = Object.assign(LS.get('ov', {}), k); LS.set('ov', ov);
+  toast('✅ Keys आ गईं: ' + Object.keys(k).map(x => ({fbUrl: 'Firebase', fbAuth: 'Auth', tdKey: 'TwelveData', gKey: 'Gemini'}[x])).join(', '));
+  return k;
 }
 
 /* ---------------- refresh: purana cache hatao, naya version lo ---------------- */
@@ -376,14 +393,16 @@ function boot(){
     else if(p){ st.pair = p.dataset.pick; LS.set('pair', st.pair); homeChart && homeChart.ch.priceScale('right').applyOptions({autoScale: true}); show('home') } };
   $('prefs').onclick = e => { const t = e.target.closest('[data-tg]'); if(t){ LS.set(t.dataset.tg, !LS.get(t.dataset.tg, true)); renderSet() } };
   $('prefs').onchange = e => { if(e.target.id === 'srcSel'){ LS.set('src', e.target.value); toast('Data source बदला') } };
+  $('kcSave').onclick = () => { const v = $('kcIn').value; if(!v.trim()) return toast('पहले code paste करें');
+    try{ importKeys(v); $('kcIn').value = ''; renderSet(); setTimeout(() => loadHome(), 300) }catch(e){ toast('Code गलत है — SamuSignal से दोबारा copy करें') } };
+  $('kcClip').onclick = async () => { try{ const v = await navigator.clipboard.readText(); if(!v) throw 0; $('kcIn').value = v; $('kcSave').click() }catch(e){ toast('Clipboard नहीं पढ़ा — खाने में लंबा दबाकर Paste करें') } };
   $('ovSave').onclick = () => { const ov = LS.get('ov', {}); [['fbUrl', 'ovFb'], ['fbAuth', 'ovFa'], ['tdKey', 'ovTd'], ['gKey', 'ovG']].forEach(([k, id]) => { const v = $(id).value.trim(); if(v) ov[k] = v; $(id).value = '' });
     LS.set('ov', ov); toast('Saved'); renderSet() };
   $('clrHist').onclick = async () => { if(await dlg('History साफ़ करें?', 'सारे signals और नतीजे इस फ़ोन से हट जाएँगे।', 'साफ़ करो', 'Cancel')){ st.hist = []; saveHist(); toast('साफ़ हो गया') } };
   $('shotIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if(f) fromShot(f) };
   /* v1.0.1: "#keys=<base64 JSON>" link se keys (SamuSignal doosre browser / address par ho tab) — hash server pe nahi jaata, padhte hi URL se hata dete hain */
   if(location.hash.startsWith('#keys=')){
-    try{ const j = JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(6).replace(/-/g, '+').replace(/_/g, '/'))))), ov = LS.get('ov', {});
-      ['fbUrl', 'fbAuth', 'tdKey', 'gKey'].forEach(k => { if(j[k]) ov[k] = String(j[k]).trim() }); LS.set('ov', ov); toast('✅ Keys आ गईं') }catch(e){ toast('Keys link गलत है') }
+    try{ importKeys(location.hash) }catch(e){ toast('Keys link गलत है') }
     history.replaceState(null, '', location.pathname + location.search);
   }
   setTimeout(() => $('splash').classList.add('hide'), 900);
