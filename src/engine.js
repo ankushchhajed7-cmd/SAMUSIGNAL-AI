@@ -110,10 +110,11 @@ export function analyze({b15, b1h, live, spec, now = Date.now()}){
   let pts = (al15 ? 1 : 0) + (al1h ? 1 : 0) + (ax >= 25 ? 1 : 0) + (golden ? 1 : 0) + (sentOk ? 1 : 0) - (dRatio > 1.6 ? 1 : 0);
   let grade = pts >= 4 ? 'A' : pts >= 2 ? 'B' : 'C';
   if(counter || noZone) grade = 'C';
+  else if(pick && pick.x === 0.786 && grade === 'A') grade = 'B';   /* v1.1.1: 78.6% = gehra pullback -> max Grade B (A sirf golden zone / mazboot setup) */
   const up = dir > 0 ? 'Uptrend' : 'Downtrend';
   const reasons = [
     al15 && al1h ? `${up} on 15m and 1H` : al15 ? `${up} on 15m (1H not confirmed)` : `${up} on 1H — 15m still mixed`,
-    pick ? (golden ? `Price pulled back into the ${pick.x === 0.5 ? '50%' : '61.8%'} golden zone` : `Entry at the ${(pick.x * 100).toFixed(1)}% Fibonacci level`) : 'No clean Fib zone — entry 0.6 ATR from price',
+    pick && pick.x === 0.786 ? 'Entry at the 78.6% Fibonacci level — deep pullback (max Grade B)' : pick ? (golden ? `Price pulled back into the ${pick.x === 0.5 ? '50%' : '61.8%'} golden zone` : `Entry at the ${(pick.x * 100).toFixed(1)}% Fibonacci level`) : 'No clean Fib zone — entry 0.6 ATR from price',
     `Sentiment: ${dir > 0 ? 'Buy ' + buyPct : 'Sell ' + (100 - buyPct)}% · ADX ${ax.toFixed(0)}`
   ];
   if(counter) reasons.push('Counter-trend vs 1H — Grade C, small size');
