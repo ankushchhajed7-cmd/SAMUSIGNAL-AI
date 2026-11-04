@@ -5,7 +5,7 @@ import {analyze, evaluate, isWin, isLoss} from './engine.js';
 import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.0.2';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -336,6 +336,14 @@ async function renderSet(){
   $('ver').textContent = 'v' + VERSION;
 }
 
+/* ---------------- refresh: purana cache hatao, naya version lo ---------------- */
+async function hardRefresh(){
+  toast('🔄 Refresh… नया version ला रहे हैं');
+  try{ const regs = navigator.serviceWorker ? await navigator.serviceWorker.getRegistrations() : []; await Promise.all(regs.map(r => r.update().catch(() => {}))) }catch(e){}
+  try{ const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))) }catch(e){}
+  setTimeout(() => location.reload(), 400);
+}
+
 /* ---------------- nav ---------------- */
 function show(sc){
   st.scr = sc; document.querySelectorAll('.scr').forEach(x => x.classList.toggle('on', x.id === 's-' + sc));
@@ -348,7 +356,8 @@ function show(sc){
 }
 function boot(){
   document.querySelectorAll('[data-ic]').forEach(e => { e.innerHTML = icon(e.dataset.ic, e.dataset.ic === 'spark' ? '#1a1408' : 'currentColor', e.dataset.ic === 'spark' && e.closest('.fab') ? 28 : e.dataset.ic === 'spark' ? 18 : 22) });
-  $('splashLogo').innerHTML = logo(104); $('hLogo').innerHTML = logo(42); $('icDown').innerHTML = icon('down', '#a39a86', 18);
+  $('splashLogo').innerHTML = logo(104); $('splashVer').textContent = 'v' + VERSION; $('hVer').textContent = 'v' + VERSION; $('refBtn').innerHTML = icon('ref', '#e8c35a', 18);
+  $('refBtn').onclick = hardRefresh; $('hLogo').innerHTML = logo(42); $('icDown').innerHTML = icon('down', '#a39a86', 18);
   $('resBack').innerHTML = icon('back', '#f3efe6', 18); $('hisRef').innerHTML = icon('ref', '#e8c35a', 18); $('hGauge').innerHTML = gauge(64, 36, 50);
   $('nav').addEventListener('click', e => { const a = e.target.closest('a'); if(!a) return; e.preventDefault(); if(a.id === 'fab') runAnalyze(); else show(a.dataset.s) });
   $('tfs').addEventListener('click', e => { const b = e.target.closest('[data-tf]'); if(!b) return; st.tf = b.dataset.tf; LS.set('tf', st.tf); homeChart && homeChart.ch.priceScale('right').applyOptions({autoScale: true}); loadHome() });

@@ -98,14 +98,16 @@ nav.bar .fab b{font-size:10px;font-weight:800;color:var(--gold);letter-spacing:.
 <div id="splash"><span id="splashLogo"></span>
 <div class="mt" style="margin-top:12px;font-family:Cinzel,serif;font-weight:700;font-size:30px;letter-spacing:3px">SAMUSIGNAL AI</div>
 <div class="lbl" style="letter-spacing:5px">AI chart signals</div>
-<div style="width:200px;margin-top:30px" class="prog"><i style="width:65%"></i></div>
+<div id="splashVer" style="margin-top:6px;font-size:13px;font-weight:800;color:var(--gold);letter-spacing:1px"></div>
+<div style="width:200px;margin-top:26px" class="prog"><i style="width:65%"></i></div>
 <div class="note" style="margin-top:6px">Loading live markets…</div></div>
 
 <div id="app">
 <!-- HOME -->
 <section class="scr on" id="s-home">
 <header class="top"><span id="hLogo"></span>
-<div style="flex:1;min-width:0"><div class="mt" style="font-family:Cinzel,serif;font-weight:700;font-size:19px;letter-spacing:1.5px;white-space:nowrap">SAMUSIGNAL AI</div><div class="lbl">AI chart signals</div></div>
+<div style="flex:1;min-width:0"><div class="mt" style="font-family:Cinzel,serif;font-weight:700;font-size:19px;letter-spacing:1.5px;white-space:nowrap">SAMUSIGNAL AI</div><div class="lbl">AI chart signals · <b id="hVer" style="color:var(--gold);text-transform:none"></b></div></div>
+<button class="ib" id="refBtn" title="Refresh" aria-label="Refresh" style="width:34px;height:34px;flex:none"></button>
 <span class="live off" id="srcPill"><i></i>OFF</span></header>
 <section style="display:flex;justify-content:space-between;align-items:flex-end;padding:8px 18px 0">
 <button id="pairBtn" style="background:none;border:0;color:inherit;padding:0;text-align:left"><div style="font-size:24px;font-weight:800;display:flex;align-items:center;gap:6px"><span id="hPair">EURUSD</span><span id="icDown"></span></div><div style="font-size:12px;color:var(--mu)" id="hTitle"></div></button>
@@ -185,6 +187,6 @@ nav.bar .fab b{font-size:10px;font-weight:800;color:var(--gold);letter-spacing:.
 
 <script src="vendor/lightweight-charts-4.2.0.js"></script>
 <script type="module" src="src/app.js"></script>
-<script>if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{})</script>
+<script>if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).catch(()=>{})</script>
 </body>
 </html>

@@ -1,8 +1,10 @@
 {
   "name": "samusignal-ai",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "private": true,
   "type": "module",
-  "description": "SAMUSIGNAL AI — personal AI chart signals (BUY LIMIT / SELL LIMIT) with PERSONAL FX (MT5) bridge.",
-  "scripts": { "test": "node --test tests/*.test.mjs" }
+  "description": "SAMUSIGNAL AI \u2014 personal AI chart signals (BUY LIMIT / SELL LIMIT) with PERSONAL FX (MT5) bridge.",
+  "scripts": {
+    "test": "node --test tests/engine.test.mjs tests/version.test.mjs"
+  }
 }
