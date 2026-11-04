@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {analyze, evaluate, ema, rsi, adx, impulse} from '../src/engine.js';
+import {analyze, evaluate, ema, rsi, adx, impulse, atr} from '../src/engine.js';
 const spec = {d: 5, pip: 0.0001};
 function mk(n, start, step, tf, wave = 0.0004, t0 = 1.7e12){
   const out = []; let p = start;
@@ -48,4 +48,15 @@ test('evaluate: fill then TP2, SL, expired', () => {
   assert.equal(evaluate(sig, [bar(5, 1.1050, 1.1010)], 30 * 60000).state, 'PENDING');
   const sell = {dir: 'SELL', entry: 1.1, sl: 1.102, tp: [1.098, 1.096, 1.094], at: 0, exp: 60};
   assert.equal(evaluate(sell, [bar(5, 1.1001, 1.099), bar(9, 1.099, 1.0935)], 1e9).state, 'TP3');
+});
+
+test('78.6% entry is never Grade A', () => {
+  const b15 = mk(200, 1.10, 0.0003, 9e5), b1h = mk(200, 1.08, 0.0008, 36e5);
+  const L = impulse(b15, 1, 48), A = atr(b15), R = L.hi - L.lo;
+  const live = L.hi - R * 0.786 + 0.4 * A;
+  const s = analyze({b15, b1h, live, spec});
+  assert.equal(s.dir, 'BUY');
+  assert.equal(s.fibX, 0.786, 'entry should be at 78.6%');
+  assert.ok(s.entry < live);
+  assert.notEqual(s.grade, 'A');
 });
