@@ -92,6 +92,16 @@ nav.bar .fab b{font-size:10px;font-weight:800;color:var(--gold);letter-spacing:.
 .note{font-size:11px;color:var(--mu2);line-height:1.5}
 .acc{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:8px}
 .acc input{width:22px;height:22px;accent-color:#e8c35a}
+.fl-dec{min-width:92px;height:52px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;letter-spacing:1px}
+.fl-dec.WAIT{background:rgba(255,255,255,0.08);color:var(--tx)}.fl-dec.BUY{background:var(--up);color:#07140d;box-shadow:0 0 18px rgba(47,224,138,0.45)}.fl-dec.SELL{background:var(--dn);color:#2a0a0e;box-shadow:0 0 18px rgba(255,93,108,0.45)}
+.fl-meter{position:relative;height:8px;border-radius:8px;background:linear-gradient(90deg,#ff5d6c,#3a3d44 45%,#3a3d44 55%,#2fe08a)}
+.fl-meter i{position:absolute;top:-5px;width:4px;height:18px;border-radius:3px;background:#f3efe6;box-shadow:0 0 6px rgba(0,0,0,0.6);transform:translateX(-2px)}
+.fl-lv{flex:1;border-radius:12px;padding:9px 10px;font-size:12px}
+.fl-ev{font-size:12px;font-weight:700;border-radius:8px;padding:7px 10px}
+.fl-ev.ok{background:rgba(47,224,138,0.12);color:var(--up);border:1px solid rgba(47,224,138,0.35)}.fl-ev.no{background:rgba(255,93,108,0.10);color:var(--dn2);border:1px solid rgba(255,93,108,0.35)}.fl-ev.n{color:var(--mu);border:1px solid var(--line)}
+.fl-ck{display:flex;align-items:center;gap:8px;font-size:13px;padding:3px 0}.fl-ck b{margin-left:auto;font-variant-numeric:tabular-nums}.fl-ck em{font-style:normal;color:var(--mu);width:52px;text-align:right;font-size:12px}
+.fl-tape{display:grid;grid-template-columns:70px 52px 1fr 92px;gap:6px;align-items:center;padding:8px 12px;font-size:12px;border-top:1px solid rgba(232,195,90,0.08);font-variant-numeric:tabular-nums}
+.fl-side{font-size:10px;font-weight:800;border-radius:5px;padding:3px 0;text-align:center}
 </style>
 </head>
 <body>
@@ -106,8 +116,9 @@ nav.bar .fab b{font-size:10px;font-weight:800;color:var(--gold);letter-spacing:.
 <!-- HOME -->
 <section class="scr on" id="s-home">
 <header class="top"><span id="hLogo"></span>
-<div style="flex:1;min-width:0"><div class="mt" style="font-family:Cinzel,serif;font-weight:700;font-size:clamp(14px,4.4vw,19px);letter-spacing:1px;white-space:nowrap">SAMUSIGNAL AI</div><div class="lbl">AI chart signals · <b id="hVer" style="color:var(--gold);text-transform:none"></b></div></div>
-<button class="ib" id="refBtn" title="Refresh" aria-label="Refresh" style="width:34px;height:34px;flex:none"></button>
+<div style="flex:1;min-width:0"><div class="mt" style="font-family:Cinzel,serif;font-weight:700;font-size:clamp(13px,4vw,19px);letter-spacing:.8px;white-space:nowrap">SAMUSIGNAL AI</div><div class="lbl" style="white-space:nowrap;font-size:9px;letter-spacing:1px">AI chart signals · <b id="hVer" style="color:var(--gold);text-transform:none"></b></div></div>
+<button class="ib" id="flowBtn" title="Order Flow" aria-label="Order Flow" style="width:32px;height:32px;flex:none;font-size:16px">🐋</button>
+<button class="ib" id="refBtn" title="Refresh" aria-label="Refresh" style="width:32px;height:32px;flex:none"></button>
 <span class="live off" id="srcPill"><i></i>OFF</span></header>
 <section style="display:flex;justify-content:space-between;align-items:flex-end;padding:8px 18px 0">
 <button id="pairBtn" style="background:none;border:0;color:inherit;padding:0;text-align:left"><div style="font-size:24px;font-weight:800;display:flex;align-items:center;gap:6px"><span id="hPair">EURUSD</span><span id="icDown"></span></div><div style="font-size:12px;color:var(--mu)" id="hTitle"></div></button>
@@ -118,6 +129,34 @@ nav.bar .fab b{font-size:10px;font-weight:800;color:var(--gold);letter-spacing:.
 <div class="tiles"><div class="tile" style="display:flex;align-items:center;gap:10px"><span id="hGauge"></span><div><div class="lbl">Sentiment</div><div style="font-weight:800;font-size:15px;color:var(--up);white-space:nowrap" id="hBuy">BUY —</div><div style="font-size:11px;font-weight:700;color:var(--dn2)" id="hSell">SELL —</div></div></div>
 <div class="tile"><div class="lbl">Market</div><div style="font-size:14px;font-weight:800;margin-top:4px" id="hReg">—</div><div style="font-size:11px;color:var(--mu);margin-top:3px" id="hReg2">15m + 1H</div></div></div>
 <div class="note" style="text-align:center;padding:14px 18px 0" id="hSrc"></div>
+</section>
+
+<!-- ORDER FLOW (v1.1.0) — alag screen -->
+<section class="scr" id="s-flow">
+<header class="top"><button class="ib" id="flowBack"></button><div class="h1 mt" style="flex:1">Order Flow</div><span class="live off" id="flLive"><i></i>OFF</span></header>
+<div class="chips" id="flSyms"></div>
+<section style="display:flex;justify-content:space-between;align-items:flex-end;padding:12px 18px 0"><div><div style="font-size:22px;font-weight:800" id="flName">GOLD</div><div style="font-size:11px;color:var(--mu)" id="flSub"></div></div>
+<div style="text-align:right"><div style="font-size:26px;font-weight:800" class="mono" id="flPx">—</div><div class="mono" style="font-size:11px"><span style="color:var(--up)" id="flBid"></span> <span style="color:var(--dn2)" id="flAsk"></span></div><div class="note mono" id="flSpr"></div></div></section>
+<div class="gb" style="margin:12px 18px 0"><div class="gi">
+<div style="display:flex;align-items:center;gap:8px"><span class="lbl">Decision</span><span class="note" id="flFor"></span><span class="note" style="margin-left:auto" id="flWarm"></span></div>
+<div style="display:flex;align-items:center;gap:12px;margin-top:10px"><div class="fl-dec WAIT" id="flDec">WAIT</div>
+<div style="flex:1"><div style="font-size:12px;color:var(--mu)" id="flCtl2">No side in control</div><div class="fl-meter" style="margin-top:8px"><i id="flMark" style="left:50%"></i></div>
+<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mu);margin-top:5px" class="mono"><span>sell</span><b id="flScore" style="color:var(--tx)">0</b><span>buy</span></div></div></div>
+<div style="color:var(--gold);font-size:13px;margin-top:10px" id="flCtl"></div>
+<div style="display:flex;gap:8px;margin-top:10px"><div class="fl-lv" style="border:1px solid rgba(47,224,138,0.5)"><div class="note">Buy above</div><b class="mono" style="color:var(--up);font-size:15px" id="flBA">—</b><div class="note" id="flBA2"></div></div>
+<div class="fl-lv" style="border:1px solid rgba(255,93,108,0.5)"><div class="note">Sell below</div><b class="mono" style="color:var(--dn2);font-size:15px" id="flSB">—</b><div class="note" id="flSB2"></div></div></div>
+<div class="card" style="margin-top:10px;padding:10px 12px"><div style="display:flex"><span class="note">What a setup needs</span><span style="margin-left:auto;font-size:12px;font-weight:700;color:var(--gold)" id="flMiss"></span></div><div id="flCk" style="margin-top:6px"></div></div>
+<div id="flEv" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"></div></div></div>
+<div class="chips" id="flWin"></div>
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:10px 18px 0">
+<div class="tile"><div class="lbl">Trades / sec</div><b class="mono" style="font-size:17px" id="flTps">—</b></div>
+<div class="tile"><div class="lbl" id="flBl">Bought</div><b class="mono" style="font-size:17px;color:var(--up)" id="flB">—</b></div>
+<div class="tile"><div class="lbl" id="flSl">Sold</div><b class="mono" style="font-size:17px;color:var(--dn2)" id="flS">—</b></div></div>
+<div style="display:flex;gap:10px;align-items:center;padding:10px 18px 0"><div style="flex:1"><div class="lbl">Buy share <b id="flShP" style="color:var(--tx)"></b></div><div style="display:flex;height:8px;border-radius:8px;overflow:hidden;margin-top:6px;background:#ff5d6c"><span id="flSh" style="width:50%;background:#2fe08a"></span></div></div>
+<div class="tile" style="padding:8px 12px"><div class="lbl">Largest</div><b class="mono" id="flBig">—</b></div></div>
+<div class="chips" id="flSize"></div>
+<div class="card" style="margin:10px 18px 0;overflow:hidden"><div class="fl-tape note" style="border-top:0"><span>Time</span><span>Side</span><span>Price</span><span style="text-align:right">Notional</span></div><div id="flTape"></div></div>
+<div class="note" style="padding:12px 22px 0">Binance का free public data (live)। GOLD = PAXG token (XAUUSD के करीब, exact नहीं)। Forex pairs का public order book नहीं होता। ये order flow है, सलाह नहीं — फ़ैसले सेकंडों में बदलते हैं।</div>
 </section>
 
 <!-- RESULT -->

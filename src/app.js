@@ -4,8 +4,9 @@ import {LS, keys, feedStatus, series, quotes} from './data.js';
 import {analyze, evaluate, isWin, isLoss} from './engine.js';
 import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
+import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.0.6';
+export const VERSION = '1.1.0';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -408,6 +409,86 @@ async function hardRefresh(){
   setTimeout(() => location.reload(), 400);
 }
 
+
+/* ---------------- 🐋 ORDER FLOW (v1.1.0) — alag screen, baaki screens se koi lena-dena nahi ---------------- */
+const FL = {sym: FLOW_SYMS.some(x => x.id === LS.get('flSym')) ? LS.get('flSym') : 'PAXGUSDT', trades: [], depth: null, ws: null, wsI: 0, timer: null,
+  win: LS.get('flWin', 300e3), size: LS.get('flSize', 10000), last: '', since: 0, gen: 0};
+const usdF = v => !isFinite(v) ? '—' : v >= 1e6 ? '$' + (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? '$' + (v / 1e3).toFixed(1) + 'K' : '$' + v.toFixed(0);
+const flSpec = () => FLOW_SYMS.find(x => x.id === FL.sym);
+function flowStop(){ FL.gen++; clearInterval(FL.timer); FL.timer = null; if(FL.ws){ try{ FL.ws.onclose = null; FL.ws.close() }catch(e){} FL.ws = null } }
+function flLive(state){ const p = $('flLive'); p.className = 'live ' + (state === 'on' ? 'on' : state === 'wait' ? 'td' : 'off'); p.innerHTML = '<i></i>' + (state === 'on' ? 'LIVE' : state === 'wait' ? '…' : 'OFF') }
+async function flowStart(){
+  flowStop(); const g = FL.gen, sp = flSpec(), sym = FL.sym;
+  FL.trades = []; FL.depth = null; FL.last = ''; FL.since = Date.now();
+  $('flName').textContent = sp.name; $('flSub').textContent = sp.sub; flChips(); flLive('wait'); flRender();
+  for(const base of REST){
+    try{
+      const [t, d] = await Promise.all([fetch(`${base}/api/v3/aggTrades?symbol=${sym}&limit=1000`).then(r => r.ok ? r.json() : Promise.reject(r.status)),
+        fetch(`${base}/api/v3/depth?symbol=${sym}&limit=100`).then(r => r.ok ? r.json() : Promise.reject(r.status))]);
+      if(g !== FL.gen) return;
+      FL.trades = t.map(x => ({t: x.T, p: +x.p, q: +x.q, usd: +x.p * +x.q, buy: !x.m}));
+      FL.depth = {bids: d.bids.map(v => [+v[0], +v[1]]), asks: d.asks.map(v => [+v[0], +v[1]])};
+      break;
+    }catch(e){}
+  }
+  if(g !== FL.gen) return;
+  flWs(g, 0);
+  FL.timer = setInterval(flRender, 1000); flRender();
+}
+function flWs(g, i){
+  if(g !== FL.gen || i >= WS.length){ if(g === FL.gen) flLive('off'); return }
+  const s = FL.sym.toLowerCase();
+  let ws; try{ ws = new WebSocket(`${WS[i]}/stream?streams=${s}@aggTrade/${s}@depth20@100ms`) }catch(e){ return flWs(g, i + 1) }
+  FL.ws = ws; let got = false;
+  ws.onmessage = e => { if(g !== FL.gen) return; got = true; flLive('on');
+    let m; try{ m = JSON.parse(e.data) }catch(er){ return } const d = m.data || m, st = m.stream || '';
+    if(d.e === 'aggTrade'){ FL.trades.push({t: d.T, p: +d.p, q: +d.q, usd: +d.p * +d.q, buy: !d.m});
+      if(FL.trades.length > 90000) FL.trades.splice(0, 10000) }
+    else if(st.includes('depth') || d.bids){ FL.depth = {bids: d.bids.map(v => [+v[0], +v[1]]), asks: d.asks.map(v => [+v[0], +v[1]])} } };
+  ws.onclose = () => { if(g !== FL.gen) return; flLive('wait'); setTimeout(() => flWs(g, got ? i : i + 1), got ? 2000 : 300) };
+  ws.onerror = () => { try{ ws.close() }catch(e){} };
+}
+function flChips(){
+  $('flSyms').innerHTML = FLOW_SYMS.map(x => `<button class="pill${x.id === FL.sym ? ' on' : ''}" data-fs="${x.id}">${x.name}</button>`).join('');
+  $('flWin').innerHTML = [[60e3, '1M'], [300e3, '5M'], [900e3, '15M']].map(([v, t]) => `<button class="pill${FL.win === v ? ' on' : ''}" data-fw="${v}">${t}</button>`).join('');
+  $('flSize').innerHTML = [[0, 'All'], [1000, '$1K+'], [10000, '$10K+'], [100000, '$100K+'], ['w', 'Whales 🐋']].map(([v, t]) => `<button class="pill${FL.size === v ? ' on' : ''}" data-fz="${v}">${t}</button>`).join('');
+}
+function flRender(){
+  if(st.scr !== 'flow') return;
+  const now = Date.now(), T = FL.trades, sp = flSpec(), f = v => isFinite(v) ? (+v).toFixed(sp.d) : '—';
+  while(T.length && now - T[0].t > 905e3) T.shift();
+  const bb = FL.depth && FL.depth.bids[0] ? FL.depth.bids[0][0] : NaN, ba = FL.depth && FL.depth.asks[0] ? FL.depth.asks[0][0] : NaN;
+  const last = T.length ? T[T.length - 1].p : NaN, mid = isFinite(bb) && isFinite(ba) ? (bb + ba) / 2 : last;
+  $('flPx').textContent = f(isFinite(last) ? last : mid); $('flBid').textContent = isFinite(bb) ? 'bid ' + f(bb) : ''; $('flAsk').textContent = isFinite(ba) ? 'ask ' + f(ba) : '';
+  $('flSpr').textContent = isFinite(bb) && isFinite(ba) ? 'spread ' + (ba - bb).toFixed(sp.d) + ' · ' + ((ba - bb) / mid * 1e4).toFixed(2) + ' bp' : '';
+  if(!T.length && !FL.depth){ $('flCtl').textContent = 'Binance से जुड़ रहे हैं…'; $('flTape').innerHTML = ''; return }
+  const book = FL.depth && isFinite(mid) ? bookStats(FL.depth.bids, FL.depth.asks, mid) : null;
+  const D = decide(T, book, now);
+  if(D.decision !== FL.last){ FL.last = D.decision; FL.since = now }
+  const el = $('flDec'); el.className = 'fl-dec ' + D.decision; el.textContent = D.decision;
+  $('flFor').textContent = 'for ' + Math.round((now - FL.since) / 1000) + 's';
+  $('flWarm').textContent = D.warm ? '⏳ data जमा हो रहा है (5 min)' : '';
+  $('flCtl2').textContent = D.score >= 22 ? 'Buyers pushing' : D.score <= -22 ? 'Sellers pushing' : 'No side in control';
+  $('flMark').style.left = Math.max(2, Math.min(98, (D.score + 100) / 2)) + '%'; $('flScore').textContent = (D.score > 0 ? '+' : '') + D.score;
+  $('flCtl').textContent = D.ctrl;
+  if(book && book.askWall){ $('flBA').textContent = f(book.askWall.p); $('flBA2').textContent = `+${((book.askWall.p - mid) / mid * 100).toFixed(2)}% · ask wall ${usdF(book.askWall.usd)}` } else { $('flBA').textContent = '—'; $('flBA2').textContent = '' }
+  if(book && book.bidWall){ $('flSB').textContent = f(book.bidWall.p); $('flSB2').textContent = `${((book.bidWall.p - mid) / mid * 100).toFixed(2)}% · bid wall ${usdF(book.bidWall.usd)}` } else { $('flSB').textContent = '—'; $('flSB2').textContent = '' }
+  $('flMiss').textContent = D.missing.length ? D.missing.length + ' missing' : '✓ ready';
+  const ck = (ok, t, v, need) => `<div class="fl-ck"><span style="color:${ok ? 'var(--up)' : 'var(--gold)'}">${ok ? '✓' : '✗'}</span>${t}<b>${v}</b><em>${need}</em></div>`;
+  $('flCk').innerHTML = ck(D.strength >= 22, 'Strength', D.strength, '≥ 22') + ck(D.activity >= 0.5, 'Trading activity', Math.round(D.activity * 100) + '%', '≥ 50%') +
+    ck(!book || Math.sign(book.imb) === Math.sign(D.score) || Math.abs(book.imb) <= 0.1, 'Order book', book ? (book.imb > 0 ? '+' : '') + Math.round(book.imb * 100) + '%' : '—', 'साथ');
+  $('flEv').innerHTML = D.ev.map(x => `<span class="fl-ev ${x.n ? 'n' : x.ok ? 'ok' : 'no'}">${esc(x.t)}</span>`).join('');
+  const W = windowStats(T, now, FL.win), wl = {60e3: '1M', 300e3: '5M', 900e3: '15M'}[FL.win];
+  $('flTps').textContent = (W.n / (FL.win / 1000)).toFixed(1); $('flBl').textContent = 'Bought (' + wl + ')'; $('flSl').textContent = 'Sold (' + wl + ')';
+  $('flB').textContent = usdF(W.buy); $('flS').textContent = usdF(W.sell); $('flSh').style.width = (W.share * 100).toFixed(0) + '%'; $('flShP').textContent = (W.share * 100).toFixed(0) + '%';
+  $('flBig').textContent = usdF(W.big);
+  const cut = FL.size === 'w' ? whaleCut(T, now) : FL.size;
+  const rows = []; for(let i = T.length - 1; i >= 0 && rows.length < 40; i--){ const x = T[i]; if(x.usd >= cut) rows.push(x) }
+  $('flTape').innerHTML = rows.length ? rows.map((x, i) => { const pr = rows[i + 1], up = !pr || x.p >= pr.p;
+    return `<div class="fl-tape"><span class="note">${ist(x.t, true)}</span><span class="fl-side" style="${x.buy ? 'background:rgba(47,224,138,0.15);color:var(--up)' : 'background:rgba(255,93,108,0.15);color:var(--dn2)'}">${x.buy ? 'BUY' : 'SELL'}</span><span style="color:${up ? 'var(--up)' : 'var(--dn2)'}">${up ? '↑' : '↓'} ${f(x.p)}</span><span style="text-align:right;font-weight:700">${usdF(x.usd)}${x.usd >= 100000 ? ' 🐋' : ''}</span></div>` }).join('')
+    : `<div class="fl-tape note" style="grid-template-columns:1fr;text-align:center">इस size के trades अभी नहीं — छोटा filter चुनें</div>`;
+}
+
 /* ---------------- nav ---------------- */
 function show(sc){
   st.scr = sc; document.querySelectorAll('.scr').forEach(x => x.classList.toggle('on', x.id === 's-' + sc));
@@ -417,6 +498,7 @@ function show(sc){
   if(sc === 'his'){ renderHis(); refreshResults().then(renderHis) }
   if(sc === 'pairs') renderPairs(true);
   if(sc === 'set') renderSet();
+  if(sc === 'flow') flowStart(); else if(FL.timer || FL.ws) flowStop();
 }
 function boot(){
   document.querySelectorAll('[data-ic]').forEach(e => { e.innerHTML = icon(e.dataset.ic, e.dataset.ic === 'spark' ? '#1a1408' : 'currentColor', e.dataset.ic === 'spark' && e.closest('.fab') ? 28 : e.dataset.ic === 'spark' ? 18 : 22) });
@@ -426,6 +508,11 @@ function boot(){
   $('nav').addEventListener('click', e => { const a = e.target.closest('a'); if(!a) return; e.preventDefault(); if(a.id === 'fab') runAnalyze(); else show(a.dataset.s) });
   $('tfs').addEventListener('click', e => { const b = e.target.closest('[data-tf]'); if(!b) return; st.tf = b.dataset.tf; LS.set('tf', st.tf); homeChart && homeChart.ch.priceScale('right').applyOptions({autoScale: true}); loadHome() });
   $('pairBtn').onclick = () => show('pairs');
+  $('flowBtn').onclick = () => show('flow'); $('flowBack').innerHTML = icon('back', '#f3efe6', 18); $('flowBack').onclick = () => show('home');
+  $('flSyms').onclick = e => { const b = e.target.closest('[data-fs]'); if(b){ FL.sym = b.dataset.fs; LS.set('flSym', FL.sym); flowStart() } };
+  $('flWin').onclick = e => { const b = e.target.closest('[data-fw]'); if(b){ FL.win = +b.dataset.fw; LS.set('flWin', FL.win); flChips(); flRender() } };
+  $('flSize').onclick = e => { const b = e.target.closest('[data-fz]'); if(b){ FL.size = b.dataset.fz === 'w' ? 'w' : +b.dataset.fz; LS.set('flSize', FL.size); flChips(); flRender() } };
+  document.addEventListener('visibilitychange', () => { if(st.scr !== 'flow') return; if(document.hidden) flowStop(); else flowStart() });
   document.body.addEventListener('click', e => { const o = e.target.closest('[data-open]'); if(o) openRes(o.dataset.open) });
   $('resBack').onclick = () => show(st.hist.find(x => x.id === st.cur && x.sym === st.pair) ? 'home' : 'his');
   $('bRe').onclick = () => { const r = st.hist.find(x => x.id === st.cur); if(r && SPECS[r.sym]){ st.pair = r.sym; LS.set('pair', r.sym); runAnalyze(r.sym) } };
