@@ -1,6 +1,6 @@
 {
   "name": "samusignal-ai",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "type": "module",
   "description": "SAMUSIGNAL AI \u2014 personal AI chart signals (BUY LIMIT / SELL LIMIT) with PERSONAL FX (MT5) bridge.",
