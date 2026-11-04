@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.1.1';
+export const VERSION = '1.2.0';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -183,11 +183,24 @@ function scanUI(i, sub){
     : k === i ? `<div class="step"><span class="spin"></span>${t}…</div>` : `<div class="step" style="opacity:.5"><span style="width:16px;height:16px;border-radius:50%;border:2px solid var(--mu2)"></span>${t}</div>`).join('');
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
+/* v1.2.0: ek pair pe ek hi chaalu signal — TP / SL (ya fill na hua = EXPIRED) aane tak naya History me nahi */
+const isActive = r => r.res ? (r.res.state === 'PENDING' || r.res.state === 'OPEN') : Date.now() < r.expiresAt;
+async function activeFor(sym){
+  const todo = st.hist.filter(r => r.sym === sym && !(r.res && r.res.done));
+  if(todo.length && SPECS[sym]){
+    try{ const d = await series(K(), sym, '5min', 300), now = Date.now(); todo.forEach(r => { r.res = evaluate(r, d.bars, now, SPECS[sym].pip) }); saveHist() }catch(e){}
+  }
+  return st.hist.find(r => r.sym === sym && isActive(r)) || null;
+}
+const busyMsg = r => `⏳ ${SPECS[r.sym] ? SPECS[r.sym].n : r.sym} पर पहला signal अभी चालू है (${r.res && r.res.state === 'OPEN' ? 'trade चालू' : 'entry का इंतज़ार'}) — TP या SL आने तक नया नहीं`;
 async function runAnalyze(sym = st.pair){
   if(st.busy) return; st.busy = true; let cancelled = false;
   $('scCancel').onclick = () => { cancelled = true; $('scan').classList.remove('on'); st.busy = false };
   $('scan').classList.add('on'); scanUI(0, SPECS[sym].n + ' · 15m');
   try{
+    const act = await activeFor(sym);
+    if(cancelled) return;
+    if(act){ $('scan').classList.remove('on'); openRes(act.id); toast(busyMsg(act), 4500); return }
     const s = K();
     const [a, b, q] = await Promise.all([series(s, sym, '15min', 250), series(s, sym, '1h', 250), quotes(s, [sym])]);
     Object.assign(st.q, q); if(cancelled) return;
@@ -213,6 +226,7 @@ async function fromShot(file){
     const j = await aiShot(s, b64, file.type || 'image/png', PAIRS.map(p => SPECS[p].n).join(', '));
     if(!/^(BUY|SELL)$/.test(j.dir)) throw new Error('Chart पढ़ा नहीं गया — साफ़ screenshot भेजें');
     const sym = fromName(j.symbol), cur = +j.current_price, D = j.dir === 'BUY' ? 1 : -1;
+    if(sym){ const act = await activeFor(sym); if(act){ $('scan').classList.remove('on'); openRes(act.id); toast(busyMsg(act), 4500); return } }
     let entry = +j.entry, grade = /^[ABC]$/.test(j.grade) ? j.grade : 'C';
     if(!(D > 0 ? entry < cur : entry > cur)){ grade = 'C' }
     const d = sym ? SPECS[sym].d : 5, r = v => +(+v).toFixed(d);
@@ -539,6 +553,8 @@ function boot(){
     try{ importKeys(location.hash) }catch(e){ toast('Keys link गलत है') }
     history.replaceState(null, '', location.pathname + location.search);
   }
+  /* v1.2.0: user ke kehne par purani History ek baar saaf — ab se nayi shuruaat */
+  if(!LS.get('reset120', false)){ st.hist = []; saveHist(); LS.set('reset120', true) }
   setTimeout(() => $('splash').classList.add('hide'), 900);
   loadHome();
   setInterval(() => { if(document.hidden) return;
