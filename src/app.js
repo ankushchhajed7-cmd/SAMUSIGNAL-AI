@@ -5,7 +5,7 @@ import {analyze, evaluate, isWin, isLoss} from './engine.js';
 import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 
-export const VERSION = '1.0.4';
+export const VERSION = '1.0.5';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -62,7 +62,7 @@ function mkChart(el){
     C.lines.forEach(l => s.removePriceLine(l)); C.lines = []; C.sig = sig || null;
     if(sig){
       const L = (price, color, style) => C.lines.push(s.createPriceLine({price, color, lineStyle: style, lineWidth: 1, axisLabelVisible: false, title: ''}));
-      L(sig.sl, 'rgba(255,93,108,0.75)', 2); sig.tp.forEach((p, i) => L(p, `rgba(47,224,138,${[0.8, 0.55, 0.4][i]})`, i ? 1 : 2));
+      L(sig.sl, 'rgba(255,93,108,0.75)', 2); sig.tp.forEach(p => L(p, 'rgba(47,224,138,0.65)', 2));
     }
     C.draw();
   };
@@ -79,14 +79,14 @@ function mkChart(el){
     }
     const tags = [{p: (g.zone[0] + g.zone[1]) / 2, t: (g.dir === 'BUY' ? 'BUY ' : 'SELL ') + f(g.entry), bg: 'linear-gradient(120deg,#f7e08a,#c9971f 45%,#fff6cf 60%,#e8c35a)', c: '#1a1408', k: 0},
       {p: g.sl, t: 'SL ' + f(g.sl), bg: '#ff5d6c', c: '#2a0a0e', k: 1}]
-      .concat(g.tp.map((p, i) => ({p, t: 'TP' + (i + 1) + ' ' + f(p), bg: ['#2fe08a', 'rgba(47,224,138,0.8)', 'rgba(47,224,138,0.62)'][i], c: '#06140d', k: 2 + i})));
+      .concat(g.tp.map((p, i) => ({p, t: 'T' + (i + 1), bg: 'rgba(7,8,11,0.85)', c: '#2fe08a', bd: '1px solid rgba(47,224,138,0.7)', sm: 1, k: 2 + i})));   /* v1.0.5: TP = sirf T1/T2/T3 */
     const PH = 18, GAP = 2;
     tags.forEach(x => { const c = y(x.p); x.out = c === null ? 0 : c < PH / 2 ? -1 : c > H - PH / 2 ? 1 : 0; x.y = c === null ? H / 2 : Math.min(H - PH / 2, Math.max(PH / 2, c)) });
     tags.sort((a, b) => a.y - b.y);
     for(let i = 1; i < tags.length; i++) if(tags[i].y - tags[i - 1].y < PH + GAP) tags[i].y = tags[i - 1].y + PH + GAP;
     const over = tags[tags.length - 1].y - (H - PH / 2);
     if(over > 0) tags.forEach(x => x.y -= over);
-    tags.forEach(x => { html += `<span style="position:absolute;right:${W + 4}px;top:${(x.y - PH / 2).toFixed(1)}px;height:${PH}px;line-height:${PH}px;padding:0 7px;border-radius:6px;font:800 10px Manrope,sans-serif;letter-spacing:.3px;white-space:nowrap;color:${x.c};background:${x.bg};box-shadow:0 2px 8px rgba(0,0,0,0.45)">${x.out < 0 ? '↑ ' : x.out > 0 ? '↓ ' : ''}${x.t}</span>` });
+    tags.forEach(x => { html += `<span style="position:absolute;right:${W + 4}px;top:${(x.y - PH / 2).toFixed(1)}px;height:${PH}px;line-height:${PH}px;padding:0 ${x.sm ? 6 : 7}px;border-radius:6px;font:800 10px Manrope,sans-serif;letter-spacing:.3px;white-space:nowrap;color:${x.c};background:${x.bg};${x.bd ? 'border:' + x.bd + ';box-sizing:border-box;' : ''}box-shadow:0 2px 8px rgba(0,0,0,0.45)">${x.out < 0 ? '↑ ' : x.out > 0 ? '↓ ' : ''}${x.t}</span>` });
     ov.innerHTML = html;
   };
   ch.timeScale().subscribeVisibleLogicalRangeChange(() => C.draw());
