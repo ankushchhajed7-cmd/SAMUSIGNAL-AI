@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {analyze, evaluate, ema, rsi, adx, impulse, atr} from '../src/engine.js';
+import {pipUsd} from '../src/symbols.js';
 const spec = {d: 5, pip: 0.0001};
 function mk(n, start, step, tf, wave = 0.0004, t0 = 1.7e12){
   const out = []; let p = start;
@@ -61,4 +62,11 @@ test('78.6% entry is never Grade A', () => {
   assert.equal(s.fibX, 0.786, 'entry should be at 78.6%');
   assert.ok(s.entry < live);
   assert.notEqual(s.grade, 'A');
+});
+
+test('pip value USD for 0.01 lot', () => {
+  assert.equal(+pipUsd('EUR/USD', 0.01).toFixed(4), 0.1);
+  assert.ok(Math.abs(pipUsd('USD/JPY', 0.01, {'USD/JPY': 150}) - 0.0667) < 0.001);
+  assert.equal(+pipUsd('XAU/USD', 0.01).toFixed(4), 0.1);
+  assert.ok(Math.abs(pipUsd('GBP/JPY', 0.02, {'USD/JPY': 160}) - 0.125) < 0.001);
 });
