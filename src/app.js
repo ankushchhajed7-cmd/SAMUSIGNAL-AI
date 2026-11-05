@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.8.0';
+export const VERSION = '1.8.1';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -382,7 +382,7 @@ async function onMt5(){
   const ok = await dlg('PERSONAL FX को भेजें?', `<b style="font-size:16px">${esc(SPECS[r.sym].n)} · ${r.dir} LIMIT @ ${fmt(r.sym, r.entry)}</b><div class="note" style="margin-top:4px">Live ${fmt(r.sym, live)} · Grade ${r.grade} · 60 min में न भरे तो EA हटा देगा</div>
 <div style="margin-top:10px">${pick.length ? 'Account: ' + pick.map(a => `<b style="color:${a.real ? 'var(--up)' : 'var(--gold)'}">${a.real ? 'REAL' : 'DEMO'} ${esc(a.login)}</b> (${esc(a.cur || '')} ${(+a.bal || 0).toFixed(2)})`).join(' + ') : '<span style="color:var(--gold)">⚠ कोई PERSONAL FX online नहीं दिखा — order Firebase में रहेगा, EA चालू होते ही लगेगा</span>'}</div>
 <div class="note" style="margin-top:8px">Lot, TP/SL, grid: PERSONAL FX के नियम (signal का SL/TP EA पर लागू नहीं)</div>${dup}
-${real ? '<div class="warn" style="margin-top:10px">💰 REAL account — असली पैसे का जोखिम है। Grade C पर ध्यान से।</div>' : ''}${r.grade === 'C' ? '<div class="warn" style="margin-top:10px">Grade C — कमज़ोर / counter-trend setup</div>' : ''}`, '🚀 भेजो', 'Cancel');
+${real ? '<div class="warn" style="margin-top:10px">💰 REAL account — असली पैसे का जोखिम है।</div>' : ''}${r.grade === 'C' ? '<div class="warn" style="margin-top:10px">⚠ ये signal Grade C है — कमज़ोर / counter-trend setup</div>' : ''}`, '🚀 भेजो', 'Cancel');
   if(!ok) return;
   try{
     const sent = await sendLimit(s, r, live, pick);
