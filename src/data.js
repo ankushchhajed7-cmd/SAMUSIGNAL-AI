@@ -62,7 +62,7 @@ async function feedBars(s, sym, tf){
 }
 
 /* ---------------- TwelveData ---------------- */
-const TD = {cache: {}, q: {t: 0, d: {}}};
+const TD = {cache: {}, q: {}};   /* v1.8.2: q = har pair ka alag cache {sym: {t, d}} */
 async function tdBars(s, sym, tf, n){
   const ck = sym + '|' + tf, c = TD.cache[ck];
   if(c && Date.now() - c.t < 60000) return c.bars;
@@ -92,13 +92,16 @@ export async function quotes(s, syms){
     }catch(e){}
   }
   if(!s.tdKey) return out;
-  if(Date.now() - TD.q.t < 60000) return TD.q.d;                        /* TwelveData credit bachao: 1 min me ek baar */
+  /* v1.8.2 bug fix: pehle 1 min tak PICHHLE pair ka bhaav lauta deta tha (pair badalte hi "Live bhaav nahi mila").
+     Ab har pair ka apna 1-min cache — sirf jo pair purane / nahi hain wahi TwelveData se (credit bachat waisi hi). */
+  const now = Date.now(), need = [];
+  syms.forEach(x => { const c = TD.q[x]; if(c && now - c.t < 60000) out[x] = c.d; else need.push(x) });
+  if(!need.length) return out;
   try{
-    const list = syms.slice(0, 8);
+    const list = need.slice(0, 8);
     const r = await fetch(`https://api.twelvedata.com/quote?symbol=${encodeURIComponent(list.join(','))}&apikey=${encodeURIComponent(s.tdKey)}`);
     const j = await r.json(), one = list.length === 1 ? {[list[0]]: j} : j;
-    list.forEach(x => { const q = one[x]; if(q && q.close) out[x] = {p: +q.close, chg: +q.percent_change || 0, sp: 0, src: 'td'} });
-    TD.q = {t: Date.now(), d: out};
+    list.forEach(x => { const q = one[x]; if(q && q.close){ out[x] = {p: +q.close, chg: +q.percent_change || 0, sp: 0, src: 'td'}; TD.q[x] = {t: now, d: out[x]} } });
   }catch(e){}
   return out;
 }

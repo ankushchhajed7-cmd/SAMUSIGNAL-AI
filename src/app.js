@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.8.1';
+export const VERSION = '1.8.2';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -153,7 +153,7 @@ ${compact ? `<div style="display:flex;justify-content:space-between;margin-top:1
 }
 function resLabel(r){
   const s = r.res && r.res.state;
-  if(s) return {PENDING: '⏳ Entry का इंतज़ार', OPEN: '🟢 Trade चालू', EXPIRED: '⌛ Fill नहीं हुआ', SL: '🔴 SL hit', LOCK: '🔒 Profit lock'}[s] || '✅ TP hit';
+  if(s) return {PENDING: '⏳ Entry का इंतज़ार', OPEN: '🟢 Trade चालू', EXPIRED: '⌛ Fill नहीं हुआ', SL: '🔴 SL hit', LOCK: '🔒 Profit lock', TIMEOUT: '⏱ 48 घंटे में TP/SL नहीं'}[s] || '✅ TP hit';
   return Date.now() < r.expiresAt ? 'Valid ' + Math.max(0, Math.round((r.expiresAt - Date.now()) / 60000)) + ' min' : 'Expired';
 }
 function renderHomeCard(){
@@ -193,7 +193,7 @@ async function quickRead(sym){
 }
 
 /* ---------------- ANALYZE ---------------- */
-const STEPS = ['Live candles (15m + 1H)', 'Trend + impulse leg', 'Fibonacci golden zone', 'Entry · SL · TP1-3 · Grade'];
+const STEPS = ['Live candles (15m + 1H)', 'Trend + impulse leg', 'Fibonacci golden zone', 'Entry · SL · TP · Grade'];
 function scanUI(i, sub){
   $('scSub').textContent = sub || ''; const pct = Math.round(i / STEPS.length * 100);
   $('scPct').textContent = pct + '%'; $('scBar').style.width = pct + '%';
@@ -333,7 +333,7 @@ function aiHi(txt){
 function renderAi(r){
   const a = r.ai, el = $('rAi');
   if(!a){ el.innerHTML = LS.get('aiOn', true) && K().gKey && r.src !== 'shot' && Date.now() - r.at < 120000 ? '<div class="card" style="margin:12px 18px 0;padding:12px 14px;font-size:14px">🤖 AI check चल रहा है…</div>' : ''; return }
-  if(a.err){ el.innerHTML = `<div class="card" style="margin:12px 18px 0;padding:12px 14px" class="note">🤖 AI check नहीं हुआ: ${esc(a.err.slice(0, 80))}</div>`; return }
+  if(a.err){ el.innerHTML = `<div class="card note" style="margin:12px 18px 0;padding:12px 14px">🤖 AI check नहीं हुआ: ${esc(a.err.slice(0, 80))}</div>`; return }
   el.innerHTML = `<div class="ai-box"><div style="display:flex;align-items:center;gap:10px"><span style="font-size:22px">🤖</span><b class="v" style="color:${a.agree ? 'var(--up)' : 'var(--dn2)'}">AI ${a.agree ? 'सहमत' : 'असहमत'} · ${a.conf}%</b></div><div class="why">${aiHi(a.reason)}</div></div>`;
 }
 function renderStatus(r){
@@ -399,7 +399,9 @@ async function refreshResults(){
   for(const sym of syms){
     try{ await evalSym(sym, todo.filter(r => r.sym === sym)) }catch(e){}
   }
-  st.hist.filter(r => !(r.res && r.res.done) && now - r.at >= 48 * 3600e3).forEach(r => { r.res = Object.assign({}, r.res || {state: 'EXPIRED'}, {done: true}) });
+  /* v1.8.2 bug fix: 48 ghante baad bhi band nahi hua — bhara hua (OPEN) trade ab "EXPIRED" nahi (warna 6 ghante me History se hat jaata), "TIMEOUT" */
+  st.hist.filter(r => !(r.res && r.res.done) && now - r.at >= 48 * 3600e3).forEach(r => { const open = r.res && r.res.state === 'OPEN';
+    r.res = Object.assign({}, r.res || {}, {state: open ? 'TIMEOUT' : 'EXPIRED', done: true}) });
   saveHist(); await refreshOrders(); await paperSync(); pruneExpired();
 }
 function renderHis(){
@@ -426,12 +428,12 @@ ${MO.length ? `<br><span class="note">⚡ नियम ने MARKET कहा �
   const L = st.hist.filter(r => {
     const s = r.res && r.res.state;
     if(st.hf === 'won' && !isWin(s)) return false; if(st.hf === 'lost' && !isLoss(s)) return false;
-    if(st.hf === 'pend' && (isWin(s) || isLoss(s) || s === 'EXPIRED')) return false;
+    if(st.hf === 'pend' && (isWin(s) || isLoss(s) || s === 'EXPIRED' || s === 'TIMEOUT')) return false;
     if(st.hk === 'mt5' && !r.sent.length) return false; if(st.hk === 'app' && r.sent.length) return false;
     return true }).slice(0, 80);
   $('hList').innerHTML = L.length ? L.map(r => {
     const s = r.res && r.res.state, B = r.dir === 'BUY';
-    const [bc, bt] = isWin(s) ? ['b-win', 'TP HIT'] : isLoss(s) ? ['b-loss', 'SL HIT'] : s === 'EXPIRED' ? ['b-exp', 'EXPIRED'] : s === 'OPEN' ? ['b-open', 'OPEN'] : ['b-pend', 'PENDING'];
+    const [bc, bt] = isWin(s) ? ['b-win', 'TP HIT'] : isLoss(s) ? ['b-loss', 'SL HIT'] : s === 'EXPIRED' ? ['b-exp', 'EXPIRED'] : s === 'TIMEOUT' ? ['b-exp', '48h'] : s === 'OPEN' ? ['b-open', 'OPEN'] : ['b-pend', 'PENDING'];
     const pip = (r.res && r.res.pips ? (r.res.pips > 0 ? '+' : '') + r.res.pips.toFixed(1) + ' pips · ' + usdTxt(usdOf(r)) : s === 'EXPIRED' ? 'not filled' : '—') +
       (r.mres && (isWin(r.mres.state) || isLoss(r.mres.state)) ? `<div style="font-size:10px;color:${isWin(r.mres.state) ? 'var(--up)' : 'var(--dn2)'}">⚡${r.mkt && r.mkt.ok ? '✓' : ''} M: ${isWin(r.mres.state) ? 'TP' : 'SL'} ${usdTxt(mUsd(r))}</div>` : r.mkt ? `<div style="font-size:10px" class="note">⚡ M: चालू</div>` : '') +
       (r.tres && (isWin(r.tres.state) || isLoss(r.tres.state)) ? `<div style="font-size:10px;color:${isWin(r.tres.state) ? 'var(--up)' : 'var(--dn2)'}">🔒 T: ${r.tres.state === 'LOCK' ? 'LOCK' : isWin(r.tres.state) ? 'TP' : 'SL'} ${usdTxt(tUsd(r))}</div>` : r.tres && r.tres.state === 'OPEN' ? `<div style="font-size:10px" class="note">🔒 T: चालू${r.tres.lock ? ' · lock ' + usdTxt(r.tres.lock * pipUsd(r.sym, vLot(), rates0())) : ''}</div>` : '');
@@ -654,7 +656,7 @@ function boot(){
   $('flSize').onclick = e => { const b = e.target.closest('[data-fz]'); if(b){ FL.size = b.dataset.fz === 'w' ? 'w' : +b.dataset.fz; LS.set('flSize', FL.size); flChips(); flRender() } };
   document.addEventListener('visibilitychange', () => { if(st.scr !== 'flow') return; if(document.hidden) flowStop(); else flowStart() });
   document.body.addEventListener('click', e => { const o = e.target.closest('[data-open]'); if(o) openRes(o.dataset.open) });
-  $('resBack').onclick = () => show(st.hist.find(x => x.id === st.cur && x.sym === st.pair) ? 'home' : 'his');
+  $('resBack').onclick = () => { const r = getRec(st.cur); show(r && (r.preview || r.sym === st.pair) ? 'home' : 'his') };   /* v1.8.2: preview se ← = Home */
   $('bRe').onclick = () => { const r = getRec(st.cur); if(r && SPECS[r.sym]){ st.pair = r.sym; LS.set('pair', r.sym); runAnalyze(r.sym) } };
   $('bMt5').onclick = onMt5;
   $('hisRef').onclick = async () => { toast('Refreshing…'); await refreshResults(); renderHis() };
