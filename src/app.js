@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot, aiCouncil} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.9.1';
+export const VERSION = '1.9.2';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -769,8 +769,8 @@ function show(sc){
 }
 function boot(){
   document.querySelectorAll('[data-ic]').forEach(e => { e.innerHTML = icon(e.dataset.ic, e.dataset.ic === 'spark' ? '#1a1408' : 'currentColor', e.dataset.ic === 'spark' && e.closest('.fab') ? 28 : e.dataset.ic === 'spark' ? 18 : 22) });
-  $('splashLogo').innerHTML = logo(104); $('splashVer').textContent = 'v' + VERSION; $('hVer').textContent = 'v' + VERSION; $('refBtn').innerHTML = icon('ref', '#e8c35a', 18);
-  $('refBtn').onclick = hardRefresh; $('hLogo').innerHTML = logo(42); $('icDown').innerHTML = icon('down', '#a39a86', 18);
+  $('splashLogo').innerHTML = logo(104); $('splashVer').textContent = 'v' + VERSION; $('hVer').textContent = 'v' + VERSION; $('refIc').innerHTML = icon('ref', '#e8c35a', 18);
+  $('refBtn').onclick = hardRefresh; $('hLogo').innerHTML = logo(44); $('icDown').innerHTML = icon('down', '#a39a86', 18);
   $('resBack').innerHTML = icon('back', '#f3efe6', 18); $('hisRef').innerHTML = icon('ref', '#e8c35a', 18); $('hGauge').innerHTML = gauge(64, 36, 50);
   $('nav').addEventListener('click', e => { const a = e.target.closest('a'); if(!a) return; e.preventDefault(); if(a.id === 'fab') runAnalyze(); else show(a.dataset.s) });
   $('tfs').addEventListener('click', e => { const b = e.target.closest('[data-tf]'); if(!b) return; st.tf = b.dataset.tf; LS.set('tf', st.tf); homeChart && homeChart.ch.priceScale('right').applyOptions({autoScale: true}); loadHome() });
