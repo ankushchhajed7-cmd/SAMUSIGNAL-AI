@@ -1,12 +1,12 @@
 /* SAMUSIGNAL AI — personal app. SamuSignal ki keys + MT5 feed + PERSONAL FX bridge. */
 import {SPECS, PAIRS, fmt, fmtS, fromName, pipUsd} from './symbols.js';
 import {LS, keys, feedStatus, series, quotes, fbUrl} from './data.js';
-import {analyze, evaluate, isWin, isLoss} from './engine.js';
+import {analyze, evaluate, evaluateMarket, isWin, isLoss} from './engine.js';
 import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.6.0';
+export const VERSION = '1.7.0';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -194,6 +194,14 @@ function usdOf(r){
     r.res.lot = vLot(); r.res.usd = +(r.res.pips * pipUsd(r.sym, r.res.lot, rates)).toFixed(2) }
   return r.res.usd;
 }
+/* v1.7.0: ⚡ MARKET ka $ — ledger me (LIMIT expire hokar History se hate tab bhi hisaab bana rahe) */
+function mUsd(r){
+  const s = r.mres && r.mres.state; if(!(isWin(s) || isLoss(s)) || !isFinite(r.mres.pips)) return 0;
+  if(r.mres.usd === undefined){ const rates = {}; Object.keys(st.q).forEach(k => { if(st.q[k] && st.q[k].p) rates[k] = st.q[k].p });
+    r.mres.lot = vLot(); r.mres.usd = +(r.mres.pips * pipUsd(r.sym, r.mres.lot, rates)).toFixed(2) }
+  const L = LS.get('mLedger', {}); if(L[r.id] === undefined){ L[r.id] = {usd: r.mres.usd, win: isWin(s), ok: !!(r.mkt && r.mkt.ok)}; LS.set('mLedger', L) }
+  return r.mres.usd;
+}
 const usdTxt = v => (v >= 0 ? '+$' : '−$') + Math.abs(v).toFixed(2);
 /* v1.2.0: ek pair pe ek hi chaalu signal — TP / SL (ya fill na hua = EXPIRED) aane tak naya History me nahi */
 const isActive = r => r.res ? (r.res.state === 'PENDING' || r.res.state === 'OPEN') : Date.now() < r.expiresAt;
@@ -206,10 +214,11 @@ async function evalSym(sym, recs){
     try{ const x = await series(s, sym, '1min', 250); if(x.src === 'mt5' && x.bars.length && x.bars[0].t <= oldest) d = x }catch(e){}
   }
   if(!d) d = await series(s, sym, '5min', 300);
-  recs.forEach(r => { r.res = Object.assign(evaluate(Object.assign({}, r, {tp: r.tp.slice(0, 1)}), d.bars, now, SPECS[sym].pip), {src: d.src, at: now}); usdOf(r) });
+  recs.forEach(r => { if(!(r.res && r.res.done)){ r.res = Object.assign(evaluate(Object.assign({}, r, {tp: r.tp.slice(0, 1)}), d.bars, now, SPECS[sym].pip), {src: d.src, at: now}); usdOf(r) }
+    if(r.mkt && !(r.mres && r.mres.done)){ r.mres = evaluateMarket(r.mkt, r.at, r.dir, d.bars, SPECS[sym].pip); mUsd(r) } });
 }
 async function activeFor(sym){
-  const todo = st.hist.filter(r => r.sym === sym && !(r.res && r.res.done));
+  const todo = st.hist.filter(r => r.sym === sym && (!(r.res && r.res.done) || (r.mkt && !(r.mres && r.mres.done))));
   if(todo.length && SPECS[sym]){ try{ await evalSym(sym, todo); saveHist() }catch(e){} }
   return st.hist.find(r => r.sym === sym && isActive(r)) || null;
 }
@@ -299,7 +308,11 @@ function renderStatus(r){
     return `<div class="sr">🚀 ${o.acct ? (o.real ? 'REAL ' : 'DEMO ') + esc(o.acct) : 'PERSONAL FX'}<em style="color:var(--${s[1] === 'mu' ? 'mu' : s[1] === 'up' ? 'up' : s[1] === 'dn' ? 'dn2' : 'gold'})">${esc(s[0])}</em></div>` }).join('');
   const tk = r.taken ? `<div class="sr">📋 Trade record · ${ist(r.taken.at)}<em>${r.dir} LIMIT @ ${fmtS(r.sym, r.entry)} · SL ${fmtS(r.sym, r.sl)} · TP ${fmtS(r.sym, r.tp[0])}</em></div>` : '';
   const res = r.res ? `<div class="sr">📊 नतीजा${r.res.at ? ` <span class="note">· ${ist(r.res.at, true)} ${r.res.src === 'mt5' ? 'MT5' : 'TD'}</span>` : ''}<em><b style="color:${isWin(r.res.state) ? 'var(--up)' : isLoss(r.res.state) ? 'var(--dn2)' : 'var(--gold)'}">${esc(resLabel(r))}</b>${r.res.pips ? ' · ' + (r.res.pips > 0 ? '+' : '') + r.res.pips.toFixed(1) + ' pips' : ''}</em></div>` : '';
-  box.innerHTML = rows || tk || res ? `<div class="card" style="margin:12px 18px 0">${rows}${tk}${res}</div>` : '';
+  const m = r.mkt, ms = r.mres && r.mres.state;
+  const mk = m ? `<div class="sr" style="flex-wrap:wrap">⚡ अगर MARKET लेते <span class="note">(हिसाब)</span><em>${r.dir} @ ${fmtS(r.sym, m.entry)} · SL ${fmtS(r.sym, m.sl)} · TP ${fmtS(r.sym, m.tp)}<br>
+<b style="color:${isWin(ms) ? 'var(--up)' : isLoss(ms) ? 'var(--dn2)' : 'var(--gold)'}">${isWin(ms) ? '✅ TP hit · ' + usdTxt(mUsd(r)) : isLoss(ms) ? '🔴 SL hit · ' + usdTxt(mUsd(r)) : '🟢 चालू'}</b></em></div>
+<div class="sr" style="font-size:12px;font-weight:500">${m.ok ? '⚡ <b style="color:var(--up)">नियम: यहाँ MARKET सही था</b>' : '⏳ नियम: LIMIT सही था'}<em>${Object.entries({trend: 'trend', pullback: 'pullback', notStretched: 'भागा नहीं', limitFar: 'LIMIT दूर', sentiment: 'sentiment'}).map(([k, t]) => (m.checks[k] ? '✓' : '✗') + t).join(' · ')}</em></div>` : '';
+  box.innerHTML = rows || tk || res || mk ? `<div class="card" style="margin:12px 18px 0">${rows}${tk}${res}${mk}</div>` : '';
 }
 async function refreshOrders(){
   const pend = [...st.hist, st.preview].filter(r => r && r.sent.some(o => !o.status || o.status === 'NEW' || o.status === 'PLACED') && Date.now() - r.at < 26 * 3600e3);
@@ -345,7 +358,7 @@ ${real ? '<div class="warn" style="margin-top:10px">💰 REAL account — अस
 /* ---------------- HISTORY ---------------- */
 async function refreshResults(){
   const s = K(), now = Date.now();
-  const todo = st.hist.filter(r => SPECS[r.sym] && !(r.res && r.res.done) && now - r.at < 48 * 3600e3);
+  const todo = st.hist.filter(r => SPECS[r.sym] && (!(r.res && r.res.done) || (r.mkt && !(r.mres && r.mres.done))) && now - r.at < 48 * 3600e3);
   const syms = [...new Set(todo.map(r => r.sym))].slice(0, (await feedStatus(s)).ok ? 12 : 3);
   for(const sym of syms){
     try{ await evalSym(sym, todo.filter(r => r.sym === sym)) }catch(e){}
@@ -362,6 +375,11 @@ function renderHis(){
   $('stBal').innerHTML = `<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><span class="lbl">💰 Virtual balance</span><span class="note">(${vLot()} lot / trade)</span></div>
 <div style="display:flex;align-items:baseline;gap:10px;margin-top:4px;flex-wrap:wrap"><span class="mono" style="color:var(--mu);font-size:14px">$${b0.toFixed(2)} →</span><b class="mono" style="font-size:24px">$${(b0 + pnl).toFixed(2)}</b>
 <b class="mono" style="font-size:14px;color:${pnl >= 0 ? 'var(--up)' : 'var(--dn2)'}">${usdTxt(pnl)} (${(pnl / b0 * 100 >= 0 ? '+' : '') + (pnl / b0 * 100).toFixed(2)}%)</b></div>`;
+  const ML = Object.values(LS.get('mLedger', {})), mp = +ML.reduce((t, x) => t + x.usd, 0).toFixed(2), mw = ML.filter(x => x.win).length;
+  const MO = ML.filter(x => x.ok), mop = +MO.reduce((t, x) => t + x.usd, 0).toFixed(2);
+  $('stBal').innerHTML += `<div style="margin-top:8px;font-size:12px;line-height:1.6" class="mono"><span class="lbl">⚡ अगर MARKET लेते (हिसाब)</span><br>
+<b style="color:${mp >= 0 ? 'var(--up)' : 'var(--dn2)'}">${usdTxt(mp)}</b> <span class="note">· ${ML.length} trade · ${ML.length ? Math.round(mw / ML.length * 100) : 0}% जीत</span>
+${MO.length ? `<br><span class="note">⚡ नियम ने MARKET कहा था:</span> <b style="color:${mop >= 0 ? 'var(--up)' : 'var(--dn2)'}">${usdTxt(mop)}</b> <span class="note">· ${MO.length} trade · ${Math.round(MO.filter(x => x.win).length / MO.length * 100)}% जीत</span>` : ''}</div>`;
   saveHist();
   $('stDots').innerHTML = last.length ? last.map(r => `<span style="flex:1;height:16px;border-radius:4px;background:${isWin(r.res.state) ? 'var(--up)' : 'var(--dn)'}"></span>`).join('') : '<span class="note">अभी कोई पूरा नतीजा नहीं</span>';
   $('hf').innerHTML = [['all', 'All'], ['won', 'Won'], ['lost', 'Lost'], ['pend', 'Pending']].map(([k, t]) => `<button class="pill${st.hf === k ? ' on' : ''}" data-hf="${k}">${t}</button>`).join('');
@@ -375,7 +393,8 @@ function renderHis(){
   $('hList').innerHTML = L.length ? L.map(r => {
     const s = r.res && r.res.state, B = r.dir === 'BUY';
     const [bc, bt] = isWin(s) ? ['b-win', 'TP HIT'] : isLoss(s) ? ['b-loss', 'SL HIT'] : s === 'EXPIRED' ? ['b-exp', 'EXPIRED'] : s === 'OPEN' ? ['b-open', 'OPEN'] : ['b-pend', 'PENDING'];
-    const pip = r.res && r.res.pips ? (r.res.pips > 0 ? '+' : '') + r.res.pips.toFixed(1) + ' pips · ' + usdTxt(usdOf(r)) : s === 'EXPIRED' ? 'not filled' : '—';
+    const pip = (r.res && r.res.pips ? (r.res.pips > 0 ? '+' : '') + r.res.pips.toFixed(1) + ' pips · ' + usdTxt(usdOf(r)) : s === 'EXPIRED' ? 'not filled' : '—') +
+      (r.mres && (isWin(r.mres.state) || isLoss(r.mres.state)) ? `<div style="font-size:10px;color:${isWin(r.mres.state) ? 'var(--up)' : 'var(--dn2)'}">⚡${r.mkt && r.mkt.ok ? '✓' : ''} M: ${isWin(r.mres.state) ? 'TP' : 'SL'} ${usdTxt(mUsd(r))}</div>` : r.mkt ? `<div style="font-size:10px" class="note">⚡ M: चालू</div>` : '');
     return `<div class="row" data-open="${r.id}"><span style="width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:${B ? 'var(--up)' : 'var(--dn)'};background:${B ? 'rgba(47,224,138,0.12)' : 'rgba(255,93,108,0.12)'}">${r.dir}</span>
 <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:14px">${esc(SPECS[r.sym] ? SPECS[r.sym].n : r.sym)} <span style="font-size:11px;font-weight:600;color:var(--mu)">LIMIT · ${istD(r.at)} ${ist(r.at)}</span></div>
 <div style="font-size:11px;color:var(--mu)" class="mono">Entry ${fmtS(r.sym, r.entry)} · Grade ${r.grade}${r.sent.length ? '<span class="kind k-mt5">MT5</span>' : ''}${r.src === 'shot' ? '<span class="kind k-shot">📷</span>' : ''}</div></div>
@@ -446,7 +465,9 @@ const paperRow = r => ({id: r.id, sym: r.sym, dir: r.dir, entry: r.entry, sl: r.
   adx: r.adx === undefined ? null : r.adx, regime: r.regime || '', danger: r.danger || '', fibX: r.fibX === undefined ? null : r.fibX, src: r.src || '',
   at: r.at, expiresAt: r.expiresAt, ai: r.ai && !r.ai.err ? {agree: !!r.ai.agree, conf: r.ai.conf || 0} : null, mt5: r.sent.length > 0,
   res: r.res ? {state: r.res.state, done: !!r.res.done, pips: r.res.pips === undefined ? null : +(+r.res.pips).toFixed(1),
-    filledAt: r.res.filledAt || null, exitAt: r.res.exitAt || null, usd: r.res.usd === undefined ? null : r.res.usd, lot: r.res.lot || null} : null, v: VERSION});
+    filledAt: r.res.filledAt || null, exitAt: r.res.exitAt || null, usd: r.res.usd === undefined ? null : r.res.usd, lot: r.res.lot || null} : null,
+  mkt: r.mkt ? {ok: !!r.mkt.ok, entry: r.mkt.entry, sl: r.mkt.sl, tp: r.mkt.tp, checks: r.mkt.checks,
+    res: r.mres ? {state: r.mres.state, done: !!r.mres.done, pips: r.mres.pips === undefined ? null : +(+r.mres.pips).toFixed(1), usd: r.mres.usd === undefined ? null : r.mres.usd} : null} : null, v: VERSION});
 let paperBusy = false;
 async function paperSync(){
   if(paperBusy) return; paperBusy = true;
@@ -470,6 +491,7 @@ function pruneExpired(){
   const now = Date.now(), n0 = st.hist.length;
   st.hist = st.hist.filter(r => {
     if(!(r.res && r.res.state === 'EXPIRED')) return true;
+    if(r.mkt && !(r.mres && r.mres.done)) return true;          /* v1.7.0: MARKET hisaab abhi chaalu */
     const age = now - (r.expiresAt || r.at);
     const synced = typeof r._pk === 'string' && r._pk.includes('"state":"EXPIRED"');
     return !(age > 6 * 3600e3 && (synced || age > 24 * 3600e3));
