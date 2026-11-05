@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {analyze, evaluate, evaluateMarket, evaluateTrail, ema, rsi, adx, impulse, atr} from '../src/engine.js';
+import {analyze, evaluate, evaluateMarket, evaluateTrail, councilPlan, ema, rsi, adx, impulse, atr} from '../src/engine.js';
 import {pipUsd} from '../src/symbols.js';
 const spec = {d: 5, pip: 0.0001};
 function mk(n, start, step, tf, wave = 0.0004, t0 = 1.7e12){
@@ -103,4 +103,15 @@ test('evaluateTrail: lock after +start, trails by step, SL before lock, TP cap',
   /* not filled -> EXPIRED passes through */
   r = evaluateTrail(sig, [bar(5, 1.1050, 1.1010), bar(70, 1.1050, 1.1010)], 1e9, 0.0001, tr);
   assert.equal(r.state, 'EXPIRED');
+});
+
+test('councilPlan: valid kept, wrong side fixed, market uses live, bad json null', () => {
+  const ctx = {live: 1.1000, atr: 0.0010, d: 5};
+  let p = councilPlan({final: {dir: 'BUY', order: 'LIMIT', entry: 1.0995, sl: 1.0985, tp: 1.1010, confidence: 70}, bots: [{name: 'Trend', view: 'buy', note: 'x'}]}, ctx);
+  assert.equal(p.entry, 1.0995); assert.equal(p.sl, 1.0985); assert.equal(p.tp, 1.1010); assert.equal(p.fixed, false); assert.equal(p.bots[0].view, 'BUY');
+  p = councilPlan({final: {dir: 'BUY', order: 'LIMIT', entry: 1.1010, sl: 1.1020, tp: 1.0990}}, ctx);   /* galat taraf + ulta SL/TP */
+  assert.ok(p.fixed && p.entry < ctx.live && p.sl < p.entry && p.tp > p.entry);
+  p = councilPlan({final: {dir: 'SELL', order: 'MARKET', entry: 0, sl: 1.1015, tp: 1.0985}}, ctx);
+  assert.equal(p.entry, 1.1); assert.ok(p.sl > p.entry && p.tp < p.entry);
+  assert.equal(councilPlan({final: {dir: 'HOLD'}}, ctx), null); assert.equal(councilPlan({}, ctx), null);
 });
