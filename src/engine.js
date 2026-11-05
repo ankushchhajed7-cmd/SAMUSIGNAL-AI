@@ -197,3 +197,24 @@ export function evaluateMarket(m, at, dir, bars, pip = 0.0001){
   }
   return {state: 'OPEN', done: false};
 }
+
+/* v1.9.0: 🧠 Council ke jawab ki jaanch — galat taraf / bahut door / ulta SL-TP ho to sudhaar do (fixed = true).
+   ctx = {live, atr, d}. Hamesha ek saaf plan lautata hai, ya null (dir hi samajh na aaye). */
+export function councilPlan(j, ctx){
+  const f = j && j.final; if(!f) return null;
+  const dir = String(f.dir || '').toUpperCase(); if(dir !== 'BUY' && dir !== 'SELL') return null;
+  const B = dir === 'BUY' ? 1 : -1, A = ctx.atr, live = ctx.live, rd = v => +(+v).toFixed(ctx.d);
+  let order = String(f.order || 'LIMIT').toUpperCase() === 'MARKET' ? 'MARKET' : 'LIMIT', fixed = false;
+  let entry = +f.entry, sl = +f.sl, tp = +f.tp;
+  if(order === 'MARKET') entry = live;
+  else if(!isFinite(entry) || !(B > 0 ? entry < live : entry > live) || Math.abs(live - entry) > 2.5 * A){ entry = live - B * 0.3 * A; fixed = true }
+  let risk = B * (entry - sl);
+  if(!isFinite(sl) || !(risk > 0) || risk < 0.4 * A || risk > 3 * A){ risk = Math.min(2 * A, Math.max(0.6 * A, isFinite(risk) && risk > 0 ? risk : A)); sl = entry - B * risk; fixed = true }
+  let rew = B * (tp - entry);
+  if(!isFinite(tp) || !(rew > 0) || rew < 0.5 * risk || rew > 3 * risk){ tp = entry + B * risk; fixed = true }
+  const views = ['BUY', 'SELL', 'WAIT'];
+  const bots = (Array.isArray(j.bots) ? j.bots : []).slice(0, 6).map(b => ({name: String(b && b.name || '').slice(0, 20),
+    view: views.includes(String(b && b.view || '').toUpperCase()) ? String(b.view).toUpperCase() : 'WAIT', note: String(b && b.note || '').slice(0, 160)}));
+  return {dir, order, entry: rd(entry), sl: rd(sl), tp: rd(tp), conf: Math.max(0, Math.min(100, Math.round(+f.confidence || 0))),
+    summary: String(f.summary || '').slice(0, 300), bots, debate: (Array.isArray(j.debate) ? j.debate : []).slice(0, 4).map(x => String(x).slice(0, 200)), fixed};
+}

@@ -124,6 +124,7 @@ nav.bar .fab b{font-size:10px;font-weight:800;color:var(--gold);letter-spacing:.
 <section class="scr on" id="s-home">
 <header class="top"><span id="hLogo"></span>
 <div style="flex:1;min-width:0"><div class="mt" style="font-family:Cinzel,serif;font-weight:700;font-size:clamp(13px,4vw,19px);letter-spacing:.8px;white-space:nowrap">SAMUSIGNAL AI</div><div class="lbl" style="white-space:nowrap;font-size:9px;letter-spacing:1px">AI chart signals · <b id="hVer" style="color:var(--gold);text-transform:none"></b></div></div>
+<button class="ib" id="cBtn" title="AI Council" aria-label="AI Council" style="width:32px;height:32px;flex:none;font-size:16px">🧠</button>
 <button class="ib" id="flowBtn" title="Order Flow" aria-label="Order Flow" style="width:32px;height:32px;flex:none;font-size:16px">🐋</button>
 <button class="ib" id="refBtn" title="Refresh" aria-label="Refresh" style="width:32px;height:32px;flex:none"></button>
 <span class="live off" id="srcPill"><i></i>OFF</span></header>
@@ -166,6 +167,16 @@ nav.bar .fab b{font-size:10px;font-weight:800;color:var(--gold);letter-spacing:.
 <div class="note" style="padding:12px 22px 0">Binance का free public data (live)। GOLD = PAXG token (XAUUSD के करीब, exact नहीं)। Forex pairs का public order book नहीं होता। ये order flow है, सलाह नहीं — फ़ैसले सेकंडों में बदलते हैं।</div>
 </section>
 
+<!-- AI COUNCIL (v1.9.0) — alag page: 6 expert bot + jaj ki raay, paper hisaab -->
+<section class="scr" id="s-council">
+<header class="top"><button class="ib" id="cBack"></button><div class="h1 mt" style="flex:1">🧠 AI Council</div><span class="note" id="cPair"></span></header>
+<div id="cMain"></div>
+<div id="cStats"></div>
+<div class="lbl" style="padding:16px 22px 0">पिछले फ़ैसले</div>
+<div id="cList" style="display:flex;flex-direction:column;gap:8px;padding:8px 18px 0"></div>
+<div class="note" style="padding:12px 22px 0">हर ANALYZE पर Council अपने आप उसी pair पर बहस करता है (Gemini)। इसका फ़ैसला सिर्फ़ paper trade है — MT5 पर कुछ नहीं जाता। ये बस आपके लिए extra confirmation है।</div>
+</section>
+
 <!-- RESULT -->
 <section class="scr" id="s-res">
 <header class="top"><button class="ib" id="resBack"></button><div class="h1 mt" style="flex:1">Signal</div><span id="resKind"></span></header>
@@ -174,6 +185,7 @@ nav.bar .fab b{font-size:10px;font-weight:800;color:var(--gold);letter-spacing:.
 <div class="chartbox" id="rChart" style="height:250px"><div class="fadeb"></div></div>
 <div id="rCard" style="position:relative;margin:-48px 18px 0;z-index:4"></div>
 <div id="rAi"></div>
+<div id="rCouncil"></div>
 <div class="card" style="margin:12px 18px 0;padding:12px 14px"><div class="lbl">Why this signal</div><div id="rWhy" style="display:flex;flex-direction:column;gap:6px;margin-top:8px;font-size:13px"></div></div>
 <div id="rStatus"></div>
 <div style="display:flex;gap:10px;padding:12px 18px 0"><button class="btn out" style="flex:1" id="bRe">🔄 Re-analyze</button><button class="btn gold" style="flex:1.4" id="bMt5">🚀 MT5 पे लगाओ</button></div>

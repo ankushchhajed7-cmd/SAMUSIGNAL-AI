@@ -1,12 +1,12 @@
 /* SAMUSIGNAL AI — personal app. SamuSignal ki keys + MT5 feed + PERSONAL FX bridge. */
 import {SPECS, PAIRS, fmt, fmtS, fromName, pipUsd} from './symbols.js';
 import {LS, keys, feedStatus, series, quotes, fbUrl, TD_WAIT} from './data.js';
-import {analyze, evaluate, evaluateMarket, evaluateTrail, isWin, isLoss} from './engine.js';
+import {analyze, evaluate, evaluateMarket, evaluateTrail, councilPlan, ema, atr as atrOf, rsi, adx, macdHist, trendScore, isWin, isLoss} from './engine.js';
 import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
-import {aiCheck, aiShot} from './ai.js';
+import {aiCheck, aiShot, aiCouncil} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.8.3';
+export const VERSION = '1.9.0';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -234,6 +234,98 @@ function tUsd(r){
   return r.tres.usd;
 }
 const usdTxt = v => (v >= 0 ? '+$' : '−$') + Math.abs(v).toFixed(2);
+/* ---------------- 🧠 v1.9.0: AI Council (paper hisaab) ---------------- */
+function councilCtx(sym, sig, b15, b1h){
+  const sp = SPECS[sym], f = v => (+v).toFixed(sp.d), c15 = b15.map(b => b.c), c1h = b1h.map(b => b.c), L = a => a[a.length - 1];
+  const b4 = []; for(let i = 0; i + 4 <= b1h.length; i += 4){ const g = b1h.slice(i, i + 4); b4.push({o: g[0].o, h: Math.max(...g.map(x => x.h)), l: Math.min(...g.map(x => x.l)), c: g[3].c}) }
+  const t4 = b4.length > 55 ? trendScore(b4) : 0, h = new Date().getUTCHours();
+  const session = h < 7 ? 'Asia' : h < 12 ? 'London' : h < 16 ? 'London + New York overlap' : h < 21 ? 'New York' : 'late / Asia open';
+  const last8 = b15.slice(-8).map(b => `${f(b.o)}/${f(b.h)}/${f(b.l)}/${f(b.c)}`).join('  ');
+  return [`PAIR: ${sp.n} · current price ${f(sig.live)} · time UTC ${new Date().toISOString().slice(11, 16)} · session ${session}`,
+    `15m: EMA21 ${f(L(ema(c15, 21)))} · EMA50 ${f(L(ema(c15, 50)))} · RSI ${rsi(c15).toFixed(0)} · MACD-hist ${macdHist(c15) > 0 ? '+' : '-'} · ADX ${adx(b15).adx.toFixed(0)} · ATR ${f(atrOf(b15))} · trend score ${sig.t15} (-3..+3)`,
+    `1H: EMA21 ${f(L(ema(c1h, 21)))} · EMA50 ${f(L(ema(c1h, 50)))} · RSI ${rsi(c1h).toFixed(0)} · ATR ${f(atrOf(b1h))} · trend score ${sig.t1h} (-3..+3) · 4H trend score ${t4}`,
+    `Last impulse leg (15m): high ${f(sig.leg.hi)} · low ${f(sig.leg.lo)} · Fib 50% ${f(sig.dir === 'BUY' ? sig.leg.hi - (sig.leg.hi - sig.leg.lo) * 0.5 : sig.leg.lo + (sig.leg.hi - sig.leg.lo) * 0.5)} · 61.8% ${f(sig.dir === 'BUY' ? sig.leg.hi - (sig.leg.hi - sig.leg.lo) * 0.618 : sig.leg.lo + (sig.leg.hi - sig.leg.lo) * 0.618)}`,
+    `Last 8 candles 15m (o/h/l/c, oldest first): ${last8}`,
+    `Sentiment (our 12 indicators): Buy ${sig.buyPct}% / Sell ${sig.sellPct}% · regime ${sig.regime} · danger ${sig.danger}`,
+    `Our engine proposes: ${sig.dir} LIMIT ${f(sig.entry)} · SL ${f(sig.sl)} · TP ${f(sig.tp[0])} · grade ${sig.grade}. Market idea: ${sig.mkt && sig.mkt.ok ? 'rule says MARKET ok' : 'rule says LIMIT'} (market entry ${f(sig.mkt ? sig.mkt.entry : sig.live)}).`].join('\n');
+}
+async function runCouncil(rec, sig, b15, b1h){
+  const s = K(); if(!LS.get('councilOn', true) || !s.gKey || !SPECS[rec.sym]) return;
+  rec.council = {busy: true}; if(st.cur === rec.id) renderCouncil(rec);
+  try{
+    const j = await aiCouncil(s, councilCtx(rec.sym, sig, b15, b1h));
+    const plan = councilPlan(j, {live: sig.live, atr: sig.atr, d: SPECS[rec.sym].d});
+    rec.council = plan ? Object.assign(plan, {at: Date.now()}) : {err: 'Council ka jawab samajh nahi aaya'};
+  }catch(e){ rec.council = {err: String(e.message || e).slice(0, 100)} }
+  if(!rec.preview){ saveHist(); paperSync() }
+  if(st.cur === rec.id){ renderCouncil(rec); renderStatus(rec) }
+}
+function cUsd(r){
+  const s = r.cres && r.cres.state; if(!(isWin(s) || isLoss(s)) || !isFinite(r.cres.pips)) return 0;
+  if(r.cres.usd === undefined){ r.cres.lot = vLot(); r.cres.usd = +(r.cres.pips * pipUsd(r.sym, r.cres.lot, rates0())).toFixed(2) }
+  const L = LS.get('cLedger', {}); if(L[r.id] === undefined){ L[r.id] = {usd: r.cres.usd, win: isWin(s), order: r.council && r.council.order, agree: !!(r.council && r.council.dir === r.dir)}; LS.set('cLedger', L) }
+  return r.cres.usd;
+}
+const cIC = {Trend: '📈', Movement: '⚡', Levels: '🎯', Market: '🌍', Risk: '🛡', Devil: '😈'};
+const cVc = v => v === 'BUY' ? 'var(--up)' : v === 'SELL' ? 'var(--dn2)' : 'var(--mu)';
+function cResTxt(r){
+  const cs = r.cres && r.cres.state;
+  if(r.preview) return ['var(--mu)', '👀 preview — paper में नहीं गिना'];
+  return isWin(cs) ? ['var(--up)', '✅ TP · ' + usdTxt(cUsd(r))] : isLoss(cs) ? ['var(--dn2)', '🔴 SL · ' + usdTxt(cUsd(r))] : cs === 'EXPIRED' ? ['var(--mu)', '⌛ LIMIT नहीं भरा'] : cs === 'TIMEOUT' ? ['var(--mu)', '48h'] : cs === 'OPEN' ? ['var(--gold)', '🟢 चालू'] : ['var(--gold)', '⏳ Entry का इंतज़ार'];
+}
+/* v1.9.0: Result pe sirf chhoti line — poora Council alag page pe */
+function renderCouncil(r){
+  const el = $('rCouncil'); if(el){ const c = r.council;
+    el.innerHTML = !c ? '' : `<a href="#" data-council="${r.id}" class="card" style="display:flex;align-items:center;gap:8px;margin:12px 18px 0;padding:11px 14px;border-color:rgba(232,195,90,0.5);color:var(--tx);text-decoration:none;font-size:13px"><span style="font-size:18px">🧠</span>${
+      c.busy ? '<span>AI Council बहस कर रहा है…</span>' : c.err ? `<span class="note">Council नहीं हुआ — ${esc(c.err.slice(0, 50))}</span>` :
+      `<span><b style="color:${cVc(c.dir)}">${c.dir} ${c.order}</b> · भरोसा ${c.conf}% · ${c.dir === r.dir ? '<b style="color:var(--up)">✅ सहमत</b>' : '<b style="color:var(--dn2)">⚠ उल्टा</b>'}</span>`}<b style="margin-left:auto;color:var(--gold)">देखें ›</b></a>` }
+  if(st.scr === 'council' && st.cRec === r.id) renderCPage();
+}
+function cPick(){
+  const all = [st.preview, ...st.hist].filter(x => x && x.council);
+  return all.find(x => x.id === st.cRec) || all.filter(x => x.sym === st.pair).sort((x, y) => y.at - x.at)[0] || all.sort((x, y) => y.at - x.at)[0] || null;
+}
+function renderCPage(){
+  const r = cPick(), S = r && r.sym, sp = S && SPECS[S]; st.cRec = r ? r.id : null;
+  $('cPair').textContent = r ? `${sp ? sp.n : S} · ${ist(r.at)}` : '';
+  const c = r && r.council;
+  if(!c) $('cMain').innerHTML = `<div class="card" style="margin:12px 18px 0;padding:14px;font-size:14px;line-height:1.6">अभी कोई Council फ़ैसला नहीं। Home पर कोई pair चुनकर <b>ANALYZE</b> दबाएँ — Council अपने आप उस pair पर राय देगा।${LS.get('councilOn', true) ? '' : '<br><b style="color:var(--dn2)">Settings में 🧠 AI Council बंद है।</b>'}${K().gKey ? '' : '<br><b style="color:var(--dn2)">Gemini key नहीं है।</b>'}</div>`;
+  else if(c.busy) $('cMain').innerHTML = `<div class="card" style="margin:12px 18px 0;padding:16px;font-size:14px;text-align:center">🧠 ${esc(sp ? sp.n : S)} पर 6 bot + जज बहस कर रहे हैं…<div class="note" style="margin-top:6px">10–40 sec</div></div>`;
+  else if(c.err) $('cMain').innerHTML = `<div class="card note" style="margin:12px 18px 0;padding:14px">🧠 Council नहीं हुआ: ${esc(c.err)}</div>`;
+  else {
+    const views = c.bots.reduce((o, b) => (o[b.view] = (o[b.view] || 0) + 1, o), {}), [rc, rt] = cResTxt(r), agree = c.dir === r.dir;
+    $('cMain').innerHTML = `<div class="card" style="margin:12px 18px 0;padding:14px;border-color:rgba(232,195,90,0.6);background:rgba(232,195,90,0.08)">
+<div class="lbl">⚖ जज का फ़ैसला</div>
+<div style="font-size:24px;font-weight:800;margin-top:4px"><span style="color:${cVc(c.dir)}">${c.dir} ${c.order}</span> <span class="mono" style="font-size:18px">@ ${fmtS(S, c.entry)}</span></div>
+<div style="display:flex;gap:8px;margin-top:10px"><div class="chip"><span class="note">SL</span><b style="color:var(--dn2)">${fmtS(S, c.sl)}</b></div><div class="chip"><span class="note">TP</span><b style="color:var(--up)">${fmtS(S, c.tp)}</b></div><div class="chip"><span class="note">भरोसा</span><b style="color:var(--gold)">${c.conf}%</b></div></div>
+<div style="font-size:14px;margin-top:10px;line-height:1.5">${aiHi(c.summary)}</div>${c.fixed ? '<div class="note" style="margin-top:4px">(कुछ levels नियम से ठीक किए — गलत तरफ़ / बहुत दूर थे)</div>' : ''}
+<div style="margin-top:10px;font-size:13px">🤖 वोट: <b style="color:var(--up)">BUY ${views.BUY || 0}</b> · <b style="color:var(--dn2)">SELL ${views.SELL || 0}</b> · <b style="color:var(--mu)">WAIT ${views.WAIT || 0}</b></div>
+<div style="margin-top:6px;font-size:13px">हमारा signal: <b style="color:${cVc(r.dir)}">${r.dir} LIMIT ${fmtS(S, r.entry)}</b> · Grade ${esc(r.grade)} → ${agree ? '<b style="color:var(--up)">✅ Council सहमत</b>' : '<b style="color:var(--dn2)">⚠ Council उल्टा सोचता है</b>'}</div>
+<div style="margin-top:6px;font-size:13px">📊 Council का paper नतीजा: <b style="color:${rc}">${rt}</b></div></div>
+<div class="card" style="margin:12px 18px 0;padding:12px 14px"><div class="lbl">6 Expert bots</div>
+<div style="display:flex;flex-direction:column;gap:9px;margin-top:10px">${c.bots.map(b => `<div style="display:flex;gap:8px;align-items:flex-start;font-size:13px"><span style="width:20px;flex:none;text-align:center">${cIC[b.name] || '🤖'}</span><b style="min-width:82px">${esc(b.name)}</b><span class="badge" style="color:${cVc(b.view)};border:1px solid ${cVc(b.view)}">${b.view}</span><span style="flex:1;color:var(--mu);line-height:1.4">${esc(b.note)}</span></div>`).join('')}</div>
+${c.debate.length ? `<div class="lbl" style="margin-top:12px">💬 बहस</div><div style="margin-top:6px;font-size:13px;color:var(--mu);line-height:1.5;border-left:2px solid var(--line);padding-left:8px">${c.debate.map(esc).join('<br>')}</div>` : ''}</div>
+<div style="display:flex;gap:10px;padding:12px 18px 0"><button class="btn out" style="flex:1" data-open="${r.id}">📈 Signal देखें</button></div>`;
+  }
+  /* hisaab */
+  const CL = Object.values(LS.get('cLedger', {})), grp = f => { const x = CL.filter(f), w = x.filter(y => y.win).length; return {n: x.length, w, usd: +x.reduce((t, y) => t + y.usd, 0).toFixed(2), pc: x.length ? Math.round(w / x.length * 100) : 0} };
+  const T = grp(() => true), row = (t, g) => `<div style="display:flex;font-size:12px;padding:3px 0"><span style="flex:1">${t}</span><span class="mono note">${g.n} · ${g.pc}% जीत ·&nbsp;</span><b class="mono" style="color:${g.usd >= 0 ? 'var(--up)' : 'var(--dn2)'}">${usdTxt(g.usd)}</b></div>`;
+  $('cStats').innerHTML = `<div class="card" style="margin:12px 18px 0;padding:12px 14px"><div class="lbl">📊 Council का paper हिसाब (lot ${vLot()})</div>
+<div style="font-size:22px;font-weight:800;margin-top:4px;color:${T.usd >= 0 ? 'var(--up)' : 'var(--dn2)'}" class="mono">${usdTxt(T.usd)}</div><div class="note">${T.n} पूरे trade · ${T.w} जीते · ${T.pc}% जीत</div>
+<div style="margin-top:8px">${row('📌 LIMIT वाले', grp(x => x.order !== 'MARKET'))}${row('⚡ MARKET वाले', grp(x => x.order === 'MARKET'))}${row('✅ हमारे signal से सहमत', grp(x => x.agree === true))}${row('⚠ हमारे signal से उल्टा', grp(x => x.agree === false))}</div></div>`;
+  /* list */
+  const L = [st.preview, ...st.hist].filter(x => x && x.council && x.council.dir).sort((x, y) => y.at - x.at).slice(0, 30);
+  $('cList').innerHTML = L.length ? L.map(x => { const k = x.council, [rc, rt] = cResTxt(x), xs = SPECS[x.sym];
+    return `<a href="#" data-cpick="${x.id}" class="card" style="display:flex;align-items:center;gap:8px;padding:10px 12px;color:var(--tx);text-decoration:none;${x.id === st.cRec ? 'border-color:var(--gold)' : ''}">
+<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700">${esc(xs ? xs.n : x.sym)} <span style="color:${cVc(k.dir)}">${k.dir} ${k.order}</span> <span class="note">${k.conf}%</span></div>
+<div class="note">${istD(x.at)} ${ist(x.at)} · ${k.dir === x.dir ? '✅ सहमत' : '⚠ उल्टा'}</div></div><b style="font-size:12px;color:${rc};text-align:right">${rt}</b></a>` }).join('')
+    : '<div class="note">अभी कोई फ़ैसला नहीं</div>';
+}
+async function openCouncil(id){
+  if(id) st.cRec = id; else st.cRec = null;
+  st.cBack = st.scr === 'res' ? 'res' : 'home'; show('council');
+  const r = cPick(); if(r && !r.preview && SPECS[r.sym] && r.council && r.council.dir && !(r.cres && r.cres.done)){ await activeFor(r.sym); if(st.scr === 'council') renderCPage() }
+}
 /* v1.2.0: ek pair pe ek hi chaalu signal — TP / SL (ya fill na hua = EXPIRED) aane tak naya History me nahi */
 const isActive = r => r.res ? (r.res.state === 'PENDING' || r.res.state === 'OPEN') : Date.now() < r.expiresAt;
 /* v1.2.2: real-time nateeja — MT5 feed chalu ho to 1-min candles (Exness ka exact bhaav, ~4 ghante tak), warna 5-min */
@@ -247,10 +339,12 @@ async function evalSym(sym, recs){
   if(!d) d = await series(s, sym, '5min', 300);
   recs.forEach(r => { if(!(r.res && r.res.done)){ r.res = Object.assign(evaluate(Object.assign({}, r, {tp: r.tp.slice(0, 1)}), d.bars, now, SPECS[sym].pip), {src: d.src, at: now}); usdOf(r) }
     if(r.mkt && !(r.mres && r.mres.done)){ r.mres = evaluateMarket(r.mkt, r.at, r.dir, d.bars, SPECS[sym].pip); mUsd(r) }
-    if(!(r.tres && r.tres.done)){ r.tres = evaluateTrail(Object.assign({}, r, {tp: r.tp.slice(0, 1)}), d.bars, now, SPECS[sym].pip, trailPips(sym)); tUsd(r) } });
+    if(!(r.tres && r.tres.done)){ r.tres = evaluateTrail(Object.assign({}, r, {tp: r.tp.slice(0, 1)}), d.bars, now, SPECS[sym].pip, trailPips(sym)); tUsd(r) }
+    const c = r.council; if(c && c.dir && !(r.cres && r.cres.done)){                    /* v1.9.0: 🧠 Council ka nateeja */
+      r.cres = c.order === 'MARKET' ? evaluateMarket(c, c.at, c.dir, d.bars, SPECS[sym].pip) : evaluate({dir: c.dir, entry: c.entry, sl: c.sl, tp: [c.tp], at: c.at, exp: 60}, d.bars, now, SPECS[sym].pip); cUsd(r) } });
 }
 async function activeFor(sym){
-  const todo = st.hist.filter(r => r.sym === sym && (!(r.res && r.res.done) || (r.mkt && !(r.mres && r.mres.done)) || !(r.tres && r.tres.done)) && Date.now() - r.at < 48 * 3600e3);
+  const todo = st.hist.filter(r => r.sym === sym && (!(r.res && r.res.done) || (r.mkt && !(r.mres && r.mres.done)) || !(r.tres && r.tres.done) || (r.council && r.council.dir && !(r.cres && r.cres.done))) && Date.now() - r.at < 48 * 3600e3);
   if(todo.length && SPECS[sym]){ try{ await evalSym(sym, todo); saveHist() }catch(e){} }
   return st.hist.find(r => r.sym === sym && isActive(r)) || null;
 }
@@ -276,6 +370,7 @@ async function runAnalyze(sym = st.pair){
     $('scan').classList.remove('on');
     if(!act) paperSync();
     openRes(rec.id); if(act) toast(busyMsg(act).replace('TP या SL आने तक नया नहीं', 'ये नया analysis History में नहीं जुड़ा'), 4500);
+    runCouncil(rec, sig, a.bars, b.bars);
     if(LS.get('aiOn', true) && s.gKey) aiCheck(s, sym, sig, a.bars).then(ai => { rec.ai = ai; saveHist(); paperSync(); if(st.cur === rec.id) renderAi(rec) })
       .catch(e => { rec.ai = {err: e.message}; if(st.cur === rec.id) renderAi(rec) });
   }catch(e){ $('scan').classList.remove('on'); dlg('Analysis नहीं हुआ', esc(e.message), 'OK', '') }
@@ -316,7 +411,7 @@ async function openRes(id){
   $('rCard').innerHTML = sigCard(r);
   $('rWhy').innerHTML = r.reasons.map(t => `<div style="display:flex;gap:8px"><span style="color:var(--gold)">◆</span>${esc(t)}</div>`).join('') +
     (r.src !== 'shot' ? `<div style="display:flex;gap:8px"><span style="color:var(--gold)">◆</span>Regime: ${esc(r.regime)} · Danger: ${esc(r.danger)} · Buy ${r.buyPct}% / Sell ${r.sellPct}%</div>` : '');
-  renderAi(r); renderStatus(r);
+  renderAi(r); renderCouncil(r); renderStatus(r);
   $('bMt5').disabled = !sp;
   clearInterval(leftT);
   const tick = () => { const ms = r.expiresAt - Date.now(); $('rLeft').textContent = ms > 0 ? `Valid ${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')} left` : 'Expired'; };
@@ -401,7 +496,7 @@ ${real ? '<div class="warn" style="margin-top:10px">💰 REAL account — अस
 /* ---------------- HISTORY ---------------- */
 async function refreshResults(){
   const s = K(), now = Date.now();
-  const todo = st.hist.filter(r => SPECS[r.sym] && (!(r.res && r.res.done) || (r.mkt && !(r.mres && r.mres.done)) || !(r.tres && r.tres.done)) && now - r.at < 48 * 3600e3);
+  const todo = st.hist.filter(r => SPECS[r.sym] && (!(r.res && r.res.done) || (r.mkt && !(r.mres && r.mres.done)) || !(r.tres && r.tres.done) || (r.council && r.council.dir && !(r.cres && r.cres.done))) && now - r.at < 48 * 3600e3);
   const syms = [...new Set(todo.map(r => r.sym))].slice(0, (await feedStatus(s)).ok ? 12 : 3);
   for(const sym of syms){
     try{ await evalSym(sym, todo.filter(r => r.sym === sym)) }catch(e){}
@@ -428,6 +523,9 @@ ${MO.length ? `<br><span class="note">⚡ नियम ने MARKET कहा �
   const TD = st.hist.filter(r => r.tres && (isWin(r.tres.state) || isLoss(r.tres.state))), tp_ = +TD.reduce((t, r) => t + tUsd(r), 0).toFixed(2), tw = TD.filter(r => isWin(r.tres.state)).length;
   $('stBal').innerHTML += `<div style="margin-top:8px;font-size:12px;line-height:1.6" class="mono"><span class="lbl">🔒 Trail नियम से ($0.50 पर $0.25 lock, हर $0.10)</span><br>
 <b style="color:${tp_ >= 0 ? 'var(--up)' : 'var(--dn2)'}">${usdTxt(tp_)}</b> <span class="note">· ${TD.length} trade · ${TD.length ? Math.round(tw / TD.length * 100) : 0}% जीत · ${TD.filter(r => r.tres.state === 'LOCK').length} lock</span></div>`;
+  const CL = Object.values(LS.get('cLedger', {})), cp = +CL.reduce((t, x) => t + x.usd, 0).toFixed(2), cw = CL.filter(x => x.win).length;
+  $('stBal').innerHTML += `<div style="margin-top:8px;font-size:12px;line-height:1.6" class="mono"><span class="lbl">🧠 AI Council का फ़ैसला (हिसाब)</span><br>
+<b style="color:${cp >= 0 ? 'var(--up)' : 'var(--dn2)'}">${usdTxt(cp)}</b> <span class="note">· ${CL.length} trade · ${CL.length ? Math.round(cw / CL.length * 100) : 0}% जीत</span></div>`;
   saveHist();
   $('stDots').innerHTML = last.length ? last.map(r => `<span style="flex:1;height:16px;border-radius:4px;background:${isWin(r.res.state) ? 'var(--up)' : 'var(--dn)'}"></span>`).join('') : '<span class="note">अभी कोई पूरा नतीजा नहीं</span>';
   $('hf').innerHTML = [['all', 'All'], ['won', 'Won'], ['lost', 'Lost'], ['pend', 'Pending']].map(([k, t]) => `<button class="pill${st.hf === k ? ' on' : ''}" data-hf="${k}">${t}</button>`).join('');
@@ -444,10 +542,12 @@ ${MO.length ? `<br><span class="note">⚡ नियम ने MARKET कहा �
     const pip = (r.res && r.res.pips ? (r.res.pips > 0 ? '+' : '') + r.res.pips.toFixed(1) + ' pips · ' + usdTxt(usdOf(r)) : s === 'EXPIRED' ? 'not filled' : '—') +
       (r.mres && (isWin(r.mres.state) || isLoss(r.mres.state)) ? `<div style="font-size:10px;color:${isWin(r.mres.state) ? 'var(--up)' : 'var(--dn2)'}">⚡${r.mkt && r.mkt.ok ? '✓' : ''} M: ${isWin(r.mres.state) ? 'TP' : 'SL'} ${usdTxt(mUsd(r))}</div>` : r.mkt ? `<div style="font-size:10px" class="note">⚡ M: चालू</div>` : '') +
       (r.tres && (isWin(r.tres.state) || isLoss(r.tres.state)) ? `<div style="font-size:10px;color:${isWin(r.tres.state) ? 'var(--up)' : 'var(--dn2)'}">🔒 T: ${r.tres.state === 'LOCK' ? 'LOCK' : isWin(r.tres.state) ? 'TP' : 'SL'} ${usdTxt(tUsd(r))}</div>` : r.tres && r.tres.state === 'OPEN' ? `<div style="font-size:10px" class="note">🔒 T: चालू${r.tres.lock ? ' · lock ' + usdTxt(r.tres.lock * pipUsd(r.sym, vLot(), rates0())) : ''}</div>` : '');
+    const cs = r.cres && r.cres.state;
+    const cl = r.council && r.council.dir ? `<div style="font-size:10px;color:${isWin(cs) ? 'var(--up)' : isLoss(cs) ? 'var(--dn2)' : 'var(--mu)'}">🧠 C: ${r.council.dir[0]}${r.council.order === 'MARKET' ? 'M' : 'L'} ${isWin(cs) ? 'TP ' + usdTxt(cUsd(r)) : isLoss(cs) ? 'SL ' + usdTxt(cUsd(r)) : cs === 'EXPIRED' ? 'नहीं भरा' : 'चालू'}</div>` : '';
     return `<div class="row" data-open="${r.id}"><span style="width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:${B ? 'var(--up)' : 'var(--dn)'};background:${B ? 'rgba(47,224,138,0.12)' : 'rgba(255,93,108,0.12)'}">${r.dir}</span>
 <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:14px">${esc(SPECS[r.sym] ? SPECS[r.sym].n : r.sym)} <span style="font-size:11px;font-weight:600;color:var(--mu)">LIMIT · ${istD(r.at)} ${ist(r.at)}</span></div>
 <div style="font-size:11px;color:var(--mu)" class="mono">Entry ${fmtS(r.sym, r.entry)} · Grade ${r.grade}${r.sent.length ? '<span class="kind k-mt5">MT5</span>' : ''}${r.src === 'shot' ? '<span class="kind k-shot">📷</span>' : ''}</div></div>
-<div style="text-align:right"><span class="badge ${bc}">${bt}</span><div class="mono" style="font-size:12px;font-weight:700;margin-top:4px;color:${isWin(s) ? 'var(--up)' : isLoss(s) ? 'var(--dn2)' : 'var(--mu)'}">${pip}</div></div></div>` }).join('')
+<div style="text-align:right"><span class="badge ${bc}">${bt}</span><div class="mono" style="font-size:12px;font-weight:700;margin-top:4px;color:${isWin(s) ? 'var(--up)' : isLoss(s) ? 'var(--dn2)' : 'var(--mu)'}">${pip}${cl}</div></div></div>` }).join('')
     : '<div class="row" style="justify-content:center;color:var(--mu);font-size:13px;padding:24px">अभी कुछ नहीं — ANALYZE दबाकर पहला signal लें</div>';
 }
 
@@ -481,6 +581,7 @@ async function renderSet(){
     : '<div class="sr note">कोई PERSONAL FX account नहीं मिला</div>' }).catch(e => { $('aList').innerHTML = `<div class="sr note">${esc(e.message)}</div>` });
   const tg = (k, on) => `<button class="tg${on ? ' on' : ''}" data-tg="${k}"><i></i></button>`;
   $('prefs').innerHTML = `<div class="sr">🤖 AI check (Gemini दूसरी राय)<span style="margin-left:auto"></span>${tg('aiOn', LS.get('aiOn', true))}</div>
+<div class="sr">🧠 AI Council (6 bot + जज, paper)<span style="margin-left:auto"></span>${tg('councilOn', LS.get('councilOn', true))}</div>
 <div class="sr">Data source<em><select id="srcSel" style="background:#14151a;color:var(--tx);border:1px solid var(--line);border-radius:8px;padding:6px"><option value="auto">Auto (MT5 → TwelveData)</option><option value="td">सिर्फ़ TwelveData</option></select></em></div>
 <div class="sr" data-vset="bal" style="cursor:pointer">💰 Virtual balance<em>$${vBal().toFixed(2)} ›</em></div><div class="sr" data-vset="lot" style="cursor:pointer">💰 हिसाब का lot / trade<em>${vLot()} ›</em></div>
 <div class="sr">Signal timeframe<em>15m + 1H</em></div><div class="sr">Order type<em>सिर्फ़ BUY LIMIT / SELL LIMIT</em></div>`;
@@ -517,6 +618,9 @@ const paperRow = r => ({id: r.id, sym: r.sym, dir: r.dir, entry: r.entry, sl: r.
     filledAt: r.res.filledAt || null, exitAt: r.res.exitAt || null, usd: r.res.usd === undefined ? null : r.res.usd, lot: r.res.lot || null} : null,
   mkt: r.mkt ? {ok: !!r.mkt.ok, entry: r.mkt.entry, sl: r.mkt.sl, tp: r.mkt.tp, checks: r.mkt.checks,
     res: r.mres ? {state: r.mres.state, done: !!r.mres.done, pips: r.mres.pips === undefined ? null : +(+r.mres.pips).toFixed(1), usd: r.mres.usd === undefined ? null : r.mres.usd} : null} : null,
+  council: r.council && r.council.dir ? {dir: r.council.dir, order: r.council.order, entry: r.council.entry, sl: r.council.sl, tp: r.council.tp, conf: r.council.conf, fixed: !!r.council.fixed,
+    bots: r.council.bots.map(b => b.name[0] + ':' + b.view[0]).join(' '),
+    res: r.cres ? {state: r.cres.state, done: !!r.cres.done, pips: r.cres.pips === undefined ? null : +(+r.cres.pips).toFixed(1), usd: r.cres.usd === undefined ? null : r.cres.usd} : null} : null,
   trail: r.tres ? {state: r.tres.state, done: !!r.tres.done, pips: r.tres.pips === undefined ? null : +(+r.tres.pips).toFixed(1), usd: r.tres.usd === undefined ? null : r.tres.usd} : null, v: VERSION});
 let paperBusy = false;
 async function paperSync(){
@@ -543,6 +647,7 @@ function pruneExpired(){
     if(!(r.res && r.res.state === 'EXPIRED')) return true;
     if(r.mkt && !(r.mres && r.mres.done)) return true;          /* v1.7.0: MARKET hisaab abhi chaalu */
     if(r.tres && !r.tres.done && r.tres.state !== 'EXPIRED') return true;
+    if(r.council && r.council.dir && !(r.cres && r.cres.done)) return true;   /* v1.9.0: Council hisaab chaalu */
     const age = now - (r.expiresAt || r.at);
     const synced = typeof r._pk === 'string' && r._pk.includes('"state":"EXPIRED"');
     return !(age > 6 * 3600e3 && (synced || age > 24 * 3600e3));
@@ -641,12 +746,13 @@ function flRender(){
 /* ---------------- nav ---------------- */
 function show(sc){
   st.scr = sc; document.querySelectorAll('.scr').forEach(x => x.classList.toggle('on', x.id === 's-' + sc));
-  document.querySelectorAll('nav.bar a[data-s]').forEach(a => a.classList.toggle('on', a.dataset.s === sc || (sc === 'res' && a.dataset.s === 'home')));
+  document.querySelectorAll('nav.bar a[data-s]').forEach(a => a.classList.toggle('on', a.dataset.s === sc || ((sc === 'res' || sc === 'council') && a.dataset.s === 'home')));
   window.scrollTo(0, 0);
   if(sc === 'home') loadHome();
   if(sc === 'his'){ renderHis(); refreshResults().then(renderHis) }
   if(sc === 'pairs') renderPairs(true);
   if(sc === 'set') renderSet();
+  if(sc === 'council') renderCPage();
   if(sc === 'flow') flowStart(); else if(FL.timer || FL.ws) flowStop();
 }
 function boot(){
@@ -657,12 +763,14 @@ function boot(){
   $('nav').addEventListener('click', e => { const a = e.target.closest('a'); if(!a) return; e.preventDefault(); if(a.id === 'fab') runAnalyze(); else show(a.dataset.s) });
   $('tfs').addEventListener('click', e => { const b = e.target.closest('[data-tf]'); if(!b) return; st.tf = b.dataset.tf; LS.set('tf', st.tf); homeChart && homeChart.ch.priceScale('right').applyOptions({autoScale: true}); loadHome() });
   $('pairBtn').onclick = () => show('pairs');
+  $('cBtn').onclick = () => openCouncil(null); $('cBack').innerHTML = icon('back', '#f3efe6', 18); $('cBack').onclick = () => st.cBack === 'res' && getRec(st.cur) ? show('res') : show('home');
+  $('cList').onclick = e => { const b = e.target.closest('[data-cpick]'); if(b){ e.preventDefault(); st.cRec = b.dataset.cpick; renderCPage(); window.scrollTo(0, 0) } };
   $('flowBtn').onclick = () => show('flow'); $('flowBack').innerHTML = icon('back', '#f3efe6', 18); $('flowBack').onclick = () => show('home');
   $('flSyms').onclick = e => { const b = e.target.closest('[data-fs]'); if(b){ FL.sym = b.dataset.fs; LS.set('flSym', FL.sym); flowStart() } };
   $('flWin').onclick = e => { const b = e.target.closest('[data-fw]'); if(b){ FL.win = +b.dataset.fw; LS.set('flWin', FL.win); flChips(); flRender() } };
   $('flSize').onclick = e => { const b = e.target.closest('[data-fz]'); if(b){ FL.size = b.dataset.fz === 'w' ? 'w' : +b.dataset.fz; LS.set('flSize', FL.size); flChips(); flRender() } };
   document.addEventListener('visibilitychange', () => { if(st.scr !== 'flow') return; if(document.hidden) flowStop(); else flowStart() });
-  document.body.addEventListener('click', e => { const o = e.target.closest('[data-open]'); if(o) openRes(o.dataset.open) });
+  document.body.addEventListener('click', e => { const o = e.target.closest('[data-open]'); if(o){ e.preventDefault(); openRes(o.dataset.open) } const c = e.target.closest('[data-council]'); if(c){ e.preventDefault(); openCouncil(c.dataset.council) } });
   $('resBack').onclick = () => { const r = getRec(st.cur); show(r && (r.preview || r.sym === st.pair) ? 'home' : 'his') };   /* v1.8.2: preview se ← = Home */
   $('bRe').onclick = () => { const r = getRec(st.cur); if(r && SPECS[r.sym]){ st.pair = r.sym; LS.set('pair', r.sym); runAnalyze(r.sym) } };
   $('bMt5').onclick = onMt5;
@@ -704,13 +812,15 @@ function boot(){
   setTimeout(() => $('splash').classList.add('hide'), 900);
   loadHome();
   /* v1.2.2: real-time tick — MT5 feed (free) pe tez, TwelveData pe credit bachakar */
-  const T = {home: 0, res: 0, his: 0, all: 0}; let tickBusy = false;
+  const T = {home: 0, res: 0, his: 0, all: 0, cou: 0}; let tickBusy = false;
   setInterval(async () => { if(document.hidden || tickBusy) return; tickBusy = true;
     try{
       const now = Date.now(), fast = st.src !== 'td';
       if(st.scr === 'home' && now - T.home > (fast ? 12e3 : 60e3)){ T.home = now; loadHome(true) }
       if(st.scr === 'res' && now - T.res > (fast ? 15e3 : 60e3)){ T.res = now; const r = getRec(st.cur);
-        if(r && !r.preview && SPECS[r.sym] && !(r.res && r.res.done)){ await activeFor(r.sym); if(st.cur === r.id) renderStatus(r) } refreshOrders() }
+        if(r && !r.preview && SPECS[r.sym]){ await activeFor(r.sym); if(st.cur === r.id){ renderStatus(r); renderCouncil(r) } } refreshOrders() }
+      if(st.scr === 'council' && now - T.cou > (fast ? 20e3 : 60e3)){ T.cou = now; const r = cPick();
+        if(r && !r.preview && SPECS[r.sym] && r.council && r.council.dir && !(r.cres && r.cres.done)) await activeFor(r.sym); if(st.scr === 'council') renderCPage() }
       if(st.scr === 'his' && now - T.his > (fast ? 30e3 : 120e3)){ T.his = now; await refreshResults(); if(st.scr === 'his') renderHis() }
       if(now - T.all > (fast ? 60e3 : 180e3)){ T.all = now; await refreshResults(); if(st.scr === 'his') renderHis(); renderHomeCard() }
     }finally{ tickBusy = false }
