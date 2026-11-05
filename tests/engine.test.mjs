@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {analyze, evaluate, evaluateMarket, ema, rsi, adx, impulse, atr} from '../src/engine.js';
+import {analyze, evaluate, evaluateMarket, evaluateTrail, ema, rsi, adx, impulse, atr} from '../src/engine.js';
 import {pipUsd} from '../src/symbols.js';
 const spec = {d: 5, pip: 0.0001};
 function mk(n, start, step, tf, wave = 0.0004, t0 = 1.7e12){
@@ -85,4 +85,22 @@ test('evaluateMarket: TP, SL, same-bar SL, open', () => {
   assert.equal(evaluateMarket(m, 0, 'BUY', [bar(1, 1.1030, 1.0970)]).state, 'SL');
   assert.equal(evaluateMarket(m, 0, 'BUY', [bar(1, 1.1010, 1.0990)]).state, 'OPEN');
   assert.equal(evaluateMarket({entry: 1.1, sl: 1.102, tp: 1.098}, 0, 'SELL', [bar(1, 1.1005, 1.0975)]).state, 'TP1');
+});
+
+test('evaluateTrail: lock after +start, trails by step, SL before lock, TP cap', () => {
+  const sig = {dir: 'BUY', entry: 1.1000, sl: 1.0990, tp: [1.1020], at: 0, exp: 60};
+  const tr = {start: 5, lock: 2.5, step: 1};       /* pips */
+  const bar = (t, h, l, c) => ({t: t * 60000, o: l, h, l, c: c === undefined ? h : c});
+  /* fill, +6 pips peak, then back to +3 -> lock = 2.5 + 1 = 3.5 -> LOCK 3.5 */
+  let r = evaluateTrail(sig, [bar(5, 1.1001, 1.0999, 1.1000), bar(10, 1.1006, 1.1002), bar(15, 1.1004, 1.1003)], 1e9, 0.0001, tr);
+  assert.equal(r.state, 'LOCK'); assert.ok(Math.abs(r.pips - 3.5) < 1e-6);
+  /* never reaches +5 -> SL */
+  r = evaluateTrail(sig, [bar(5, 1.1001, 1.0999, 1.1000), bar(10, 1.1004, 1.1001), bar(15, 1.1002, 1.0985)], 1e9, 0.0001, tr);
+  assert.equal(r.state, 'SL');
+  /* straight to TP */
+  r = evaluateTrail(sig, [bar(5, 1.1001, 1.0999, 1.1000), bar(10, 1.1025, 1.1001)], 1e9, 0.0001, tr);
+  assert.equal(r.state, 'TP1');
+  /* not filled -> EXPIRED passes through */
+  r = evaluateTrail(sig, [bar(5, 1.1050, 1.1010), bar(70, 1.1050, 1.1010)], 1e9, 0.0001, tr);
+  assert.equal(r.state, 'EXPIRED');
 });

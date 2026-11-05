@@ -163,7 +163,30 @@ export function evaluate(sig, bars, now = Date.now(), pip = 0.0001){
   }
   return {state: 'OPEN', done: false, filledAt: after[fi].t};
 }
-export const isWin = st => /^TP/.test(st || ''), isLoss = st => st === 'SL';
+export const isWin = st => /^TP/.test(st || '') || st === 'LOCK', isLoss = st => st === 'SL';
+
+/* v1.8.0: 🔒 TRAIL (paper me alag hisaab, user ka niyam) — LIMIT jaisa hi fill / SL / TP1, upar se:
+   munafa tr.start (pips) chhute hi tr.lock lock, phir har tr.step pe lock bhi utna upar (lock = lock + n*step).
+   Bhaav lauta kar lock tak aaye to LOCK pe band (jeet). Candle ka andar ka kram nahi pata -> savdhaan: pehle lock/SL, phir TP.
+   Lock agli candle se lagu (jis candle ne naya peak banaya usi me lock nahi maante). Fill wali candle me peak = close. */
+export function evaluateTrail(sig, bars, now = Date.now(), pip = 0.0001, tr = {start: 5, lock: 2.5, step: 1}){
+  const base = evaluate(sig, bars, now, pip);
+  if(!base.filledAt) return {state: base.state, done: base.done};
+  const B = sig.dir === 'BUY' ? 1 : -1, e = sig.entry, tpP = Math.abs(sig.tp[0] - e) / pip, slP = Math.abs(e - sig.sl) / pip;
+  const after = bars.filter(b => b.t >= base.filledAt);
+  let peak = 0, lock = null;
+  for(let i = 0; i < after.length; i++){
+    const b = after[i];
+    const worst = (B > 0 ? b.l - e : e - b.h) / pip;                       /* is candle ka sabse bura munafa (pips) */
+    const best = i === 0 ? (B > 0 ? b.c - e : e - b.c) / pip : (B > 0 ? b.h - e : e - b.l) / pip;
+    if(lock !== null && worst <= lock) return {state: 'LOCK', done: true, filledAt: base.filledAt, exitAt: b.t, pips: lock, peak};
+    if(lock === null && worst <= -slP) return {state: 'SL', done: true, filledAt: base.filledAt, exitAt: b.t, pips: -slP, peak};
+    if(best >= tpP) return {state: 'TP1', done: true, filledAt: base.filledAt, exitAt: b.t, pips: tpP, peak: Math.max(peak, best)};
+    peak = Math.max(peak, best);
+    if(peak >= tr.start) lock = tr.lock + Math.floor((peak - tr.start) / tr.step + 1e-9) * tr.step;
+  }
+  return {state: 'OPEN', done: false, filledAt: base.filledAt, peak, lock};
+}
 
 /* v1.7.0: ⚡ MARKET ka nateeja — signal ke pal hi bhara maana (entry = us waqt ka bhaav), phir SL / TP (ek candle me dono = SL) */
 export function evaluateMarket(m, at, dir, bars, pip = 0.0001){
