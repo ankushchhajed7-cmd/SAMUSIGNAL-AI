@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.7.0';
+export const VERSION = '1.7.1';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -62,11 +62,26 @@ function mkChart(el){
   ov.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:2;overflow:hidden';
   el.appendChild(ov);
   const C = {ch, s, lines: [], sym: '', sig: null, n: 0, ov};
-  C.set = (bars, sym) => {
+  C.set = (bars, sym, tfMs) => {
     const sp = SPECS[sym]; if(sym !== C.sym){ s.applyOptions({priceFormat: {type: 'price', precision: sp.d, minMove: Math.pow(10, -sp.d)}}); C.sym = sym; ch.priceScale('right').applyOptions({autoScale: true}) }
     s.setData(bars.map(b => ({time: Math.floor(b.t / 1000) + 19800, open: b.o, high: b.h, low: b.l, close: b.c})));
-    C.n = bars.length; C.draw();
+    C.n = bars.length; C.lastC = bars.length ? bars[bars.length - 1].c : null; if(tfMs) C.tfMs = tfMs; C.draw(); C.tick();
   };
+  /* v1.7.1: ⏱ candle timer — TradingView jaisa, daam ke label ke theek neeche (candle band hone me kitna samay) */
+  const tm = document.createElement('div');
+  tm.style.cssText = 'position:absolute;z-index:4;pointer-events:none;display:none;font:700 10px Manrope,sans-serif;color:#f3efe6;background:rgba(20,21,26,0.92);border:1px solid rgba(243,239,230,0.35);border-radius:3px;padding:1px 4px;text-align:center;font-variant-numeric:tabular-nums;box-sizing:border-box';
+  el.appendChild(tm);
+  C.tick = () => {
+    if(!C.tfMs || C.lastC === null || C.lastC === undefined){ tm.style.display = 'none'; return }
+    const y = s.priceToCoordinate(C.lastC); let W = 0, H = el.clientHeight;
+    try{ W = ch.priceScale('right').width(); H = el.clientHeight - ch.timeScale().height() }catch(e){}
+    if(y === null || y < 0 || y > H - 10 || !W){ tm.style.display = 'none'; return }
+    const left = C.tfMs - (Date.now() % C.tfMs), sec = Math.floor(left / 1000);
+    const hh = Math.floor(sec / 3600), mm = Math.floor(sec % 3600 / 60), ss = sec % 60, p2 = v => String(v).padStart(2, '0');
+    tm.textContent = (hh ? hh + ':' + p2(mm) : p2(mm)) + ':' + p2(ss);
+    tm.style.display = 'block'; tm.style.right = '0px'; tm.style.width = W + 'px'; tm.style.top = (y + 10) + 'px';
+  };
+  setInterval(() => { if(!document.hidden) C.tick() }, 1000);
   C.levels = sig => {
     C.lines.forEach(l => s.removePriceLine(l)); C.lines = []; C.sig = sig || null; LV.sig = C.sig;
     ch.priceScale('right').applyOptions({autoScale: true});
@@ -103,7 +118,7 @@ function mkChart(el){
     tags.forEach(x => { html += `<span style="position:absolute;${x.sm ? 'left:6px' : 'right:' + (W + 4) + 'px'};top:${(x.y - PH / 2).toFixed(1)}px;height:${PH}px;line-height:${PH}px;padding:0 ${x.sm ? 6 : 7}px;border-radius:6px;font:800 10px Manrope,sans-serif;letter-spacing:.3px;white-space:nowrap;color:${x.c};background:${x.bg};${x.bd ? 'border:' + x.bd + ';box-sizing:border-box;' : ''}box-shadow:0 2px 8px rgba(0,0,0,0.45)">${x.out < 0 ? '↑ ' : x.out > 0 ? '↓ ' : ''}${x.t}</span>` });
     ov.innerHTML = html;
   };
-  ch.timeScale().subscribeVisibleLogicalRangeChange(() => C.draw());
+  ch.timeScale().subscribeVisibleLogicalRangeChange(() => { C.draw(); C.tick() });
   let last = '';
   setInterval(() => { if(!C.sig || document.hidden) return; const k = [s.priceToCoordinate(C.sig.sl), s.priceToCoordinate(C.sig.tp[0]), el.clientHeight].join('|'); if(k !== last){ last = k; C.draw() } }, 250);
   return C;
@@ -157,7 +172,7 @@ async function loadHome(quiet){
     const d = await series(s, sym, st.tf, 250);
     if(sym !== st.pair) return;
     homeBars = d.bars; st.src = d.src;
-    homeChart.set(d.bars, sym); if(!quiet) homeChart.fit();
+    homeChart.set(d.bars, sym, {'5min': 300e3, '15min': 900e3, '1h': 3600e3}[st.tf]); if(!quiet) homeChart.fit();
     homeChart.levels(lastSig(sym));
     $('hMsg').style.display = 'none';
     const px = (st.q[sym] && st.q[sym].p) || d.bars[d.bars.length - 1].c, chg = st.q[sym] ? st.q[sym].chg : 0;
@@ -291,7 +306,7 @@ async function openRes(id){
   tick(); leftT = setInterval(tick, 1000);
   if(!resChart) resChart = mkChart($('rChart'));
   resChart.levels(null);
-  if(sp){ try{ const d = await series(K(), S, '15min', 250); if(st.cur !== id) return; resChart.set(d.bars, S); resChart.levels(r); resChart.fit() }catch(e){} }
+  if(sp){ try{ const d = await series(K(), S, '15min', 250); if(st.cur !== id) return; resChart.set(d.bars, S, 900e3); resChart.levels(r); resChart.fit() }catch(e){} }
   if(sp && !r.preview && !(r.res && r.res.done)){ await activeFor(S); if(st.cur === id) renderStatus(r) }   /* v1.2.1: khulte hi taaza nateeja */
   if(r.sent.length) refreshOrders();
 }
