@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot, aiCouncil} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.9.2';
+export const VERSION = '1.9.3';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -287,7 +287,7 @@ function renderCouncil(r){
   const el = $('rCouncil'); if(el){ const c = r.council;
     el.innerHTML = !c ? '' : `<a href="#" data-council="${r.id}" class="card" style="display:flex;align-items:center;gap:8px;margin:12px 18px 0;padding:11px 14px;border-color:rgba(232,195,90,0.5);color:var(--tx);text-decoration:none;font-size:13px"><span style="font-size:18px">🧠</span>${
       c.busy ? '<span>AI Council बहस कर रहा है…</span>' : c.err ? `<span class="note">Council नहीं हुआ — ${esc(c.err.slice(0, 50))}</span>` :
-      `<span><b style="color:${cVerdict(r).col}">${cVerdict(r).short}</b> <span class="note">· Council ${c.dir} ${c.order} · ${c.conf}%</span></span>`}<b style="margin-left:auto;color:var(--gold)">देखें ›</b></a>` }
+      `<span><b style="color:${cVerdict(r).col}">${cVerdict(r).short}</b> <span style="color:var(--tx);font-weight:700">· Council <b style="color:${cVc(c.dir)}">${c.dir} ${c.order}</b> · <b style="color:var(--gold)">${c.conf}%</b></span></span>`}<b style="margin-left:auto;color:var(--gold)">देखें ›</b></a>` }
   if(st.scr === 'council' && st.cRec === r.id) renderCPage();
 }
 function cPick(){
