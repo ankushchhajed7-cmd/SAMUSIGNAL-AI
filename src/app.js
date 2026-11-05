@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.5.0';
+export const VERSION = '1.5.1';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -341,7 +341,7 @@ async function refreshResults(){
     try{ await evalSym(sym, todo.filter(r => r.sym === sym)) }catch(e){}
   }
   st.hist.filter(r => !(r.res && r.res.done) && now - r.at >= 48 * 3600e3).forEach(r => { r.res = Object.assign({}, r.res || {state: 'EXPIRED'}, {done: true}) });
-  saveHist(); await refreshOrders(); paperSync();
+  saveHist(); await refreshOrders(); await paperSync(); pruneExpired();
 }
 function renderHis(){
   const wk = st.hist.filter(r => Date.now() - r.at < 7 * 864e5), fin = wk.filter(r => r.res && (isWin(r.res.state) || isLoss(r.res.state)));
@@ -445,6 +445,20 @@ async function paperSync(){
     }
     saveHist();
   }finally{ paperBusy = false }
+}
+
+/* v1.5.1: EXPIRED (entry bhari hi nahi) trade expire hone ke 6 ghante baad History se hat jaata hai.
+   Pehle pakka karo ki EXPIRED wala nateeja Firebase (INVESTOR-ID report) tak ja chuka — report me ginti bani rahe.
+   24 ghante baad bina sync ke bhi hata do (Firebase band ho tab bhi History saaf rahe). */
+function pruneExpired(){
+  const now = Date.now(), n0 = st.hist.length;
+  st.hist = st.hist.filter(r => {
+    if(!(r.res && r.res.state === 'EXPIRED')) return true;
+    const age = now - (r.expiresAt || r.at);
+    const synced = typeof r._pk === 'string' && r._pk.includes('"state":"EXPIRED"');
+    return !(age > 6 * 3600e3 && (synced || age > 24 * 3600e3));
+  });
+  if(st.hist.length !== n0){ saveHist(); if(st.scr === 'his') renderHis() }
 }
 
 /* ---------------- refresh: purana cache hatao, naya version lo ---------------- */
@@ -587,6 +601,7 @@ function boot(){
   }
   /* v1.2.0: user ke kehne par purani History ek baar saaf — ab se nayi shuruaat */
   if(!LS.get('reset120', false)){ st.hist = []; saveHist(); LS.set('reset120', true) }
+  pruneExpired();
   setTimeout(() => $('splash').classList.add('hide'), 900);
   loadHome();
   /* v1.2.2: real-time tick — MT5 feed (free) pe tez, TwelveData pe credit bachakar */
