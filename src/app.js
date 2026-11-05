@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.5.1';
+export const VERSION = '1.5.2';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -277,11 +277,12 @@ async function openRes(id){
   if(sp && !r.preview && !(r.res && r.res.done)){ await activeFor(S); if(st.cur === id) renderStatus(r) }   /* v1.2.1: khulte hi taaza nateeja */
   if(r.sent.length) refreshOrders();
 }
+/* v1.5.2: AI ki raay alag bada box — hari chamak blink (nazar me aaye). Sahmat = hara, asahmat = laal shabd */
 function renderAi(r){
   const a = r.ai, el = $('rAi');
-  if(!a){ el.innerHTML = LS.get('aiOn', true) && K().gKey && r.src !== 'shot' && Date.now() - r.at < 120000 ? '<span class="note">🤖 AI check चल रहा है…</span>' : ''; return }
-  if(a.err){ el.innerHTML = `<span class="note">🤖 AI check नहीं हुआ: ${esc(a.err.slice(0, 80))}</span>`; return }
-  el.innerHTML = `<div style="display:flex;gap:8px;align-items:flex-start"><span>🤖</span><div><b style="color:${a.agree ? 'var(--up)' : 'var(--dn2)'}">AI ${a.agree ? 'सहमत' : 'असहमत'} · ${a.conf}%</b><div style="color:var(--mu)">${esc(a.reason)}</div></div></div>`;
+  if(!a){ el.innerHTML = LS.get('aiOn', true) && K().gKey && r.src !== 'shot' && Date.now() - r.at < 120000 ? '<div class="card" style="margin:12px 18px 0;padding:12px 14px;font-size:14px">🤖 AI check चल रहा है…</div>' : ''; return }
+  if(a.err){ el.innerHTML = `<div class="card" style="margin:12px 18px 0;padding:12px 14px" class="note">🤖 AI check नहीं हुआ: ${esc(a.err.slice(0, 80))}</div>`; return }
+  el.innerHTML = `<div class="ai-box"><div style="display:flex;align-items:center;gap:10px"><span style="font-size:22px">🤖</span><b class="v" style="color:${a.agree ? 'var(--up)' : 'var(--dn2)'}">AI ${a.agree ? 'सहमत' : 'असहमत'} · ${a.conf}%</b></div><div class="why">${esc(a.reason)}</div></div>`;
 }
 function renderStatus(r){
   const box = $('rStatus');

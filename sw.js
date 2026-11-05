@@ -1,5 +1,5 @@
 /* SAMUSIGNAL AI — service worker. App shell cache; data (Firebase / TwelveData / Gemini) kabhi cache nahi. */
-const VERSION = '1.5.1';
+const VERSION = '1.5.2';
 const CACHE = 'sai-' + VERSION;
 const SHELL = ['./', 'index.html', 'manifest.json', 'src/app.js', 'src/engine.js', 'src/data.js', 'src/symbols.js', 'src/bridge.js', 'src/ai.js', 'src/flow.js',
   'vendor/lightweight-charts-4.2.0.js', 'icon-192.png', 'icon-512.png', 'favicon.png'];
