@@ -29,12 +29,52 @@ async function ask(key, parts, pref, maxTok, tmo){
   const dead = LS.get('gDead', []), good = LS.get('gOk', '');
   const list = [...new Set([good, pref, ...MODELS].filter(m => m && !dead.includes(m)))];
   const errs = [];
-  for(const m of list){ try{ const out = await call(key, m, parts, false, maxTok, tmo); LS.set('gOk', m); return out }
-    catch(e){ errs.push(e); if(DEAD.test(e.message) || e.code === 404){ LS.set('gDead', [...new Set([...LS.get('gDead', []), m])].slice(-10)); if(good === m) LS.set('gOk', '') } } }
+  for(let round = 0; round < 2; round++){
+    const busy = [];
+    for(const m of list){ try{ const out = await call(key, m, parts, false, maxTok, tmo); LS.set('gOk', m); return out }
+      catch(e){ errs.push(e); if(DEAD.test(e.message) || e.code === 404){ LS.set('gDead', [...new Set([...LS.get('gDead', []), m])].slice(-10)); if(good === m) LS.set('gOk', '') }
+        else if(isBusy(e)) busy.push(m) } }
+    if(!busy.length) break;
+    list.splice(0, list.length, ...busy); await new Promise(r => setTimeout(r, 5000));      /* v1.9.5: Gemini vyast (503) -> 5 sec ruk ke ek baar aur */
+  }
   const best = errs.find(e => e.code === 429 || /quota|rate|exhaust/i.test(e.message)) || errs.find(e => !(DEAD.test(e.message) || e.code === 404)) || errs[0];
   throw best ? new Error(e429(best)) : new Error('AI fail');
 }
-const e429 = e => e.code === 429 || /quota|rate|exhaust/i.test(e.message) ? 'Gemini ki limit puri (thodi der baad dobara)' : String(e.message).slice(0, 120);
+/* v1.9.5: tez — ek model 15 sec me jawab na de to agla model saath-saath shuru; jo pehle sahi jawab de wahi.
+   Sirf Council ke liye (lamba jawab); band model yaad, vyast ho to 5 sec baad ek baar aur. */
+async function askFast(key, parts, pref, maxTok, tmo, stagger = 15000){
+  if(!key) throw new Error('Gemini key nahi (SamuSignal Settings me daalo)');
+  const dead = LS.get('gDead', []);
+  let list = [...new Set([LS.get('gOk', ''), pref, ...MODELS].filter(m => m && !dead.includes(m)))].slice(0, 4);
+  const errs = [];
+  for(let round = 0; round < 2 && list.length; round++){
+    const busy = [];
+    const out = await new Promise(res => {
+      let next = 0, running = 0, done = false, timer = null;
+      const finish = v => { if(done) return; done = true; clearTimeout(timer); res(v) };
+      const launch = () => {
+        clearTimeout(timer); if(done) return;
+        if(next >= list.length){ if(!running) finish(null); return }
+        const m = list[next++]; running++;
+        call(key, m, parts, false, maxTok, tmo).then(o => { LS.set('gOk', m); finish(o) }).catch(e => {
+          running--; errs.push(e);
+          if(DEAD.test(e.message) || e.code === 404){ LS.set('gDead', [...new Set([...LS.get('gDead', []), m])].slice(-10)); if(LS.get('gOk', '') === m) LS.set('gOk', '') }
+          else if(isBusy(e)) busy.push(m);
+          if(!done){ if(next < list.length) launch(); else if(!running) finish(null) } });   /* fail -> agla turant */
+        if(next < list.length) timer = setTimeout(launch, stagger);
+      };
+      launch();
+    });
+    if(out) return out;
+    if(!busy.length) break;
+    list = busy; await new Promise(r => setTimeout(r, 5000));
+  }
+  const best = errs.find(e => e.code === 429 || /quota|rate|exhaust/i.test(e.message)) || errs.find(e => isBusy(e)) || errs.find(e => !(DEAD.test(e.message) || e.code === 404)) || errs[0];
+  throw best ? new Error(e429(best)) : new Error('AI fail');
+}
+const isBusy = e => e.code === 503 || e.code === 500 || /high demand|overload|unavailable|try again later/i.test(e.message);
+const e429 = e => e.code === 429 || /quota|rate|exhaust/i.test(e.message) ? 'Gemini की limit पूरी — थोड़ी देर बाद 🔄 दोबारा'
+  : isBusy(e) ? 'Gemini अभी बहुत व्यस्त है (high demand) — थोड़ी देर बाद 🔄 दोबारा' : String(e.message).slice(0, 120);
 export async function aiCheck(s, sym, sig, b15){
   const rows = b15.slice(-60).map(b => [b.o, b.h, b.l, b.c].map(v => +v.toFixed(5)).join(',')).join('\n');
   const prompt = `You are a strict forex price-action reviewer. Pair ${sym}, 15-minute candles (oldest first, o,h,l,c):\n${rows}\n\n` +
@@ -65,14 +105,14 @@ Use ONLY the numbers below (computed by our engine) — never invent prices.
 
 ${ctx}
 
-BOTS (each looks only at its own area, gives view BUY / SELL / WAIT and ONE short line in simple Hinglish = Hindi in Roman letters):
+BOTS (each looks only at its own area, gives view BUY / SELL / WAIT and ONE short line, max 10 words, simple Hinglish = Hindi in Roman letters):
 1. Trend — 15m / 1H / 4H direction, EMAs, ADX.
 2. Movement — recent candles speed, RSI, MACD, impulse vs pullback.
 3. Levels — support / resistance, Fibonacci zone, best entry and stop placement.
 4. Market — session, volatility (ATR), danger, time of day.
 5. Risk — reward vs risk, stop distance, is this worth it.
 6. Devil — deliberately argues why this trade can FAIL.
-ROUND 2 ("debate"): 2-3 short lines where bots react to each other (e.g. "Trend: Devil ki baat sahi, par 1H abhi bhi upar hai").
+ROUND 2 ("debate"): exactly 2 short lines (max 14 words each) where bots react to each other (e.g. "Trend: Devil ki baat sahi, par 1H abhi bhi upar hai").
 JUDGE: reads everything and gives ONE final trade — always BUY or SELL (no "no trade"):
 - order "LIMIT": entry on the correct side of current price (BUY below, SELL above), reachable within 60 min (max ~2 ATR away).
 - order "MARKET" only if trend is strong, pullback is done and price is not stretched — then entry = current price.
@@ -82,6 +122,6 @@ JUDGE: reads everything and gives ONE final trade — always BUY or SELL (no "no
 Reply JSON only, exactly:
 {"bots":[{"name":"Trend","view":"BUY","note":""},{"name":"Movement","view":"","note":""},{"name":"Levels","view":"","note":""},{"name":"Market","view":"","note":""},{"name":"Risk","view":"","note":""},{"name":"Devil","view":"","note":""}],
  "debate":["",""],
- "final":{"dir":"BUY or SELL","order":"LIMIT or MARKET","entry":0,"sl":0,"tp":0,"confidence":0,"summary":"one or two short Hinglish sentences"}}`;
-  return ask(s.gKey, [{text: prompt}], s.gModel, 8192, 70000);   /* v1.9.4: lamba jawab — zyada token + samay */
+ "final":{"dir":"BUY or SELL","order":"LIMIT or MARKET","entry":0,"sl":0,"tp":0,"confidence":0,"summary":"one short Hinglish sentence (max 20 words)"}}`;
+  return askFast(s.gKey, [{text: prompt}], s.gModel, 4096, 45000, 15000);   /* v1.9.5: chhota jawab + models saath-saath (tez) */
 }

@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot, aiCouncil} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.9.4';
+export const VERSION = '1.9.5';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -251,7 +251,7 @@ function councilCtx(sym, sig, b15, b1h){
 }
 async function runCouncil(rec, sig, b15, b1h){
   const s = K(); if(!LS.get('councilOn', true) || !s.gKey || !SPECS[rec.sym]) return;
-  rec.council = {busy: true}; if(st.cur === rec.id) renderCouncil(rec);
+  rec.council = {busy: true, t0: Date.now()}; if(st.cur === rec.id) renderCouncil(rec);
   try{
     const j = await aiCouncil(s, councilCtx(rec.sym, sig, b15, b1h));
     const plan = councilPlan(j, {live: sig.live, atr: sig.atr, d: SPECS[rec.sym].d});
@@ -302,7 +302,7 @@ function renderCPage(){
   const T = grp(() => true), row = (t, g) => `<div style="display:flex;font-size:12px;padding:3px 0"><span style="flex:1">${t}</span><span class="mono note">${g.n} · ${g.pc}% जीत ·&nbsp;</span><b class="mono" style="color:${g.usd >= 0 ? 'var(--up)' : 'var(--dn2)'}">${usdTxt(g.usd)}</b></div>`;
   const c = r && r.council;
   if(!c) $('cMain').innerHTML = `<div class="card" style="margin:12px 18px 0;padding:14px;font-size:14px;line-height:1.6">अभी कोई Council फ़ैसला नहीं। Home पर कोई pair चुनकर <b>ANALYZE</b> दबाएँ — Council अपने आप उस pair पर राय देगा।${LS.get('councilOn', true) ? '' : '<br><b style="color:var(--dn2)">Settings में 🧠 AI Council बंद है।</b>'}${K().gKey ? '' : '<br><b style="color:var(--dn2)">Gemini key नहीं है।</b>'}</div>`;
-  else if(c.busy) $('cMain').innerHTML = `<div class="card" style="margin:12px 18px 0;padding:16px;font-size:14px;text-align:center">🧠 ${esc(sp ? sp.n : S)} पर 6 bot + जज बहस कर रहे हैं…<div class="note" style="margin-top:6px">10–40 sec</div></div>`;
+  else if(c.busy) $('cMain').innerHTML = `<div class="card" style="margin:12px 18px 0;padding:16px;font-size:14px;text-align:center">🧠 ${esc(sp ? sp.n : S)} पर 6 bot + जज बहस कर रहे हैं…<div class="note" style="margin-top:6px" id="cSec">${c.t0 ? Math.round((Date.now() - c.t0) / 1000) + ' sec' : ''} · आमतौर पर 15–40 sec</div></div>`;
   else if(c.err) $('cMain').innerHTML = `<div class="card" style="margin:12px 18px 0;padding:14px"><div class="note">🧠 ${esc(sp ? sp.n : S)} पर Council नहीं हुआ: ${esc(c.err)}</div>
 <button class="btn gold" style="width:100%;margin-top:10px" data-cretry="${r.id}">🔄 Council दोबारा चलाओ</button></div>`;
   else {
@@ -334,10 +334,18 @@ ${c.debate.length ? `<div class="lbl" style="margin-top:12px">💬 बहस</di
 <div class="note">${istD(x.at)} ${ist(x.at)} · <b style="color:${cVerdict(x).col}">${cVerdict(x).short}</b></div></div><b style="font-size:12px;color:${rc};text-align:right">${rt}</b></a>` }).join('')
     : '<div class="note">अभी कोई फ़ैसला नहीं</div>';
 }
+/* v1.9.5: AI check fail hua to dobara (taaza 15m candles) */
+async function retryAi(id){
+  const r = getRec(id); if(!r || !SPECS[r.sym] || (r.ai && r.ai.busy)) return;
+  r.ai = {busy: true}; if(st.cur === id) renderAi(r);
+  try{ const s = K(), a = await series(s, r.sym, '15min', 250, true); r.ai = await aiCheck(s, r.sym, r, a.bars) }
+  catch(e){ r.ai = {err: String(e.message || e)} }
+  if(!r.preview){ saveHist(); paperSync() } if(st.cur === id) renderAi(r);
+}
 /* v1.9.4: Council fail hua to dobara (taaza candles + bhaav ke saath) */
 async function retryCouncil(id){
   const r = getRec(id); if(!r || !SPECS[r.sym] || (r.council && (r.council.busy || r.council.dir))) return;
-  r.council = {busy: true}; renderCouncil(r);
+  r.council = {busy: true, t0: Date.now()}; renderCouncil(r);
   try{ const s = K(), [a, b, q] = await Promise.all([series(s, r.sym, '15min', 250, true), series(s, r.sym, '1h', 250, true), quotes(s, [r.sym], true)]);
     Object.assign(st.q, q); const live = (q[r.sym] && q[r.sym].p) || a.bars[a.bars.length - 1].c;
     await runCouncil(r, Object.assign({}, r, {live}), a.bars, b.bars); if(r.council && r.council.busy) r.council = {err: 'Council बंद है (Settings) या Gemini key नहीं'} }
@@ -458,7 +466,8 @@ function aiHi(txt){
 function renderAi(r){
   const a = r.ai, el = $('rAi');
   if(!a){ el.innerHTML = LS.get('aiOn', true) && K().gKey && r.src !== 'shot' && Date.now() - r.at < 120000 ? '<div class="card" style="margin:12px 18px 0;padding:12px 14px;font-size:14px">🤖 AI check चल रहा है…</div>' : ''; return }
-  if(a.err){ el.innerHTML = `<div class="card note" style="margin:12px 18px 0;padding:12px 14px">🤖 AI check नहीं हुआ: ${esc(a.err.slice(0, 80))}</div>`; return }
+  if(a.busy){ el.innerHTML = '<div class="card" style="margin:12px 18px 0;padding:12px 14px;font-size:14px">🤖 AI check दोबारा चल रहा है…</div>'; return }
+  if(a.err){ el.innerHTML = `<div class="card" style="margin:12px 18px 0;padding:12px 14px;display:flex;align-items:center;gap:10px"><span class="note" style="flex:1">🤖 AI check नहीं हुआ: ${esc(a.err.slice(0, 90))}</span>${r.src !== 'shot' && SPECS[r.sym] ? `<button class="btn out" style="flex:none;padding:8px 12px;font-size:13px" data-airetry="${r.id}">🔄 दोबारा</button>` : ''}</div>`; return }
   el.innerHTML = `<div class="ai-box"><div style="display:flex;align-items:center;gap:10px"><span style="font-size:22px">🤖</span><b class="v" style="color:${a.agree ? 'var(--up)' : 'var(--dn2)'}">AI ${a.agree ? 'सहमत' : 'असहमत'} · ${a.conf}%</b></div><div class="why">${aiHi(a.reason)}</div></div>`;
 }
 function renderStatus(r){
@@ -636,7 +645,7 @@ function importKeys(str){
    Sirf signal + nateeja jaata hai (koi key / paisa nahi). Preview (doosra analysis) nahi jaata. Badla na ho to dobara nahi bhejte. */
 const paperRow = r => ({id: r.id, sym: r.sym, dir: r.dir, entry: r.entry, sl: r.sl, tp: r.tp[0], grade: r.grade, buyPct: r.buyPct,
   adx: r.adx === undefined ? null : r.adx, regime: r.regime || '', danger: r.danger || '', fibX: r.fibX === undefined ? null : r.fibX, src: r.src || '',
-  at: r.at, expiresAt: r.expiresAt, ai: r.ai && !r.ai.err ? {agree: !!r.ai.agree, conf: r.ai.conf || 0} : null, mt5: r.sent.length > 0,
+  at: r.at, expiresAt: r.expiresAt, ai: r.ai && !r.ai.err && !r.ai.busy ? {agree: !!r.ai.agree, conf: r.ai.conf || 0} : null, mt5: r.sent.length > 0,
   res: r.res ? {state: r.res.state, done: !!r.res.done, pips: r.res.pips === undefined ? null : +(+r.res.pips).toFixed(1),
     filledAt: r.res.filledAt || null, exitAt: r.res.exitAt || null, usd: r.res.usd === undefined ? null : r.res.usd, lot: r.res.lot || null} : null,
   mkt: r.mkt ? {ok: !!r.mkt.ok, entry: r.mkt.entry, sl: r.mkt.sl, tp: r.mkt.tp, checks: r.mkt.checks,
@@ -786,6 +795,7 @@ function boot(){
   $('nav').addEventListener('click', e => { const a = e.target.closest('a'); if(!a) return; e.preventDefault(); if(a.id === 'fab') runAnalyze(); else show(a.dataset.s) });
   $('tfs').addEventListener('click', e => { const b = e.target.closest('[data-tf]'); if(!b) return; st.tf = b.dataset.tf; LS.set('tf', st.tf); homeChart && homeChart.ch.priceScale('right').applyOptions({autoScale: true}); loadHome() });
   $('pairBtn').onclick = () => show('pairs');
+  setInterval(() => { const e = st.scr === 'council' && $('cSec'), r = e && cPick(); if(r && r.council && r.council.t0) e.textContent = Math.round((Date.now() - r.council.t0) / 1000) + ' sec · आमतौर पर 15–40 sec' }, 1000);
   $('cBtn').onclick = () => openCouncil(null); $('cBack').innerHTML = icon('back', '#f3efe6', 18); $('cBack').onclick = () => st.cBack === 'res' && getRec(st.cur) ? show('res') : show('home');
   $('cList').onclick = e => { const b = e.target.closest('[data-cpick]'); if(b){ e.preventDefault(); st.cRec = b.dataset.cpick; renderCPage(); window.scrollTo(0, 0) } };
   $('flowBtn').onclick = () => show('flow'); $('flowBack').innerHTML = icon('back', '#f3efe6', 18); $('flowBack').onclick = () => show('home');
@@ -793,7 +803,7 @@ function boot(){
   $('flWin').onclick = e => { const b = e.target.closest('[data-fw]'); if(b){ FL.win = +b.dataset.fw; LS.set('flWin', FL.win); flChips(); flRender() } };
   $('flSize').onclick = e => { const b = e.target.closest('[data-fz]'); if(b){ FL.size = b.dataset.fz === 'w' ? 'w' : +b.dataset.fz; LS.set('flSize', FL.size); flChips(); flRender() } };
   document.addEventListener('visibilitychange', () => { if(st.scr !== 'flow') return; if(document.hidden) flowStop(); else flowStart() });
-  document.body.addEventListener('click', e => { const o = e.target.closest('[data-open]'); if(o){ e.preventDefault(); openRes(o.dataset.open) } const c = e.target.closest('[data-council]'); if(c){ e.preventDefault(); openCouncil(c.dataset.council) } const cr = e.target.closest('[data-cretry]'); if(cr){ e.preventDefault(); retryCouncil(cr.dataset.cretry) } });
+  document.body.addEventListener('click', e => { const o = e.target.closest('[data-open]'); if(o){ e.preventDefault(); openRes(o.dataset.open) } const c = e.target.closest('[data-council]'); if(c){ e.preventDefault(); openCouncil(c.dataset.council) } const cr = e.target.closest('[data-cretry]'); if(cr){ e.preventDefault(); retryCouncil(cr.dataset.cretry) } const ar = e.target.closest('[data-airetry]'); if(ar){ e.preventDefault(); retryAi(ar.dataset.airetry) } });
   $('resBack').onclick = () => { const r = getRec(st.cur); show(r && (r.preview || r.sym === st.pair) ? 'home' : 'his') };   /* v1.8.2: preview se ← = Home */
   $('bRe').onclick = () => { const r = getRec(st.cur); if(r && SPECS[r.sym]){ st.pair = r.sym; LS.set('pair', r.sym); runAnalyze(r.sym) } };
   $('bMt5').onclick = onMt5;
