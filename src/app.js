@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot, aiCouncil} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.9.3';
+export const VERSION = '1.9.4';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -303,7 +303,8 @@ function renderCPage(){
   const c = r && r.council;
   if(!c) $('cMain').innerHTML = `<div class="card" style="margin:12px 18px 0;padding:14px;font-size:14px;line-height:1.6">अभी कोई Council फ़ैसला नहीं। Home पर कोई pair चुनकर <b>ANALYZE</b> दबाएँ — Council अपने आप उस pair पर राय देगा।${LS.get('councilOn', true) ? '' : '<br><b style="color:var(--dn2)">Settings में 🧠 AI Council बंद है।</b>'}${K().gKey ? '' : '<br><b style="color:var(--dn2)">Gemini key नहीं है।</b>'}</div>`;
   else if(c.busy) $('cMain').innerHTML = `<div class="card" style="margin:12px 18px 0;padding:16px;font-size:14px;text-align:center">🧠 ${esc(sp ? sp.n : S)} पर 6 bot + जज बहस कर रहे हैं…<div class="note" style="margin-top:6px">10–40 sec</div></div>`;
-  else if(c.err) $('cMain').innerHTML = `<div class="card note" style="margin:12px 18px 0;padding:14px">🧠 Council नहीं हुआ: ${esc(c.err)}</div>`;
+  else if(c.err) $('cMain').innerHTML = `<div class="card" style="margin:12px 18px 0;padding:14px"><div class="note">🧠 ${esc(sp ? sp.n : S)} पर Council नहीं हुआ: ${esc(c.err)}</div>
+<button class="btn gold" style="width:100%;margin-top:10px" data-cretry="${r.id}">🔄 Council दोबारा चलाओ</button></div>`;
   else {
     const views = c.bots.reduce((o, b) => (o[b.view] = (o[b.view] || 0) + 1, o), {}), [rc, rt] = cResTxt(r), agree = c.dir === r.dir;
     $('cMain').innerHTML = `<div class="card" style="margin:12px 18px 0;padding:14px;border-color:rgba(232,195,90,0.6);background:rgba(232,195,90,0.08)">
@@ -332,6 +333,16 @@ ${c.debate.length ? `<div class="lbl" style="margin-top:12px">💬 बहस</di
 <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700">${esc(xs ? xs.n : x.sym)} <span style="color:${cVc(k.dir)}">${k.dir} ${k.order}</span> <span class="note">${k.conf}%</span></div>
 <div class="note">${istD(x.at)} ${ist(x.at)} · <b style="color:${cVerdict(x).col}">${cVerdict(x).short}</b></div></div><b style="font-size:12px;color:${rc};text-align:right">${rt}</b></a>` }).join('')
     : '<div class="note">अभी कोई फ़ैसला नहीं</div>';
+}
+/* v1.9.4: Council fail hua to dobara (taaza candles + bhaav ke saath) */
+async function retryCouncil(id){
+  const r = getRec(id); if(!r || !SPECS[r.sym] || (r.council && (r.council.busy || r.council.dir))) return;
+  r.council = {busy: true}; renderCouncil(r);
+  try{ const s = K(), [a, b, q] = await Promise.all([series(s, r.sym, '15min', 250, true), series(s, r.sym, '1h', 250, true), quotes(s, [r.sym], true)]);
+    Object.assign(st.q, q); const live = (q[r.sym] && q[r.sym].p) || a.bars[a.bars.length - 1].c;
+    await runCouncil(r, Object.assign({}, r, {live}), a.bars, b.bars); if(r.council && r.council.busy) r.council = {err: 'Council बंद है (Settings) या Gemini key नहीं'} }
+  catch(e){ r.council = {err: String(e.message || e).slice(0, 100)} }
+  renderCouncil(r);
 }
 async function openCouncil(id){
   if(id) st.cRec = id; else st.cRec = null;
@@ -782,7 +793,7 @@ function boot(){
   $('flWin').onclick = e => { const b = e.target.closest('[data-fw]'); if(b){ FL.win = +b.dataset.fw; LS.set('flWin', FL.win); flChips(); flRender() } };
   $('flSize').onclick = e => { const b = e.target.closest('[data-fz]'); if(b){ FL.size = b.dataset.fz === 'w' ? 'w' : +b.dataset.fz; LS.set('flSize', FL.size); flChips(); flRender() } };
   document.addEventListener('visibilitychange', () => { if(st.scr !== 'flow') return; if(document.hidden) flowStop(); else flowStart() });
-  document.body.addEventListener('click', e => { const o = e.target.closest('[data-open]'); if(o){ e.preventDefault(); openRes(o.dataset.open) } const c = e.target.closest('[data-council]'); if(c){ e.preventDefault(); openCouncil(c.dataset.council) } });
+  document.body.addEventListener('click', e => { const o = e.target.closest('[data-open]'); if(o){ e.preventDefault(); openRes(o.dataset.open) } const c = e.target.closest('[data-council]'); if(c){ e.preventDefault(); openCouncil(c.dataset.council) } const cr = e.target.closest('[data-cretry]'); if(cr){ e.preventDefault(); retryCouncil(cr.dataset.cretry) } });
   $('resBack').onclick = () => { const r = getRec(st.cur); show(r && (r.preview || r.sym === st.pair) ? 'home' : 'his') };   /* v1.8.2: preview se ← = Home */
   $('bRe').onclick = () => { const r = getRec(st.cur); if(r && SPECS[r.sym]){ st.pair = r.sym; LS.set('pair', r.sym); runAnalyze(r.sym) } };
   $('bMt5').onclick = onMt5;

@@ -3,32 +3,38 @@
    2) Screenshot: chart ki photo se BUY LIMIT / SELL LIMIT. */
 import {LS} from './data.js';
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
-const MODELS = ['gemini-flash-latest', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+const MODELS = ['gemini-flash-latest', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite'];   /* v1.9.4: 2.0-flash band ho gaya */
+const DEAD = /no longer available|not found|is not supported|deprecated/i;
 const TIMEOUT = 40000;
 function think(m){ const v = parseFloat((m.match(/gemini-(\d+(?:\.\d+)?)/) || [])[1] || 0); return v >= 3 ? {thinkingLevel: 'low'} : /2\.5|flash-latest/.test(m) ? {thinkingBudget: 0} : null }
-async function call(key, model, parts, noThink, maxTok = 1500){
+async function call(key, model, parts, noThink, maxTok = 1500, tmo = TIMEOUT){
   const cfg = {temperature: 0.3, maxOutputTokens: maxTok, responseMimeType: 'application/json'};
   const th = noThink ? null : think(model); if(th) cfg.thinkingConfig = th;
-  const ac = new AbortController(), t = setTimeout(() => ac.abort(), TIMEOUT);
+  const ac = new AbortController(), t = setTimeout(() => ac.abort(), tmo);
   try{
     const r = await fetch(`${BASE}/models/${model}:generateContent?key=${encodeURIComponent(key)}`, {method: 'POST', headers: {'Content-Type': 'application/json'},
       signal: ac.signal, body: JSON.stringify({contents: [{parts}], generationConfig: cfg})});
     const j = await r.json().catch(() => ({}));
     if(!r.ok){ const msg = (j.error && j.error.message) || 'HTTP ' + r.status;
-      if(th && r.status === 400 && /think/i.test(msg)) return call(key, model, parts, true, maxTok);
+      if(th && r.status === 400 && /think/i.test(msg)) return call(key, model, parts, true, maxTok, tmo);
       throw Object.assign(new Error(msg.split(key).join('***')), {code: r.status}) }
     const txt = ((((j.candidates || [])[0] || {}).content || {}).parts || []).map(x => x.text || '').join('');
-    const m = txt.match(/\{[\s\S]*\}/); if(!m) throw new Error('AI ne JSON nahi diya');
-    return JSON.parse(m[0]);
+    const m = txt.match(/\{[\s\S]*\}/); if(!m) throw new Error(model + ': AI ne poora JSON nahi diya');
+    try{ return JSON.parse(m[0]) }catch(e){ throw new Error(model + ': AI ka jawab adhoora') }
   }catch(e){ if(e.name === 'AbortError') throw new Error(model + ' slow'); throw e }finally{ clearTimeout(t) }
 }
-async function ask(key, parts, pref, maxTok){
+/* v1.9.4: band model chhodo; sab fail ho to sabse kaam ki galti dikhao (aakhri "model band" wali nahi) */
+async function ask(key, parts, pref, maxTok, tmo){
   if(!key) throw new Error('Gemini key nahi (SamuSignal Settings me daalo)');
-  const good = LS.get('gOk', ''), list = [...new Set([good, pref, ...MODELS].filter(Boolean))];
-  let last;
-  for(const m of list){ try{ const out = await call(key, m, parts, false, maxTok); LS.set('gOk', m); return out }catch(e){ last = e } }
-  throw last || new Error('AI fail');
+  const dead = LS.get('gDead', []), good = LS.get('gOk', '');
+  const list = [...new Set([good, pref, ...MODELS].filter(m => m && !dead.includes(m)))];
+  const errs = [];
+  for(const m of list){ try{ const out = await call(key, m, parts, false, maxTok, tmo); LS.set('gOk', m); return out }
+    catch(e){ errs.push(e); if(DEAD.test(e.message) || e.code === 404){ LS.set('gDead', [...new Set([...LS.get('gDead', []), m])].slice(-10)); if(good === m) LS.set('gOk', '') } } }
+  const best = errs.find(e => e.code === 429 || /quota|rate|exhaust/i.test(e.message)) || errs.find(e => !(DEAD.test(e.message) || e.code === 404)) || errs[0];
+  throw best ? new Error(e429(best)) : new Error('AI fail');
 }
+const e429 = e => e.code === 429 || /quota|rate|exhaust/i.test(e.message) ? 'Gemini ki limit puri (thodi der baad dobara)' : String(e.message).slice(0, 120);
 export async function aiCheck(s, sym, sig, b15){
   const rows = b15.slice(-60).map(b => [b.o, b.h, b.l, b.c].map(v => +v.toFixed(5)).join(',')).join('\n');
   const prompt = `You are a strict forex price-action reviewer. Pair ${sym}, 15-minute candles (oldest first, o,h,l,c):\n${rows}\n\n` +
@@ -77,5 +83,5 @@ Reply JSON only, exactly:
 {"bots":[{"name":"Trend","view":"BUY","note":""},{"name":"Movement","view":"","note":""},{"name":"Levels","view":"","note":""},{"name":"Market","view":"","note":""},{"name":"Risk","view":"","note":""},{"name":"Devil","view":"","note":""}],
  "debate":["",""],
  "final":{"dir":"BUY or SELL","order":"LIMIT or MARKET","entry":0,"sl":0,"tp":0,"confidence":0,"summary":"one or two short Hinglish sentences"}}`;
-  return ask(s.gKey, [{text: prompt}], s.gModel, 3000);
+  return ask(s.gKey, [{text: prompt}], s.gModel, 8192, 70000);   /* v1.9.4: lamba jawab — zyada token + samay */
 }
