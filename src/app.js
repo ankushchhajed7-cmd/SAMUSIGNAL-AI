@@ -1,12 +1,12 @@
 /* SAMUSIGNAL AI — personal app. SamuSignal ki keys + MT5 feed + PERSONAL FX bridge. */
-import {SPECS, PAIRS, fmt, fmtS, fromName} from './symbols.js';
+import {SPECS, PAIRS, fmt, fmtS, fromName, pipUsd} from './symbols.js';
 import {LS, keys, feedStatus, series, quotes, fbUrl} from './data.js';
 import {analyze, evaluate, isWin, isLoss} from './engine.js';
 import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.5.2';
+export const VERSION = '1.6.0';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -186,6 +186,15 @@ function scanUI(i, sub){
     : k === i ? `<div class="step"><span class="spin"></span>${t}…</div>` : `<div class="step" style="opacity:.5"><span style="width:16px;height:16px;border-radius:50%;border:2px solid var(--mu2)"></span>${t}</div>`).join('');
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
+/* v1.6.0: virtual balance — har TP / SL trade ka $ (lot Settings me, default 0.01). Nateeja aate hi $ pakka (baad me rate badle to bhi wahi). */
+const vBal = () => +LS.get('vBal', 200) || 200, vLot = () => +LS.get('vLot', 0.01) || 0.01;
+function usdOf(r){
+  const s = r.res && r.res.state; if(!(isWin(s) || isLoss(s)) || !isFinite(r.res.pips)) return 0;
+  if(r.res.usd === undefined){ const rates = {}; Object.keys(st.q).forEach(k => { if(st.q[k] && st.q[k].p) rates[k] = st.q[k].p });
+    r.res.lot = vLot(); r.res.usd = +(r.res.pips * pipUsd(r.sym, r.res.lot, rates)).toFixed(2) }
+  return r.res.usd;
+}
+const usdTxt = v => (v >= 0 ? '+$' : '−$') + Math.abs(v).toFixed(2);
 /* v1.2.0: ek pair pe ek hi chaalu signal — TP / SL (ya fill na hua = EXPIRED) aane tak naya History me nahi */
 const isActive = r => r.res ? (r.res.state === 'PENDING' || r.res.state === 'OPEN') : Date.now() < r.expiresAt;
 /* v1.2.2: real-time nateeja — MT5 feed chalu ho to 1-min candles (Exness ka exact bhaav, ~4 ghante tak), warna 5-min */
@@ -197,7 +206,7 @@ async function evalSym(sym, recs){
     try{ const x = await series(s, sym, '1min', 250); if(x.src === 'mt5' && x.bars.length && x.bars[0].t <= oldest) d = x }catch(e){}
   }
   if(!d) d = await series(s, sym, '5min', 300);
-  recs.forEach(r => { r.res = Object.assign(evaluate(Object.assign({}, r, {tp: r.tp.slice(0, 1)}), d.bars, now, SPECS[sym].pip), {src: d.src, at: now}) });
+  recs.forEach(r => { r.res = Object.assign(evaluate(Object.assign({}, r, {tp: r.tp.slice(0, 1)}), d.bars, now, SPECS[sym].pip), {src: d.src, at: now}); usdOf(r) });
 }
 async function activeFor(sym){
   const todo = st.hist.filter(r => r.sym === sym && !(r.res && r.res.done));
@@ -349,6 +358,11 @@ function renderHis(){
   const w = fin.filter(r => isWin(r.res.state)).length, l = fin.length - w;
   $('stWin').textContent = fin.length ? Math.round(w / fin.length * 100) + '%' : '—'; $('stN').textContent = wk.length; $('stW').textContent = w; $('stL').textContent = l;
   const last = st.hist.filter(r => r.res && (isWin(r.res.state) || isLoss(r.res.state))).slice(0, 10);
+  const done = st.hist.filter(r => r.res && (isWin(r.res.state) || isLoss(r.res.state))), pnl = +done.reduce((t, r) => t + usdOf(r), 0).toFixed(2), b0 = vBal();
+  $('stBal').innerHTML = `<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><span class="lbl">💰 Virtual balance</span><span class="note">(${vLot()} lot / trade)</span></div>
+<div style="display:flex;align-items:baseline;gap:10px;margin-top:4px;flex-wrap:wrap"><span class="mono" style="color:var(--mu);font-size:14px">$${b0.toFixed(2)} →</span><b class="mono" style="font-size:24px">$${(b0 + pnl).toFixed(2)}</b>
+<b class="mono" style="font-size:14px;color:${pnl >= 0 ? 'var(--up)' : 'var(--dn2)'}">${usdTxt(pnl)} (${(pnl / b0 * 100 >= 0 ? '+' : '') + (pnl / b0 * 100).toFixed(2)}%)</b></div>`;
+  saveHist();
   $('stDots').innerHTML = last.length ? last.map(r => `<span style="flex:1;height:16px;border-radius:4px;background:${isWin(r.res.state) ? 'var(--up)' : 'var(--dn)'}"></span>`).join('') : '<span class="note">अभी कोई पूरा नतीजा नहीं</span>';
   $('hf').innerHTML = [['all', 'All'], ['won', 'Won'], ['lost', 'Lost'], ['pend', 'Pending']].map(([k, t]) => `<button class="pill${st.hf === k ? ' on' : ''}" data-hf="${k}">${t}</button>`).join('');
   $('hk').innerHTML = [['all', 'सब'], ['mt5', '🚀 MT5 पे गए'], ['app', '📱 सिर्फ़ app']].map(([k, t]) => `<button class="pill${st.hk === k ? ' on' : ''}" data-hk="${k}">${t}</button>`).join('');
@@ -361,7 +375,7 @@ function renderHis(){
   $('hList').innerHTML = L.length ? L.map(r => {
     const s = r.res && r.res.state, B = r.dir === 'BUY';
     const [bc, bt] = isWin(s) ? ['b-win', 'TP HIT'] : isLoss(s) ? ['b-loss', 'SL HIT'] : s === 'EXPIRED' ? ['b-exp', 'EXPIRED'] : s === 'OPEN' ? ['b-open', 'OPEN'] : ['b-pend', 'PENDING'];
-    const pip = r.res && r.res.pips ? (r.res.pips > 0 ? '+' : '') + r.res.pips.toFixed(1) + ' pips' : s === 'EXPIRED' ? 'not filled' : '—';
+    const pip = r.res && r.res.pips ? (r.res.pips > 0 ? '+' : '') + r.res.pips.toFixed(1) + ' pips · ' + usdTxt(usdOf(r)) : s === 'EXPIRED' ? 'not filled' : '—';
     return `<div class="row" data-open="${r.id}"><span style="width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:${B ? 'var(--up)' : 'var(--dn)'};background:${B ? 'rgba(47,224,138,0.12)' : 'rgba(255,93,108,0.12)'}">${r.dir}</span>
 <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:14px">${esc(SPECS[r.sym] ? SPECS[r.sym].n : r.sym)} <span style="font-size:11px;font-weight:600;color:var(--mu)">LIMIT · ${istD(r.at)} ${ist(r.at)}</span></div>
 <div style="font-size:11px;color:var(--mu)" class="mono">Entry ${fmtS(r.sym, r.entry)} · Grade ${r.grade}${r.sent.length ? '<span class="kind k-mt5">MT5</span>' : ''}${r.src === 'shot' ? '<span class="kind k-shot">📷</span>' : ''}</div></div>
@@ -400,6 +414,7 @@ async function renderSet(){
   const tg = (k, on) => `<button class="tg${on ? ' on' : ''}" data-tg="${k}"><i></i></button>`;
   $('prefs').innerHTML = `<div class="sr">🤖 AI check (Gemini दूसरी राय)<span style="margin-left:auto"></span>${tg('aiOn', LS.get('aiOn', true))}</div>
 <div class="sr">Data source<em><select id="srcSel" style="background:#14151a;color:var(--tx);border:1px solid var(--line);border-radius:8px;padding:6px"><option value="auto">Auto (MT5 → TwelveData)</option><option value="td">सिर्फ़ TwelveData</option></select></em></div>
+<div class="sr" data-vset="bal" style="cursor:pointer">💰 Virtual balance<em>$${vBal().toFixed(2)} ›</em></div><div class="sr" data-vset="lot" style="cursor:pointer">💰 हिसाब का lot / trade<em>${vLot()} ›</em></div>
 <div class="sr">Signal timeframe<em>15m + 1H</em></div><div class="sr">Order type<em>सिर्फ़ BUY LIMIT / SELL LIMIT</em></div>`;
   $('srcSel').value = LS.get('src', 'auto');
   $('ver').textContent = 'v' + VERSION;
@@ -431,7 +446,7 @@ const paperRow = r => ({id: r.id, sym: r.sym, dir: r.dir, entry: r.entry, sl: r.
   adx: r.adx === undefined ? null : r.adx, regime: r.regime || '', danger: r.danger || '', fibX: r.fibX === undefined ? null : r.fibX, src: r.src || '',
   at: r.at, expiresAt: r.expiresAt, ai: r.ai && !r.ai.err ? {agree: !!r.ai.agree, conf: r.ai.conf || 0} : null, mt5: r.sent.length > 0,
   res: r.res ? {state: r.res.state, done: !!r.res.done, pips: r.res.pips === undefined ? null : +(+r.res.pips).toFixed(1),
-    filledAt: r.res.filledAt || null, exitAt: r.res.exitAt || null} : null, v: VERSION});
+    filledAt: r.res.filledAt || null, exitAt: r.res.exitAt || null, usd: r.res.usd === undefined ? null : r.res.usd, lot: r.res.lot || null} : null, v: VERSION});
 let paperBusy = false;
 async function paperSync(){
   if(paperBusy) return; paperBusy = true;
@@ -586,7 +601,13 @@ function boot(){
   $('pList').onclick = e => { const s = e.target.closest('[data-star]'), p = e.target.closest('[data-pick]');
     if(s){ const x = s.dataset.star; st.favs = st.favs.includes(x) ? st.favs.filter(y => y !== x) : [...st.favs, x]; LS.set('favs', st.favs); renderPairs(false) }
     else if(p){ st.pair = p.dataset.pick; LS.set('pair', st.pair); homeChart && homeChart.ch.priceScale('right').applyOptions({autoScale: true}); show('home') } };
-  $('prefs').onclick = e => { const t = e.target.closest('[data-tg]'); if(t){ LS.set(t.dataset.tg, !LS.get(t.dataset.tg, true)); renderSet() } };
+  $('prefs').onclick = async e => { const t = e.target.closest('[data-tg]'); if(t){ LS.set(t.dataset.tg, !LS.get(t.dataset.tg, true)); renderSet(); return }
+    const v = e.target.closest('[data-vset]'); if(!v) return;
+    const isBal = v.dataset.vset === 'bal';
+    const ok = await dlg(isBal ? '💰 Virtual balance' : '💰 हिसाब का lot', `<div class="note">${isBal ? 'शुरुआती balance ($) — paper trading का हिसाब इसी पर' : 'हर paper trade का lot (आगे के trades पर लगेगा)'}</div><input class="f mono" id="vIn" inputmode="decimal" value="${isBal ? vBal() : vLot()}" style="margin-top:8px">`, 'Save', 'Cancel');
+    if(!ok) return; const x = parseFloat(String($('vIn').value).replace(',', '.'));
+    if(!(x > 0) || (!isBal && x > 100)) return toast('सही संख्या डालें');
+    LS.set(isBal ? 'vBal' : 'vLot', x); toast('Saved'); renderSet() };
   $('prefs').onchange = e => { if(e.target.id === 'srcSel'){ LS.set('src', e.target.value); toast('Data source बदला') } };
   $('kcSave').onclick = () => { const v = $('kcIn').value; if(!v.trim()) return toast('पहले code paste करें');
     try{ importKeys(v); $('kcIn').value = ''; renderSet(); setTimeout(() => loadHome(), 300) }catch(e){ toast('Code गलत है — SamuSignal से दोबारा copy करें') } };
