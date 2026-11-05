@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot, aiCouncil} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.9.0';
+export const VERSION = '1.9.1';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -273,12 +273,21 @@ function cResTxt(r){
   if(r.preview) return ['var(--mu)', '👀 preview — paper में नहीं गिना'];
   return isWin(cs) ? ['var(--up)', '✅ TP · ' + usdTxt(cUsd(r))] : isLoss(cs) ? ['var(--dn2)', '🔴 SL · ' + usdTxt(cUsd(r))] : cs === 'EXPIRED' ? ['var(--mu)', '⌛ LIMIT नहीं भरा'] : cs === 'TIMEOUT' ? ['var(--mu)', '48h'] : cs === 'OPEN' ? ['var(--gold)', '🟢 चालू'] : ['var(--gold)', '⏳ Entry का इंतज़ार'];
 }
+/* v1.9.1: sab bot + jaj ka aakhri faisla EK line me — aapka analysis confirm hai ya nahi */
+function cVerdict(r){
+  const c = r.council; if(!c || !c.dir) return null;
+  const D = r.dir, v = c.bots.filter(b => b.view === D).length, opp = c.bots.filter(b => b.view && b.view !== D && b.view !== 'WAIT').length, w = c.bots.filter(b => b.view === 'WAIT').length;
+  if(c.dir !== D) return {k: 'no', col: 'var(--dn2)', short: `❌ मत लो — Council ${c.dir}`, txt: `❌ आपका ${D} मत लो — Council उल्टा ${c.dir} कहता है (${opp}/6 bot ${c.dir === 'BUY' ? 'BUY' : 'SELL'}, भरोसा ${c.conf}%)`};
+  if(w >= 3 || c.conf < 55) return {k: 'wait', col: 'var(--gold)', short: '⏸ अभी रुको', txt: `⏸ अभी रुको — Council ${D} की तरफ़ है पर पक्का नहीं (${v}/6 bot साथ, ${w} WAIT, भरोसा ${c.conf}%)`};
+  if(v >= 4 && c.conf >= 65) return {k: 'yes', col: 'var(--up)', short: `✅ ${D} कन्फ़र्म`, txt: `✅ हाँ — आपका ${D} कन्फ़र्म, ${D} ले सकते हैं (${v}/6 bot साथ, भरोसा ${c.conf}%)${c.order === 'MARKET' ? ' · Council MARKET entry कहता है' : ''}`};
+  return {k: 'weak', col: 'var(--gold)', short: `🟡 हल्की हाँ — ${D}`, txt: `🟡 हल्की हाँ — ${D} ठीक है पर सब bot साथ नहीं (${v}/6 bot, भरोसा ${c.conf}%)`};
+}
 /* v1.9.0: Result pe sirf chhoti line — poora Council alag page pe */
 function renderCouncil(r){
   const el = $('rCouncil'); if(el){ const c = r.council;
     el.innerHTML = !c ? '' : `<a href="#" data-council="${r.id}" class="card" style="display:flex;align-items:center;gap:8px;margin:12px 18px 0;padding:11px 14px;border-color:rgba(232,195,90,0.5);color:var(--tx);text-decoration:none;font-size:13px"><span style="font-size:18px">🧠</span>${
       c.busy ? '<span>AI Council बहस कर रहा है…</span>' : c.err ? `<span class="note">Council नहीं हुआ — ${esc(c.err.slice(0, 50))}</span>` :
-      `<span><b style="color:${cVc(c.dir)}">${c.dir} ${c.order}</b> · भरोसा ${c.conf}% · ${c.dir === r.dir ? '<b style="color:var(--up)">✅ सहमत</b>' : '<b style="color:var(--dn2)">⚠ उल्टा</b>'}</span>`}<b style="margin-left:auto;color:var(--gold)">देखें ›</b></a>` }
+      `<span><b style="color:${cVerdict(r).col}">${cVerdict(r).short}</b> <span class="note">· Council ${c.dir} ${c.order} · ${c.conf}%</span></span>`}<b style="margin-left:auto;color:var(--gold)">देखें ›</b></a>` }
   if(st.scr === 'council' && st.cRec === r.id) renderCPage();
 }
 function cPick(){
@@ -288,6 +297,9 @@ function cPick(){
 function renderCPage(){
   const r = cPick(), S = r && r.sym, sp = S && SPECS[S]; st.cRec = r ? r.id : null;
   $('cPair').textContent = r ? `${sp ? sp.n : S} · ${ist(r.at)}` : '';
+  /* hisaab */
+  const CL = Object.values(LS.get('cLedger', {})), grp = f => { const x = CL.filter(f), w = x.filter(y => y.win).length; return {n: x.length, w, usd: +x.reduce((t, y) => t + y.usd, 0).toFixed(2), pc: x.length ? Math.round(w / x.length * 100) : 0} };
+  const T = grp(() => true), row = (t, g) => `<div style="display:flex;font-size:12px;padding:3px 0"><span style="flex:1">${t}</span><span class="mono note">${g.n} · ${g.pc}% जीत ·&nbsp;</span><b class="mono" style="color:${g.usd >= 0 ? 'var(--up)' : 'var(--dn2)'}">${usdTxt(g.usd)}</b></div>`;
   const c = r && r.council;
   if(!c) $('cMain').innerHTML = `<div class="card" style="margin:12px 18px 0;padding:14px;font-size:14px;line-height:1.6">अभी कोई Council फ़ैसला नहीं। Home पर कोई pair चुनकर <b>ANALYZE</b> दबाएँ — Council अपने आप उस pair पर राय देगा।${LS.get('councilOn', true) ? '' : '<br><b style="color:var(--dn2)">Settings में 🧠 AI Council बंद है।</b>'}${K().gKey ? '' : '<br><b style="color:var(--dn2)">Gemini key नहीं है।</b>'}</div>`;
   else if(c.busy) $('cMain').innerHTML = `<div class="card" style="margin:12px 18px 0;padding:16px;font-size:14px;text-align:center">🧠 ${esc(sp ? sp.n : S)} पर 6 bot + जज बहस कर रहे हैं…<div class="note" style="margin-top:6px">10–40 sec</div></div>`;
@@ -305,11 +317,11 @@ function renderCPage(){
 <div class="card" style="margin:12px 18px 0;padding:12px 14px"><div class="lbl">6 Expert bots</div>
 <div style="display:flex;flex-direction:column;gap:9px;margin-top:10px">${c.bots.map(b => `<div style="display:flex;gap:8px;align-items:flex-start;font-size:13px"><span style="width:20px;flex:none;text-align:center">${cIC[b.name] || '🤖'}</span><b style="min-width:82px">${esc(b.name)}</b><span class="badge" style="color:${cVc(b.view)};border:1px solid ${cVc(b.view)}">${b.view}</span><span style="flex:1;color:var(--mu);line-height:1.4">${esc(b.note)}</span></div>`).join('')}</div>
 ${c.debate.length ? `<div class="lbl" style="margin-top:12px">💬 बहस</div><div style="margin-top:6px;font-size:13px;color:var(--mu);line-height:1.5;border-left:2px solid var(--line);padding-left:8px">${c.debate.map(esc).join('<br>')}</div>` : ''}</div>
+<div class="card" style="margin:12px 18px 0;padding:14px;border:2px solid ${cVerdict(r).col}"><div class="lbl">🧾 Council का आख़िरी फ़ैसला</div>
+<div style="font-size:17px;font-weight:800;line-height:1.45;margin-top:6px;color:${cVerdict(r).col}">${cVerdict(r).txt}</div>
+<div class="note" style="margin-top:6px">Council का अपना record: ${T.n} पूरे trade · ${T.pc}% जीत — भरोसा इसी record से बनेगा, अभी इसे पक्का नियम न मानें।</div></div>
 <div style="display:flex;gap:10px;padding:12px 18px 0"><button class="btn out" style="flex:1" data-open="${r.id}">📈 Signal देखें</button></div>`;
   }
-  /* hisaab */
-  const CL = Object.values(LS.get('cLedger', {})), grp = f => { const x = CL.filter(f), w = x.filter(y => y.win).length; return {n: x.length, w, usd: +x.reduce((t, y) => t + y.usd, 0).toFixed(2), pc: x.length ? Math.round(w / x.length * 100) : 0} };
-  const T = grp(() => true), row = (t, g) => `<div style="display:flex;font-size:12px;padding:3px 0"><span style="flex:1">${t}</span><span class="mono note">${g.n} · ${g.pc}% जीत ·&nbsp;</span><b class="mono" style="color:${g.usd >= 0 ? 'var(--up)' : 'var(--dn2)'}">${usdTxt(g.usd)}</b></div>`;
   $('cStats').innerHTML = `<div class="card" style="margin:12px 18px 0;padding:12px 14px"><div class="lbl">📊 Council का paper हिसाब (lot ${vLot()})</div>
 <div style="font-size:22px;font-weight:800;margin-top:4px;color:${T.usd >= 0 ? 'var(--up)' : 'var(--dn2)'}" class="mono">${usdTxt(T.usd)}</div><div class="note">${T.n} पूरे trade · ${T.w} जीते · ${T.pc}% जीत</div>
 <div style="margin-top:8px">${row('📌 LIMIT वाले', grp(x => x.order !== 'MARKET'))}${row('⚡ MARKET वाले', grp(x => x.order === 'MARKET'))}${row('✅ हमारे signal से सहमत', grp(x => x.agree === true))}${row('⚠ हमारे signal से उल्टा', grp(x => x.agree === false))}</div></div>`;
@@ -318,7 +330,7 @@ ${c.debate.length ? `<div class="lbl" style="margin-top:12px">💬 बहस</di
   $('cList').innerHTML = L.length ? L.map(x => { const k = x.council, [rc, rt] = cResTxt(x), xs = SPECS[x.sym];
     return `<a href="#" data-cpick="${x.id}" class="card" style="display:flex;align-items:center;gap:8px;padding:10px 12px;color:var(--tx);text-decoration:none;${x.id === st.cRec ? 'border-color:var(--gold)' : ''}">
 <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700">${esc(xs ? xs.n : x.sym)} <span style="color:${cVc(k.dir)}">${k.dir} ${k.order}</span> <span class="note">${k.conf}%</span></div>
-<div class="note">${istD(x.at)} ${ist(x.at)} · ${k.dir === x.dir ? '✅ सहमत' : '⚠ उल्टा'}</div></div><b style="font-size:12px;color:${rc};text-align:right">${rt}</b></a>` }).join('')
+<div class="note">${istD(x.at)} ${ist(x.at)} · <b style="color:${cVerdict(x).col}">${cVerdict(x).short}</b></div></div><b style="font-size:12px;color:${rc};text-align:right">${rt}</b></a>` }).join('')
     : '<div class="note">अभी कोई फ़ैसला नहीं</div>';
 }
 async function openCouncil(id){
