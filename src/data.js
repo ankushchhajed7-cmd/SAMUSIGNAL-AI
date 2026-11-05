@@ -63,12 +63,37 @@ async function feedBars(s, sym, tf){
 
 /* ---------------- TwelveData ---------------- */
 const TD = {cache: {}, q: {}};   /* v1.8.2: q = har pair ka alag cache {sym: {t, d}} */
-async function tdBars(s, sym, tf, n){
+/* v1.8.3: TwelveData free = 8 credit / minute. Ab ek minute me 7 se zyada nahi (apna hisaab).
+   Zaroori kaam (critical: ANALYZE, MT5 order, chart pehli baar) jagah khaali hone tak ruk jaata hai (max ~65 sec);
+   baaki (refresh, pairs list, nateeja) us minute chhod diya jaata hai. TD "credits" wala error aaye to agle minute tak ruko. */
+const TDB = {log: [], coolUntil: 0, max: 7};
+export const TD_WAIT = {cb: null};   /* app yahan callback deta hai: kitne sec baaki (screen pe dikhane ke liye) */
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+export const tdLimitErr = () => Object.assign(new Error('TwelveData की इस मिनट की limit पूरी — थोड़ी देर में अपने आप'), {limit: true});
+async function tdGate(n, critical){
+  for(let k = 0; k < 70; k++){
+    const now = Date.now(); TDB.log = TDB.log.filter(t => now - t < 61000);
+    if(now >= TDB.coolUntil && TDB.log.length + n <= TDB.max){ for(let i = 0; i < n; i++) TDB.log.push(now); return }
+    if(!critical) throw tdLimitErr();
+    const oldest = TDB.log.length ? Math.min(...TDB.log) : now, left = Math.max(1, Math.ceil(Math.max(TDB.coolUntil - now, oldest + 61000 - now) / 1000));
+    try{ TD_WAIT.cb && TD_WAIT.cb(left) }catch(e){}
+    await sleep(1000);
+  }
+  throw tdLimitErr();
+}
+function tdErr(j, r, s){
+  const m = j && j.message ? String(j.message).split(s.tdKey).join('***') : '';
+  if(/credits|limit/i.test(m)){ TDB.coolUntil = (Math.floor(Date.now() / 60000) + 1) * 60000 + 1500; return tdLimitErr() }
+  return new Error('TwelveData: ' + (m ? m.slice(0, 90) : 'HTTP ' + r.status));
+}
+export const tdUsage = () => { const now = Date.now(); return TDB.log.filter(t => now - t < 61000).length };
+async function tdBars(s, sym, tf, n, critical){
   const ck = sym + '|' + tf, c = TD.cache[ck];
   if(c && Date.now() - c.t < 60000) return c.bars;
+  await tdGate(1, critical);
   const u = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(sym)}&interval=${tf}&outputsize=${n}&order=ASC&timezone=UTC&apikey=${encodeURIComponent(s.tdKey)}`;
   const r = await fetch(u), j = await r.json().catch(() => ({}));
-  if(!j.values) throw new Error('TwelveData: ' + (j.message ? String(j.message).split(s.tdKey).join('***').slice(0, 90) : 'HTTP ' + r.status));
+  if(!j.values) throw tdErr(j, r, s);
   const bars = j.values.map(v => ({t: Date.parse(v.datetime.replace(' ', 'T') + 'Z'), o: +v.open, h: +v.high, l: +v.low, c: +v.close})).filter(b => isFinite(b.c));
   TD.cache[ck] = {t: Date.now(), bars};
   return bars;
@@ -76,13 +101,13 @@ async function tdBars(s, sym, tf, n){
 const useFeed = () => LS.get('src', 'auto') !== 'td';
 
 /* candles: {bars, src} */
-export async function series(s, sym, tf, n = 250){
+export async function series(s, sym, tf, n = 250, critical = false){
   if(useFeed() && (await feedStatus(s)).ok){ try{ return {bars: await feedBars(s, sym, tf), src: 'mt5'} }catch(e){} }
   if(!s.tdKey) throw Object.assign(new Error('Live data nahi — MT5 feed band aur TwelveData key nahi'), {nodata: true});
-  return {bars: await tdBars(s, sym, tf, n), src: 'td'};
+  return {bars: await tdBars(s, sym, tf, n, critical), src: 'td'};
 }
 /* sab pairs ke bhaav {sym: {p, chg, sp}} */
-export async function quotes(s, syms){
+export async function quotes(s, syms, critical = false){
   const out = {};
   if(useFeed() && (await feedStatus(s)).ok){
     try{ const L = await feedLive(s);
@@ -98,9 +123,11 @@ export async function quotes(s, syms){
   syms.forEach(x => { const c = TD.q[x]; if(c && now - c.t < 60000) out[x] = c.d; else need.push(x) });
   if(!need.length) return out;
   try{
-    const list = need.slice(0, 8);
+    const list = need.slice(0, critical ? 2 : 3);          /* v1.8.3: har symbol = 1 credit — list chhoti */
+    await tdGate(list.length, critical);
     const r = await fetch(`https://api.twelvedata.com/quote?symbol=${encodeURIComponent(list.join(','))}&apikey=${encodeURIComponent(s.tdKey)}`);
     const j = await r.json(), one = list.length === 1 ? {[list[0]]: j} : j;
+    if(j && j.code && j.message) throw tdErr(j, r, s);
     list.forEach(x => { const q = one[x]; if(q && q.close){ out[x] = {p: +q.close, chg: +q.percent_change || 0, sp: 0, src: 'td'}; TD.q[x] = {t: now, d: out[x]} } });
   }catch(e){}
   return out;

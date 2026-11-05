@@ -1,12 +1,12 @@
 /* SAMUSIGNAL AI — personal app. SamuSignal ki keys + MT5 feed + PERSONAL FX bridge. */
 import {SPECS, PAIRS, fmt, fmtS, fromName, pipUsd} from './symbols.js';
-import {LS, keys, feedStatus, series, quotes, fbUrl} from './data.js';
+import {LS, keys, feedStatus, series, quotes, fbUrl, TD_WAIT} from './data.js';
 import {analyze, evaluate, evaluateMarket, evaluateTrail, isWin, isLoss} from './engine.js';
 import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.8.2';
+export const VERSION = '1.8.3';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -91,6 +91,7 @@ function mkChart(el){
     }
     C.draw();
   };
+  C.clear = () => { s.setData([]); C.levels(null); C.lastC = null; C.n = 0; C.sym = ''; C.tick() };   /* v1.8.3: pair badalte hi purana chart hatao */
   C.fit = () => { const n = C.n; if(n > 100) ch.timeScale().setVisibleLogicalRange({from: n - 80, to: n + 14}); else ch.timeScale().fitContent() };
   C.draw = () => {
     const g = C.sig; if(!g || !C.sym){ ov.innerHTML = ''; return }
@@ -166,10 +167,12 @@ async function loadHome(quiet){
   $('hPair').textContent = sp.n; $('hTitle').textContent = sp.title + ' · ' + sp.group;
   tfRow(); renderHomeCard();
   if(!homeChart) homeChart = mkChart($('hChart'));
-  if(!quiet) $('hMsg').style.display = 'flex', $('hMsg').textContent = 'Loading…';
+  const fresh = homeChart.sym !== sym || homeChart.tf !== st.tf;
+  if(fresh){ homeChart.clear(); homeChart.tf = st.tf; $('hPx').textContent = '—'; $('hChg').textContent = '' }   /* v1.8.3: doosre pair ka chart / bhaav kabhi nahi */
+  if(!quiet || fresh) $('hMsg').style.display = 'flex', $('hMsg').textContent = 'Loading…';
   try{
-    const s = K(), q = await quotes(s, [sym]); Object.assign(st.q, q);
-    const d = await series(s, sym, st.tf, 250);
+    const s = K(), q = await quotes(s, [sym], fresh); Object.assign(st.q, q);
+    const d = await series(s, sym, st.tf, 250, fresh);
     if(sym !== st.pair) return;
     homeBars = d.bars; st.src = d.src;
     homeChart.set(d.bars, sym, {'5min': 300e3, '15min': 900e3, '1h': 3600e3}[st.tf]); if(!quiet) homeChart.fit();
@@ -179,7 +182,11 @@ async function loadHome(quiet){
     $('hPx').textContent = fmt(sym, px);
     $('hChg').textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '% today'; $('hChg').style.color = chg >= 0 ? 'var(--up)' : 'var(--dn2)';
     if(!quiet || !st.home || st.home.sym !== sym || Date.now() - st.home.t > 120000) quickRead(sym);
-  }catch(e){ $('hMsg').style.display = 'flex'; $('hMsg').textContent = e.message }
+  }catch(e){
+    if(sym !== st.pair) return;
+    if(homeChart.n && homeChart.sym === sym){ if(!e.limit) toast(e.message.slice(0, 80)) }      /* chart pehle se hai -> bas chhota sandesh */
+    else { $('hMsg').style.display = 'flex'; $('hMsg').textContent = e.limit ? '⏳ ' + e.message : e.message }
+  }
   srcPill();
 }
 async function quickRead(sym){
@@ -256,7 +263,7 @@ async function runAnalyze(sym = st.pair){
     const act = await activeFor(sym);
     if(cancelled) return;
     const s = K();
-    const [a, b, q] = await Promise.all([series(s, sym, '15min', 250), series(s, sym, '1h', 250), quotes(s, [sym])]);
+    const [a, b, q] = await Promise.all([series(s, sym, '15min', 250, true), series(s, sym, '1h', 250, true), quotes(s, [sym], true)]);
     Object.assign(st.q, q); if(cancelled) return;
     scanUI(1, `${SPECS[sym].n} · 15m · ${a.bars.length} candles · ${a.src === 'mt5' ? 'MT5 feed' : 'TwelveData'}`); await wait(350);
     const live = (q[sym] && q[sym].p) || a.bars[a.bars.length - 1].c;
@@ -316,7 +323,7 @@ async function openRes(id){
   tick(); leftT = setInterval(tick, 1000);
   if(!resChart) resChart = mkChart($('rChart'));
   resChart.levels(null);
-  if(sp){ try{ const d = await series(K(), S, '15min', 250); if(st.cur !== id) return; resChart.set(d.bars, S, 900e3); resChart.levels(r); resChart.fit() }catch(e){} }
+  if(sp){ try{ const d = await series(K(), S, '15min', 250, true); if(st.cur !== id) return; resChart.set(d.bars, S, 900e3); resChart.levels(r); resChart.fit() }catch(e){} }
   if(sp && !r.preview && !(r.res && r.res.done)){ await activeFor(S); if(st.cur === id) renderStatus(r) }   /* v1.2.1: khulte hi taaza nateeja */
   if(r.sent.length) refreshOrders();
 }
@@ -371,7 +378,7 @@ async function onMt5(){
     if(!ids.length) return toast('कम से कम एक account चुनें');
     LS.set('acct', ids); pick = acc.filter(a => ids.includes(a.login));
   }
-  const q = await quotes(s, [r.sym]); Object.assign(st.q, q);
+  const q = await quotes(s, [r.sym], true); Object.assign(st.q, q);
   const live = q[r.sym] && q[r.sym].p;
   if(!live) return dlg('Live भाव नहीं मिला', 'MT5 feed / TwelveData से भाव नहीं आया — थोड़ी देर बाद फिर करें।', 'OK', '');
   let dup = '';
@@ -690,6 +697,10 @@ function boot(){
   /* v1.2.0: user ke kehne par purani History ek baar saaf — ab se nayi shuruaat */
   if(!LS.get('reset120', false)){ st.hist = []; saveHist(); LS.set('reset120', true) }
   pruneExpired();
+  /* v1.8.3: TwelveData limit pe intezaar — screen pe saaf sandesh */
+  TD_WAIT.cb = left => { const t = `⏳ TwelveData की 1 मिनट की limit — ${left} sec में`;
+    if($('scan').classList.contains('on')) $('scSub').textContent = t;
+    else if($('hMsg').style.display !== 'none') $('hMsg').textContent = t };
   setTimeout(() => $('splash').classList.add('hide'), 900);
   loadHome();
   /* v1.2.2: real-time tick — MT5 feed (free) pe tez, TwelveData pe credit bachakar */
