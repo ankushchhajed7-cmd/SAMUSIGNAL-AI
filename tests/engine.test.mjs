@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {analyze, evaluate, ema, rsi, adx, impulse, atr} from '../src/engine.js';
+import {analyze, evaluate, evaluateMarket, ema, rsi, adx, impulse, atr} from '../src/engine.js';
 import {pipUsd} from '../src/symbols.js';
 const spec = {d: 5, pip: 0.0001};
 function mk(n, start, step, tf, wave = 0.0004, t0 = 1.7e12){
@@ -69,4 +69,20 @@ test('pip value USD for 0.01 lot', () => {
   assert.ok(Math.abs(pipUsd('USD/JPY', 0.01, {'USD/JPY': 150}) - 0.0667) < 0.001);
   assert.equal(+pipUsd('XAU/USD', 0.01).toFixed(4), 0.1);
   assert.ok(Math.abs(pipUsd('GBP/JPY', 0.02, {'USD/JPY': 160}) - 0.125) < 0.001);
+});
+
+test('market shadow plan always present, SL/TP on correct side', () => {
+  const b15 = mk(200, 1.10, 0.0003, 9e5), b1h = mk(200, 1.08, 0.0008, 36e5), live = b15[b15.length - 1].c;
+  const s = analyze({b15, b1h, live, spec});
+  assert.ok(s.mkt && typeof s.mkt.ok === 'boolean');
+  assert.ok(s.mkt.sl < s.mkt.entry && s.mkt.tp > s.mkt.entry);
+  assert.ok(Math.abs((s.mkt.tp - s.mkt.entry) - (s.mkt.entry - s.mkt.sl)) < 1e-4);
+});
+test('evaluateMarket: TP, SL, same-bar SL, open', () => {
+  const m = {entry: 1.1, sl: 1.098, tp: 1.102}, bar = (t, h, l) => ({t, o: l, h, l, c: h});
+  assert.equal(evaluateMarket(m, 0, 'BUY', [bar(1, 1.1025, 1.0995)]).state, 'TP1');
+  assert.equal(evaluateMarket(m, 0, 'BUY', [bar(1, 1.1010, 1.0975)]).state, 'SL');
+  assert.equal(evaluateMarket(m, 0, 'BUY', [bar(1, 1.1030, 1.0970)]).state, 'SL');
+  assert.equal(evaluateMarket(m, 0, 'BUY', [bar(1, 1.1010, 1.0990)]).state, 'OPEN');
+  assert.equal(evaluateMarket({entry: 1.1, sl: 1.102, tp: 1.098}, 0, 'SELL', [bar(1, 1.1005, 1.0975)]).state, 'TP1');
 });

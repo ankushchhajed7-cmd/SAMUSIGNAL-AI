@@ -119,11 +119,26 @@ export function analyze({b15, b1h, live, spec, now = Date.now()}){
   ];
   if(counter) reasons.push('Counter-trend vs 1H — Grade C, small size');
   const d = spec.d;
+  /* v1.7.0: ⚡ MARKET (seedha) — paper me sirf hisaab. Niyam: (1) 15m + 1H saath + ADX >= 30, (2) pullback ho chuka aur
+     aakhri candle trend ki disha me (EMA21 tak aakar lauta), (3) zyada bhaaga hua nahi (EMA21 se <= 1 ATR, 3 candle me <= 2 ATR),
+     (4) LIMIT door (> 1.5 ATR — 60 min me bharne ki ummeed kam), (5) sentiment >= 65% usi taraf. AI alag se report me. */
+  const cl = b15.map(x => x.c), e21 = ema(cl, 21), L = b15.length - 1, last = b15[L];
+  const look = b15.slice(-6), pbLow = Math.min(...look.map(x => x.l)), pbHigh = Math.max(...look.map(x => x.h));
+  const pulled = dir > 0 ? pbLow <= e21[L] + 0.3 * A : pbHigh >= e21[L] - 0.3 * A;
+  const turned = dir > 0 ? last.c > last.o && last.c > e21[L] : last.c < last.o && last.c < e21[L];
+  const stretch = Math.abs(live - e21[L]) <= 1 * A && Math.abs(cl[L] - cl[Math.max(0, L - 3)]) <= 2 * A;
+  const limFar = Math.abs(live - entry) > 1.5 * A;
+  const sent65 = dir > 0 ? buyPct >= 65 : buyPct <= 35;
+  const mChecks = {trend: al15 && al1h && ax >= 30, pullback: pulled && turned, notStretched: stretch, limitFar: limFar, sentiment: sent65};
+  const mOk = Object.values(mChecks).every(Boolean);
+  const mSlRaw = dir > 0 ? pbLow - 0.1 * A : pbHigh + 0.1 * A;
+  const mRisk = Math.min(2 * A, Math.max(0.6 * A, Math.abs(live - mSlRaw)));
+  const mkt = {ok: mOk, checks: mChecks, entry: r(live, d), sl: r(live - dir * mRisk, d), tp: r(live + dir * mRisk, d)};
   return {dir: D, type: D + ' LIMIT', entry: r(entry, d), zone: zone.map(v => r(v, d)), sl: r(sl, d), tp: tp.map(v => r(v, d)),
     rr: '1 : 1', grade, buyPct, sellPct: 100 - buyPct, adx: +ax.toFixed(1),
     regime: ax >= 25 ? 'Trend' : ax < 20 ? 'Range' : 'Weak trend', danger: dRatio > 1.6 ? 'high' : dRatio > 1.2 ? 'medium' : 'calm',
     live: r(live, d), atr: A, fibX: pick ? pick.x : null, leg: {hi: r(leg.hi, d), lo: r(leg.lo, d)}, t15, t1h, reasons,
-    at: now, exp: VALID_MIN, expiresAt: now + VALID_MIN * 60000};
+    mkt, at: now, exp: VALID_MIN, expiresAt: now + VALID_MIN * 60000};
 }
 
 /* Nateeja: signal ke BAAD ki candles (5m / 1m) se. Pehle fill (60 min me), phir SL / TP1..3.
@@ -149,3 +164,13 @@ export function evaluate(sig, bars, now = Date.now(), pip = 0.0001){
   return {state: 'OPEN', done: false, filledAt: after[fi].t};
 }
 export const isWin = st => /^TP/.test(st || ''), isLoss = st => st === 'SL';
+
+/* v1.7.0: ⚡ MARKET ka nateeja — signal ke pal hi bhara maana (entry = us waqt ka bhaav), phir SL / TP (ek candle me dono = SL) */
+export function evaluateMarket(m, at, dir, bars, pip = 0.0001){
+  const B = dir === 'BUY' ? 1 : -1, after = bars.filter(b => b.t >= at);
+  for(const b of after){
+    if(B > 0 ? b.l <= m.sl : b.h >= m.sl) return {state: 'SL', done: true, exitAt: b.t, pips: -Math.abs(m.entry - m.sl) / pip};
+    if(B > 0 ? b.h >= m.tp : b.l <= m.tp) return {state: 'TP1', done: true, exitAt: b.t, pips: Math.abs(m.tp - m.entry) / pip};
+  }
+  return {state: 'OPEN', done: false};
+}
