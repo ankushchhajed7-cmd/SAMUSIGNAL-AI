@@ -115,3 +115,20 @@ test('councilPlan: valid kept, wrong side fixed, market uses live, bad json null
   assert.equal(p.entry, 1.1); assert.ok(p.sl > p.entry && p.tp < p.entry);
   assert.equal(councilPlan({final: {dir: 'HOLD'}}, ctx), null); assert.equal(councilPlan({}, ctx), null);
 });
+
+import {evaluatePfx} from '../src/engine.js';
+test('v1.11 PERSONAL FX jaisa: fill ke baad chhota TP, SL nahi, mae (sabse bura) ginta hai', () => {
+  const at = 0, m = 60000, pip = 0.0001;
+  const sig = {dir: 'BUY', entry: 1.1000, at, exp: 60};
+  const bars = [{t: 0, o: 1.1010, h: 1.1012, l: 1.1004, c: 1.1006}, {t: m, o: 1.1006, h: 1.1007, l: 1.0999, c: 1.1001},
+    {t: 2 * m, o: 1.1001, h: 1.1002, l: 1.0980, c: 1.0985}, {t: 3 * m, o: 1.0985, h: 1.1030, l: 1.0984, c: 1.1028}];
+  const r = evaluatePfx(sig, bars, 4 * m, pip, 25);
+  assert.equal(r.state, 'TP'); assert.equal(r.filledAt, m); assert.equal(r.exitAt, 3 * m);
+  assert.ok(Math.abs(r.mae - 20) < 1e-6);                      /* 1.1000 -> 1.0980 = 20 pip ulta gaya */
+  const o = evaluatePfx(sig, bars.slice(0, 3), 3 * m, pip, 25);
+  assert.equal(o.state, 'OPEN'); assert.ok(Math.abs(o.pips + 15) < 1e-6);
+  const x = evaluatePfx(sig, bars.slice(0, 3), 49 * 3600e3, pip, 25);
+  assert.equal(x.state, 'TIMEOUT'); assert.equal(x.done, true);
+  const e2 = evaluatePfx({dir: 'SELL', entry: 1.2000, at: 0, exp: 60}, bars, 2 * 3600e3, pip, 25);
+  assert.equal(e2.state, 'EXPIRED');
+});

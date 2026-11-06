@@ -54,3 +54,7 @@ Link: `.../SAMUSIGNAL-AI/news.html`
   MT5 PUSH (SendNotification): 5 min + 1 min pehle, number aate hi SIGNAL, 1 min nateeja, TARGET. Terminal me Tools > Options > Notifications (MetaQuotes ID).
 - news.js: `/feed/news/paper` har 20 sec; History me VPS wale trade (🖥) — phone band tha unke bhi; summary VPS + local (jo VPS pe nahi). Local auto take sirf jab VPS ka na ho.
 - MT5 par koi order NAHI.
+
+## v1.11.0 — 🟦 PERSONAL FX jaisa (paper)
+- REAL account (PERSONAL FX) ka niyam: $0.25 TP (0.01 lot), SL NAHI. Har signal pe paper: LIMIT fill wahi, phir TP kitne min me + bhaav sabse zyada kitna ulta gaya (DD $) — chhupa khatra. 48h me TP nahi = TIMEOUT.
+- History me alag dabba + har row me "🟦 P: TP 12m · DD −$x". Firebase paperRow me `pfx`. Grid / averaging shamil nahi.

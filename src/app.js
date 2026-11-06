@@ -1,12 +1,12 @@
 /* SAMUSIGNAL AI — personal app. SamuSignal ki keys + MT5 feed + PERSONAL FX bridge. */
 import {SPECS, PAIRS, fmt, fmtS, fromName, pipUsd} from './symbols.js';
 import {LS, keys, feedStatus, series, quotes, fbUrl, TD_WAIT} from './data.js';
-import {analyze, evaluate, evaluateMarket, evaluateTrail, councilPlan, ema, atr as atrOf, rsi, adx, macdHist, trendScore, isWin, isLoss} from './engine.js';
+import {analyze, evaluate, evaluateMarket, evaluateTrail, evaluatePfx, councilPlan, ema, atr as atrOf, rsi, adx, macdHist, trendScore, isWin, isLoss} from './engine.js';
 import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot, aiCouncil} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.10.0';
+export const VERSION = '1.11.0';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -227,6 +227,14 @@ function mUsd(r){
 /* v1.8.0: 🔒 Trail ka niyam ($, 0.01 lot jaisa vLot): $0.50 pe $0.25 lock, har $0.10 pe lock upar. Pips me badal kar engine ko. */
 const TRAIL = {start: 0.50, lock: 0.25, step: 0.10};
 function rates0(){ const o = {}; Object.keys(st.q).forEach(k => { if(st.q[k] && st.q[k].p) o[k] = st.q[k].p }); return o }
+/* v1.11.0: 🟦 PERSONAL FX jaisa — $0.25 TP (0.01 lot), SL nahi */
+const PFX = {usd: 0.25, lot: 0.01};
+const pfxPu = sym => pipUsd(sym, PFX.lot, rates0()) || 0.1;
+function pUsd(r){
+  const p = r.pres; if(!p || !p.filledAt) return;
+  const pu = pfxPu(r.sym); p.dd = +((p.mae || 0) * pu).toFixed(2); p.usd = p.state === 'TP' ? PFX.usd : +((p.pips || 0) * pu).toFixed(2);
+  p.mins = p.exitAt ? Math.max(1, Math.round((p.exitAt - p.filledAt) / 60000)) : null;
+}
 function trailPips(sym){ const pu = pipUsd(sym, vLot(), rates0()) || 0.1; return {start: TRAIL.start / pu, lock: TRAIL.lock / pu, step: TRAIL.step / pu} }
 function tUsd(r){
   const s = r.tres && r.tres.state; if(!(isWin(s) || isLoss(s)) || !isFinite(r.tres.pips)) return 0;
@@ -370,12 +378,13 @@ async function evalSym(sym, recs){
   if(!d) d = await series(s, sym, '5min', 300);
   recs.forEach(r => { if(!(r.res && r.res.done)){ r.res = Object.assign(evaluate(Object.assign({}, r, {tp: r.tp.slice(0, 1)}), d.bars, now, SPECS[sym].pip), {src: d.src, at: now}); usdOf(r) }
     if(r.mkt && !(r.mres && r.mres.done)){ r.mres = evaluateMarket(r.mkt, r.at, r.dir, d.bars, SPECS[sym].pip); mUsd(r) }
+    if(!(r.pres && r.pres.done)){ r.pres = evaluatePfx(r, d.bars, now, SPECS[sym].pip, PFX.usd / pfxPu(sym)); pUsd(r) }   /* v1.11.0 */
     if(!(r.tres && r.tres.done)){ r.tres = evaluateTrail(Object.assign({}, r, {tp: r.tp.slice(0, 1)}), d.bars, now, SPECS[sym].pip, trailPips(sym)); tUsd(r) }
     const c = r.council; if(c && c.dir && !(r.cres && r.cres.done)){                    /* v1.9.0: 🧠 Council ka nateeja */
       r.cres = c.order === 'MARKET' ? evaluateMarket(c, c.at, c.dir, d.bars, SPECS[sym].pip) : evaluate({dir: c.dir, entry: c.entry, sl: c.sl, tp: [c.tp], at: c.at, exp: 60}, d.bars, now, SPECS[sym].pip); cUsd(r) } });
 }
 async function activeFor(sym){
-  const todo = st.hist.filter(r => r.sym === sym && (!(r.res && r.res.done) || (r.mkt && !(r.mres && r.mres.done)) || !(r.tres && r.tres.done) || (r.council && r.council.dir && !(r.cres && r.cres.done))) && Date.now() - r.at < 48 * 3600e3);
+  const todo = st.hist.filter(r => r.sym === sym && (!(r.res && r.res.done) || (r.mkt && !(r.mres && r.mres.done)) || !(r.tres && r.tres.done) || (r.council && r.council.dir && !(r.cres && r.cres.done)) || !(r.pres && r.pres.done)) && Date.now() - r.at < 48 * 3600e3);
   if(todo.length && SPECS[sym]){ try{ await evalSym(sym, todo); saveHist() }catch(e){} }
   return st.hist.find(r => r.sym === sym && isActive(r)) || null;
 }
@@ -528,7 +537,7 @@ ${real ? '<div class="warn" style="margin-top:10px">💰 REAL account — अस
 /* ---------------- HISTORY ---------------- */
 async function refreshResults(){
   const s = K(), now = Date.now();
-  const todo = st.hist.filter(r => SPECS[r.sym] && (!(r.res && r.res.done) || (r.mkt && !(r.mres && r.mres.done)) || !(r.tres && r.tres.done) || (r.council && r.council.dir && !(r.cres && r.cres.done))) && now - r.at < 48 * 3600e3);
+  const todo = st.hist.filter(r => SPECS[r.sym] && (!(r.res && r.res.done) || (r.mkt && !(r.mres && r.mres.done)) || !(r.tres && r.tres.done) || (r.council && r.council.dir && !(r.cres && r.cres.done)) || !(r.pres && r.pres.done)) && now - r.at < 48 * 3600e3);
   const syms = [...new Set(todo.map(r => r.sym))].slice(0, (await feedStatus(s)).ok ? 12 : 3);
   for(const sym of syms){
     try{ await evalSym(sym, todo.filter(r => r.sym === sym)) }catch(e){}
@@ -555,6 +564,13 @@ ${MO.length ? `<br><span class="note">⚡ नियम ने MARKET कहा �
   const TD = st.hist.filter(r => r.tres && (isWin(r.tres.state) || isLoss(r.tres.state))), tp_ = +TD.reduce((t, r) => t + tUsd(r), 0).toFixed(2), tw = TD.filter(r => isWin(r.tres.state)).length;
   $('stBal').innerHTML += `<div style="margin-top:8px;font-size:12px;line-height:1.6" class="mono"><span class="lbl">🔒 Trail नियम से ($0.50 पर $0.25 lock, हर $0.10)</span><br>
 <b style="color:${tp_ >= 0 ? 'var(--up)' : 'var(--dn2)'}">${usdTxt(tp_)}</b> <span class="note">· ${TD.length} trade · ${TD.length ? Math.round(tw / TD.length * 100) : 0}% जीत · ${TD.filter(r => r.tres.state === 'LOCK').length} lock</span></div>`;
+  const PF = st.hist.filter(r => r.pres && r.pres.filledAt), PT = PF.filter(r => r.pres.state === 'TP'), PO = PF.filter(r => r.pres.state === 'OPEN'), PX = PF.filter(r => r.pres.state === 'TIMEOUT');
+  const pMax = PF.length ? Math.max(...PF.map(r => r.pres.dd || 0)) : 0, pAvg = PT.length ? Math.round(PT.reduce((t, r) => t + (r.pres.mins || 0), 0) / PT.length) : 0;
+  const pOpen = PO.reduce((t, r) => t + (r.pres.usd || 0), 0);
+  $('stBal').innerHTML += `<div style="margin-top:8px;font-size:12px;line-height:1.6" class="mono"><span class="lbl">🟦 PERSONAL FX जैसा ($0.25 TP · SL नहीं)</span><br>
+<b style="color:var(--up)">${PT.length}/${PF.length} TP</b> <span class="note">· ${usdTxt(PT.length * PFX.usd)} · औसत ${pAvg} min</span><br>
+<span class="note">सबसे बुरा उल्टा गया:</span> <b style="color:${pMax >= 5 ? 'var(--dn2)' : 'var(--gold)'}">−$${pMax.toFixed(2)}</b>${PO.length ? ` <span class="note">· अभी ${PO.length} खुले (${usdTxt(+pOpen.toFixed(2))})</span>` : ''}${PX.length ? ` <span class="note">· 48h में TP नहीं: ${PX.length}</span>` : ''}
+<div class="note" style="font-size:10px">REAL account जैसा: छोटा TP, SL नहीं — जीत ज़्यादा, पर "उल्टा गया" ही छुपा ख़तरा है (grid / averaging शामिल नहीं)।</div></div>`;
   const CL = Object.values(LS.get('cLedger', {})), cp = +CL.reduce((t, x) => t + x.usd, 0).toFixed(2), cw = CL.filter(x => x.win).length;
   $('stBal').innerHTML += `<div style="margin-top:8px;font-size:12px;line-height:1.6" class="mono"><span class="lbl">🧠 AI Council का फ़ैसला (हिसाब)</span><br>
 <b style="color:${cp >= 0 ? 'var(--up)' : 'var(--dn2)'}">${usdTxt(cp)}</b> <span class="note">· ${CL.length} trade · ${CL.length ? Math.round(cw / CL.length * 100) : 0}% जीत</span></div>`;
@@ -576,10 +592,11 @@ ${MO.length ? `<br><span class="note">⚡ नियम ने MARKET कहा �
       (r.tres && (isWin(r.tres.state) || isLoss(r.tres.state)) ? `<div style="font-size:10px;color:${isWin(r.tres.state) ? 'var(--up)' : 'var(--dn2)'}">🔒 T: ${r.tres.state === 'LOCK' ? 'LOCK' : isWin(r.tres.state) ? 'TP' : 'SL'} ${usdTxt(tUsd(r))}</div>` : r.tres && r.tres.state === 'OPEN' ? `<div style="font-size:10px" class="note">🔒 T: चालू${r.tres.lock ? ' · lock ' + usdTxt(r.tres.lock * pipUsd(r.sym, vLot(), rates0())) : ''}</div>` : '');
     const cs = r.cres && r.cres.state;
     const cl = r.council && r.council.dir ? `<div style="font-size:10px;color:${isWin(cs) ? 'var(--up)' : isLoss(cs) ? 'var(--dn2)' : 'var(--mu)'}">🧠 C: ${r.council.dir[0]}${r.council.order === 'MARKET' ? 'M' : 'L'} ${isWin(cs) ? 'TP ' + usdTxt(cUsd(r)) : isLoss(cs) ? 'SL ' + usdTxt(cUsd(r)) : cs === 'EXPIRED' ? 'नहीं भरा' : 'चालू'}</div>` : '';
+    const pf = r.pres && r.pres.filledAt ? `<div style="font-size:10px;color:${r.pres.state === 'TP' ? 'var(--up)' : 'var(--gold)'}">🟦 P: ${r.pres.state === 'TP' ? 'TP ' + (r.pres.mins || 1) + 'm' : r.pres.state === 'TIMEOUT' ? '48h' : 'चालू'} · DD −$${(r.pres.dd || 0).toFixed(2)}</div>` : '';
     return `<div class="row" data-open="${r.id}"><span style="width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:${B ? 'var(--up)' : 'var(--dn)'};background:${B ? 'rgba(47,224,138,0.12)' : 'rgba(255,93,108,0.12)'}">${r.dir}</span>
 <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:14px">${esc(SPECS[r.sym] ? SPECS[r.sym].n : r.sym)} <span style="font-size:11px;font-weight:600;color:var(--mu)">LIMIT · ${istD(r.at)} ${ist(r.at)}</span></div>
 <div style="font-size:11px;color:var(--mu)" class="mono">Entry ${fmtS(r.sym, r.entry)} · Grade ${r.grade}${r.sent.length ? '<span class="kind k-mt5">MT5</span>' : ''}${r.src === 'shot' ? '<span class="kind k-shot">📷</span>' : ''}</div></div>
-<div style="text-align:right"><span class="badge ${bc}">${bt}</span><div class="mono" style="font-size:12px;font-weight:700;margin-top:4px;color:${isWin(s) ? 'var(--up)' : isLoss(s) ? 'var(--dn2)' : 'var(--mu)'}">${pip}${cl}</div></div></div>` }).join('')
+<div style="text-align:right"><span class="badge ${bc}">${bt}</span><div class="mono" style="font-size:12px;font-weight:700;margin-top:4px;color:${isWin(s) ? 'var(--up)' : isLoss(s) ? 'var(--dn2)' : 'var(--mu)'}">${pip}${cl}${pf}</div></div></div>` }).join('')
     : '<div class="row" style="justify-content:center;color:var(--mu);font-size:13px;padding:24px">अभी कुछ नहीं — ANALYZE दबाकर पहला signal लें</div>';
 }
 
@@ -650,6 +667,8 @@ const paperRow = r => ({id: r.id, sym: r.sym, dir: r.dir, entry: r.entry, sl: r.
     filledAt: r.res.filledAt || null, exitAt: r.res.exitAt || null, usd: r.res.usd === undefined ? null : r.res.usd, lot: r.res.lot || null} : null,
   mkt: r.mkt ? {ok: !!r.mkt.ok, entry: r.mkt.entry, sl: r.mkt.sl, tp: r.mkt.tp, checks: r.mkt.checks,
     res: r.mres ? {state: r.mres.state, done: !!r.mres.done, pips: r.mres.pips === undefined ? null : +(+r.mres.pips).toFixed(1), usd: r.mres.usd === undefined ? null : r.mres.usd} : null} : null,
+  pfx: r.pres ? {state: r.pres.state, done: !!r.pres.done, dd: r.pres.dd === undefined ? null : r.pres.dd, usd: r.pres.usd === undefined ? null : r.pres.usd,
+    mins: r.pres.mins === undefined ? null : r.pres.mins, filledAt: r.pres.filledAt || null} : null,
   council: r.council && r.council.dir ? {dir: r.council.dir, order: r.council.order, entry: r.council.entry, sl: r.council.sl, tp: r.council.tp, conf: r.council.conf, fixed: !!r.council.fixed,
     bots: r.council.bots.map(b => b.name[0] + ':' + b.view[0]).join(' '),
     res: r.cres ? {state: r.cres.state, done: !!r.cres.done, pips: r.cres.pips === undefined ? null : +(+r.cres.pips).toFixed(1), usd: r.cres.usd === undefined ? null : r.cres.usd} : null} : null,

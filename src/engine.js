@@ -163,6 +163,29 @@ export function evaluate(sig, bars, now = Date.now(), pip = 0.0001){
   }
   return {state: 'OPEN', done: false, filledAt: after[fi].t};
 }
+/* v1.11.0: 🟦 PERSONAL FX jaisa (REAL account ka niyam) — LIMIT ka fill wahi, phir TP chhota (tpPips, jaise $0.25), SL NAHI.
+   mae = bhaav sabse zyada kitna ulta gaya (pips) = chhupa khatra. 48 ghante me TP na aaye to TIMEOUT (tab ka haal).
+   Fill wali candle pe TP tabhi jab close bhi paar ho. PERSONAL FX ka grid / averaging isme shamil NAHI (sirf pehla trade). */
+export function evaluatePfx(sig, bars, now = Date.now(), pip = 0.0001, tpPips = 2.5){
+  const B = sig.dir === 'BUY' ? 1 : -1, after = bars.filter(b => b.t >= sig.at), fillBy = sig.at + (sig.exp || VALID_MIN) * 60000;
+  let fi = -1;
+  for(let i = 0; i < after.length; i++){
+    if(after[i].t > fillBy) break;
+    if(B > 0 ? after[i].l <= sig.entry : after[i].h >= sig.entry){ fi = i; break }
+  }
+  if(fi < 0) return {state: now > fillBy && (after.length && after[after.length - 1].t > fillBy || now - fillBy > 10 * 60000) ? 'EXPIRED' : 'PENDING', done: now > fillBy};
+  const en = sig.entry, f0 = after[fi].t;
+  let mae = 0, cur = 0;
+  for(let i = fi; i < after.length; i++){
+    const b = after[i];
+    mae = Math.max(mae, (B > 0 ? en - b.l : b.h - en) / pip);
+    const best = i === fi ? (B > 0 ? b.c - en : en - b.c) / pip : (B > 0 ? b.h - en : en - b.l) / pip;
+    if(best >= tpPips) return {state: 'TP', done: true, filledAt: f0, exitAt: b.t, mae, pips: tpPips};
+    cur = (B > 0 ? b.c - en : en - b.c) / pip;
+  }
+  if(now - f0 > 48 * 3600e3) return {state: 'TIMEOUT', done: true, filledAt: f0, mae, pips: cur};
+  return {state: 'OPEN', done: false, filledAt: f0, mae, pips: cur};
+}
 export const isWin = st => /^TP/.test(st || '') || st === 'LOCK', isLoss = st => st === 'SL';
 
 /* v1.8.0: 🔒 TRAIL (paper me alag hisaab, user ka niyam) — LIMIT jaisa hi fill / SL / TP1, upar se:
