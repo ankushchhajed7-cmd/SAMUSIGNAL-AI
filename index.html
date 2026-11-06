@@ -27,7 +27,7 @@ input,select{font-family:inherit}
 .scr{display:none}.scr.on{display:block;animation:fade .25s ease}
 @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 header.top{display:flex;align-items:center;gap:12px;padding:calc(14px + env(safe-area-inset-top)) 18px 6px}
-.hTools{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;margin:6px 18px 0;padding:6px;border-radius:14px;border:1px solid rgba(232,195,90,0.35);background:linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015))}
+.hTools{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;margin:6px 18px 0;padding:6px;border-radius:14px;border:1px solid rgba(232,195,90,0.35);background:linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015))}
 .hTools button,.hTools .hLive{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:0;padding:6px 2px;border-radius:10px;background:transparent;border:0;color:var(--mu);font:inherit;font-size:10px;font-weight:700;letter-spacing:.3px;white-space:nowrap;cursor:pointer}
 .hTools button:active{background:rgba(232,195,90,0.12)}
 .hTools .ti{height:22px;display:flex;align-items:center;font-size:18px}
@@ -133,6 +133,7 @@ nav.bar .fab b{font-size:10px;font-weight:800;color:var(--gold);letter-spacing:.
 <div class="hTools" id="hTools">
 <button id="cBtn" aria-label="AI Council"><span class="ti">🧠</span><span>Council</span></button>
 <button id="flowBtn" aria-label="Order Flow"><span class="ti">🐋</span><span>Order Flow</span></button>
+<button id="newsBtn" aria-label="News Signal" onclick="location.href='news.html'"><span class="ti">📰</span><span>News</span></button>
 <button id="refBtn" aria-label="Refresh"><span class="ti" id="refIc"></span><span>Refresh</span></button>
 <div class="hLive"><span class="live off" id="srcPill"><i></i>OFF</span><span>Data</span></div></div>
 <section style="display:flex;justify-content:space-between;align-items:flex-end;padding:8px 18px 0">

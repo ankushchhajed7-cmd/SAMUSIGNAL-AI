@@ -26,3 +26,8 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Number apne aap (tez feed / server), band app par phone alert (Web Push + server).
 - Kuch aur pairs, per-news-type win-rate.
 - Kam se kam 30 signal jama hone ke baad History se rule-book ko parakhna.
+
+## v1.9.7 (branch feature-news-link-v1.9.7) — ऐप से NEWS पेज का लिंक
+- `index.html` me home ki tools wali pankti me ek "📰 News" button (Council · Order Flow · **News** · Refresh · Data). Dabane par `news.html` khulta hai.
+- Badlav sirf `index.html` me 2 jagah (grid 4 -> 5 column + ek button). app.js / sw.js / package.json nahi chhue.
+- Wapas aane ke liye news page ka ← button.
