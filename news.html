@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#07080b">
+<title>NEWS SIGNAL — SAMUSIGNAL AI</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#07080b;--card:#0b0c10;--tx:#f3efe6;--mu:#a39a86;--mu2:#7f7866;--gold:#e8c35a;--up:#2fe08a;--dn:#ff5d6c;--dn2:#ff7a86;--line:rgba(232,195,90,0.2);
+--metal:linear-gradient(120deg,#f7e08a 0%,#c9971f 30%,#fff6cf 48%,#b8bcc4 66%,#e8c35a 100%)}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--tx);font-family:Manrope,system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+body{min-height:100dvh}
+button{font-family:inherit;cursor:pointer}
+input,select{font-family:inherit}
+#app{max-width:480px;margin:0 auto;min-height:100dvh;padding-bottom:92px}
+.mono{font-variant-numeric:tabular-nums}
+.lbl{font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:var(--mu)}
+.mt{background:var(--metal);-webkit-background-clip:text;background-clip:text;color:transparent}
+header.top{display:flex;align-items:center;gap:10px;padding:calc(14px + env(safe-area-inset-top)) 16px 6px}
+header.top a.back{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.04);border:1px solid var(--line);color:var(--tx);text-decoration:none;font-size:18px}
+header.top .tt{flex:1;min-width:0}
+.h1{font-family:Cinzel,serif;font-weight:700;font-size:20px;letter-spacing:1.4px;line-height:1.1}
+.chips{display:flex;gap:6px;flex-wrap:wrap;padding:6px 16px 0}
+.pill{font-size:10.5px;font-weight:800;letter-spacing:.6px;border-radius:999px;padding:4px 9px;border:1px solid var(--line);color:var(--mu);white-space:nowrap}
+.pill.ok{color:var(--up);border-color:rgba(47,224,138,0.5)}
+.pill.warn{color:var(--gold);border-color:rgba(232,195,90,0.55)}
+.pill.bad{color:var(--dn2);border-color:rgba(255,93,108,0.5)}
+.tools{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;margin:10px 16px 0;padding:6px;border-radius:14px;border:1px solid rgba(232,195,90,0.35);background:rgba(255,255,255,0.03)}
+.tools button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 2px;border-radius:10px;background:transparent;border:0;color:var(--mu);font-size:10.5px;font-weight:700}
+.tools button b{font-size:17px;font-weight:400}
+.tools button.on{color:var(--gold);background:rgba(232,195,90,0.12)}
+.wrap{padding:12px 16px 0;display:flex;flex-direction:column;gap:12px}
+.card{border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015));border:1px solid rgba(232,195,90,0.22);padding:14px}
+.card.nx{border-color:rgba(232,195,90,0.5);box-shadow:0 0 24px rgba(232,195,90,0.1)}
+.card.rel{border:2px solid var(--gold);background:linear-gradient(180deg,rgba(232,195,90,0.16),rgba(232,195,90,0.05))}
+.badge{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.8px;border-radius:999px;padding:4px 10px}
+.badge.y{background:var(--gold);color:#1a1408}
+.badge.hi{color:var(--dn2);border:1px solid rgba(255,93,108,0.5)}
+.badge.md{color:var(--gold);border:1px solid rgba(232,195,90,0.5)}
+.ev{font-size:21px;font-weight:800;line-height:1.2;margin:8px 0 2px}
+.cd{font-size:44px;font-weight:800;line-height:1.1;margin:8px 0 2px}
+.sub{font-size:13px;color:var(--mu)}
+.sub b{color:var(--tx)}
+.rg{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.rb{border-radius:14px;padding:10px;border:1px solid rgba(255,255,255,0.12)}
+.rb small{display:block;font-size:11.5px;color:var(--mu);margin-bottom:6px}
+.rb div{font-size:15px;font-weight:800;line-height:1.5}
+.rb.SELL{background:rgba(255,93,108,0.14);border-color:rgba(255,93,108,0.4)}.rb.SELL div{color:var(--dn2)}
+.rb.BUY{background:rgba(47,224,138,0.12);border-color:rgba(47,224,138,0.4)}.rb.BUY div{color:var(--up)}
+.rb.MIX div{color:var(--tx)}
+.note{font-size:12px;color:var(--mu);margin-top:10px;line-height:1.5}
+.actrow{display:flex;gap:8px;margin-top:12px}
+.actrow input{flex:1;min-width:0;height:54px;border-radius:14px;border:1px solid var(--gold);background:rgba(0,0,0,0.4);color:var(--tx);font-size:26px;font-weight:800;padding:0 14px;text-align:center}
+.btn{height:54px;border-radius:14px;border:0;font-weight:800;font-size:14px;letter-spacing:.5px;padding:0 18px}
+.btn.gold{background:var(--metal);color:#1a1408}
+.btn.ghost{background:rgba(255,255,255,0.06);color:var(--tx);border:1px solid var(--line);height:44px;font-size:13px}
+.sig{border-radius:20px;padding:16px;color:#fff;position:relative;overflow:hidden}
+.sig.SELL{background:linear-gradient(160deg,#ff4a58,#a31525 70%,#6b0d19)}
+.sig.BUY{background:linear-gradient(160deg,#1fcf7a,#0b7a46 70%,#064b2b)}
+.sig.NO{background:linear-gradient(160deg,#454a55,#2a2d35)}
+.sig .top{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;letter-spacing:1px}
+.sig .top i{width:7px;height:7px;border-radius:50%;background:#fff;display:inline-block}
+.sig .dir{font-size:58px;font-weight:800;line-height:1;margin:8px 0 2px;letter-spacing:-1px}
+.prow{display:flex;align-items:center;justify-content:space-between;gap:8px;background:rgba(0,0,0,0.22);border-radius:12px;padding:8px 12px;margin-top:8px;font-size:15px;font-weight:800}
+.prow span.d{font-size:20px}
+.prow span.m{font-size:12px;font-weight:700;opacity:.92;text-align:right}
+.conf{font-size:26px;font-weight:800;margin-top:10px}
+.conf small{font-size:13px;font-weight:600;opacity:.9}
+.mtag{display:inline-block;font-size:10.5px;font-weight:800;border:1px solid rgba(255,255,255,0.6);border-radius:8px;padding:2px 8px;margin-top:4px}
+.sig .ln{font-size:13px;margin-top:8px;opacity:.95;line-height:1.5}
+.sig details{margin-top:10px;font-size:12.5px}
+.sig summary{display:inline-block;border:1px solid rgba(255,255,255,0.55);border-radius:999px;padding:5px 12px;font-weight:700;cursor:pointer;list-style:none}
+.sig summary::-webkit-details-marker{display:none}
+.sig details p{margin:8px 0 0;line-height:1.5}
+.row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(232,195,90,0.14)}
+.row .tm{min-width:48px;text-align:center}.row .tm b{display:block;font-size:15px}.row .tm small{font-size:10px;color:var(--mu)}
+.row .nm{flex:1;min-width:0;font-size:13px;font-weight:700;line-height:1.35}
+.row .nm small{display:block;font-weight:500;color:var(--mu);font-size:11.5px}
+.row .st{font-size:11px;font-weight:800;border-radius:8px;padding:4px 8px;white-space:nowrap}
+.st.SELL{background:var(--dn);color:#2a0a0e}.st.BUY{background:var(--up);color:#07140d}.st.no{color:var(--mu);border:1px solid rgba(255,255,255,0.18)}.st.go{color:var(--gold);border:1px solid rgba(232,195,90,0.5)}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.tile{border-radius:14px;padding:10px 6px;text-align:center;background:rgba(255,255,255,0.05);border:1px solid rgba(232,195,90,0.2)}
+.tile b{display:block;font-size:20px;margin-top:2px}
+.WIN{color:var(--up)}.LOSS{color:var(--dn2)}.FLAT{color:var(--gold)}
+.hrow{border-radius:14px;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid rgba(232,195,90,0.14);font-size:13px}
+.hrow .l1{display:flex;justify-content:space-between;gap:8px;font-weight:700}
+.hrow .l2{font-size:11.5px;color:var(--mu);margin:2px 0 6px}
+.hrow .pr{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:3px 0;border-top:1px dashed rgba(255,255,255,0.08)}
+.form{display:flex;flex-direction:column;gap:8px}
+.form input{height:44px;border-radius:12px;border:1px solid var(--line);background:rgba(0,0,0,0.35);color:var(--tx);font-size:14px;padding:0 12px;width:100%}
+.form .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tg{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;font-weight:600}
+.tg button{min-width:64px;height:34px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--mu);font-weight:800;font-size:12px}
+.tg button.on{background:var(--gold);color:#1a1408;border-color:transparent}
+h3{margin:0 0 8px;font-size:14px;letter-spacing:.4px}
+.empty{padding:26px 10px;text-align:center;color:var(--mu);font-size:13px;line-height:1.6}
+nav.bot{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;background:linear-gradient(180deg,rgba(7,8,11,0),#07080b 30%);padding:14px 0 calc(8px + env(safe-area-inset-bottom));z-index:10}
+nav.bot .in{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;width:100%;max-width:480px;padding:0 14px}
+nav.bot button{border:1px solid var(--line);background:rgba(255,255,255,0.05);color:var(--mu);border-radius:14px;padding:9px 0;font-size:11px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:2px}
+nav.bot button b{font-size:17px;font-weight:400}
+nav.bot button.on{background:var(--metal);color:#1a1408;border-color:transparent}
+#toast{position:fixed;left:50%;bottom:92px;transform:translateX(-50%);background:#1b1c22;border:1px solid var(--gold);color:var(--tx);padding:10px 16px;border-radius:12px;font-size:13px;max-width:88%;z-index:30;display:none;text-align:center}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <a class="back" href="./" title="SAMUSIGNAL AI">←</a>
+    <div class="tt"><div class="h1 mt">NEWS SIGNAL</div><div class="lbl">Release ke second ka BUY / SELL</div></div>
+  </header>
+  <div class="chips" id="chips"></div>
+  <div id="main"></div>
+</div>
+<nav class="bot"><div class="in" id="nav"></div></nav>
+<div id="toast"></div>
+<script type="module" src="src/news.js"></script>
+</body>
+</html>
