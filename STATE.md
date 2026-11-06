@@ -41,3 +41,10 @@ Link: `.../SAMUSIGNAL-AI/news.html`
   Entry = EA ka px (usi pal), signal time = seen. Card: "📡 MT5 auto · release ke Xs baad · phone tak Ys". Haath se number backup.
 - newsrules: `tradeable(ev)` (hamara rule ya MT5 indicator, speech kabhi nahi), `evaluate(ev, a, {mi})` — hamara rule na ho to MT5 ka andaza.
 - Tests: news 16.
+
+## NEWS SIGNAL v1.2.0 (app v1.9.9) — 🤖 AUTO paper trade (button nahi)
+- User ka faisla: "maine liya" button NAHI; har signal apne aap ek paper trade = MT5 ne number dekha usi pal ka bhaav (act.px), lot 0.01, target default gold $10 / EURUSD $3 (Setting me badlo).
+- Teen nateeje saath-saath: ⏱ 1 min baad exit (MAIN), 🎯 $ target (na aaye to 30 min ka), 5 min. Signal card + History me har pair ke neeche.
+- Bhaav: News Pusher v1.02 ka TAPE (`/feed/news/tape/<key>`, news ke baad 6 min har second ka bid); na ho to 1-min candles.
+- History me "🤖 Auto trade का हिसाब": har exit ka jeet % + $, target kitni baar, औसत देर.
+- MT5 par koi order NAHI. Asli auto trade: pehle 15–20 news ka data -> demo pe EA -> phir hi real (alag "Final").
