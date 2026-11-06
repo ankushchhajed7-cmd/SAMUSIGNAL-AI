@@ -100,3 +100,27 @@ test('v1.1 hamara rule MT5 andaze se upar (CPI zyada = SELL, chahe mi kuch bhi)'
   const r = evaluate({title: 'CPI m/m', kind: 'ind', forecast: '0.3%', previous: '0.2%'}, '0.5%', {mi: -1});
   assert.deepEqual(r.sigs.map(s => s.dir), ['SELL', 'SELL']); assert.equal(r.mtOnly, false);
 });
+
+import {usdOf, tpPrice, scanTp, takeSummary, DEF_TGT} from '../src/newsrules.js';
+test('v1.2 auto trade $: gold 0.01 lot $1 chaal = $1, EURUSD 10 pip = $1', () => {
+  assert.equal(usdOf('XAU/USD', 'SELL', 4039.10, 4029.10, 0.01), 10);
+  assert.equal(usdOf('XAU/USD', 'SELL', 4039.10, 4045.10, 0.01), -6);
+  assert.equal(usdOf('EUR/USD', 'BUY', 1.1500, 1.1510, 0.01), 1);
+  assert.equal(usdOf('EUR/USD', 'BUY', 1.15, NaN, 0.01), null);
+});
+test('v1.2 target bhaav (video wala case: SELL 4039.10 -> $10 = 4029.10)', () => {
+  assert.ok(Math.abs(tpPrice('XAU/USD', 'SELL', 4039.10, 0.01, 10) - 4029.10) < 1e-9);
+  assert.ok(Math.abs(tpPrice('EUR/USD', 'BUY', 1.1500, 0.01, 3) - 1.1530) < 1e-9);
+  assert.equal(DEF_TGT['XAU/USD'], 10); assert.equal(DEF_TGT['EUR/USD'], 3);
+});
+test('v1.2 scanTp: SELL low ne chhua to pehla samay, BUY high', () => {
+  const pts = [{t: 1, h: 4040, l: 4035}, {t: 2, h: 4036, l: 4029}, {t: 3, h: 4031, l: 4020}];
+  assert.equal(scanTp('SELL', 4029.10, pts), 2);
+  assert.equal(scanTp('BUY', 4039, pts), 1);
+  assert.equal(scanTp('SELL', 4000, pts), null);
+});
+test('v1.2 takeSummary: 1m / target / 5m alag, TEST ginti me nahi', () => {
+  const L = [{sigs: [{take: {u1: 2, uT: 10, u5: -3, hit: 40, delay: 3}}, {take: {u1: -1, uT: -2, u5: 1, delay: 5}}]}, {test: true, sigs: [{take: {u1: 99}}]}];
+  const m = takeSummary(L);
+  assert.equal(m.n, 2); assert.equal(m.m1.usd, 1); assert.equal(m.m1.rate, 50); assert.equal(m.tgt.usd, 8); assert.equal(m.hits, 1); assert.equal(m.delay, 4);
+});
