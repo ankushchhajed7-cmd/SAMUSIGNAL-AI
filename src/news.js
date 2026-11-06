@@ -2,10 +2,10 @@
    sirf data.js se keys + bhaav PADHTA hai. Apni cheezein localStorage me "sai_news_*" me.
    v1: calendar free (Forex Factory feed), ASLI number tum daalte ho (Enter) — signal usi second.
    Auto number / band-app phone alert ke liye server chahiye (v2). */
-import {keys, quotes, series, feedStatus, LS} from './data.js';
-import {PAIRS, rules, evaluate, grade, summary, polarity} from './newsrules.js';
+import {keys, quotes, series, feedStatus, LS, fbUrl} from './data.js';
+import {PAIRS, rules, evaluate, grade, summary, polarity, tradeable} from './newsrules.js';
 
-export const NEWS_VERSION = '1.0.0';
+export const NEWS_VERSION = '1.1.0';
 const FF = 'https://nfs.faireconomy.media/ff_calendar_thisweek.json';
 const MIN = 60000;
 const $ = s => document.querySelector(s);
@@ -15,7 +15,8 @@ const S = {
   tab: 'live', cal: [], calSrc: '', calAt: 0, calErr: '',
   manual: LS.get('news_manual', []), fired: LS.get('news_fired', []),
   cfg: Object.assign({sound: true, medium: false}, LS.get('news_cfg', {})),
-  now: Date.now(), stage: '', beep: '', feed: null, wake: null, resolving: false
+  now: Date.now(), stage: '', beep: '', feed: null, wake: null, resolving: false,
+  act: {}, mt5At: 0, es: null, esOk: false, polling: false     /* v1.1.0: MT5 News Pusher se asli number */
 };
 const saveFired = () => { S.fired = S.fired.slice(0, 200); LS.set('news_fired', S.fired) };
 const saveManual = () => LS.set('news_manual', S.manual);
@@ -33,7 +34,20 @@ function fmtCd(ms){
 const mmss = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s` };
 
 /* ---------- calendar ---------- */
+/* v1.1.0: pehle MT5 calendar (VPS ka News Pusher EA, /feed/news/cal) — asli number bhi isi se */
+async function loadMt5Cal(){
+  const u = fbUrl(keys(), 'feed/news/cal'); if(!u) return false;
+  try{
+    const r = await fetch(u, {cache: 'no-store'}); if(!r.ok) return false;
+    const j = await r.json();
+    if(!j || !Array.isArray(j.list) || !j.list.length || Date.now() - j.at * 1000 > 40 * MIN) return false;
+    S.cal = j.list.map(x => ({mt5: true, vid: String(x.id), title: x.title, country: x.cur || 'USD', date: new Date(x.t * 1000).toISOString(), impact: x.imp, kind: x.kind,
+      forecast: x.fc || '', previous: x.pv || '', actual: x.act || ''}));
+    S.calAt = j.at * 1000; S.calSrc = 'MT5'; S.calErr = ''; S.mt5At = Date.now(); return true;
+  }catch(e){ return false }
+}
 async function loadCal(force){
+  if(await loadMt5Cal()) return;
   const c = LS.get('news_cal', null);
   if(!force && c && Date.now() - c.at < 30 * MIN){ S.cal = c.list; S.calAt = c.at; S.calSrc = 'cache'; return }
   const tries = [['direct', FF], ['proxy', 'https://api.allorigins.win/raw?url=' + encodeURIComponent(FF)], ['proxy2', 'https://corsproxy.io/?' + encodeURIComponent(FF)]];
@@ -53,7 +67,7 @@ function evList(){
     if(c.country !== 'USD') return;
     if(!(c.impact === 'High' || (S.cfg.medium && c.impact === 'Medium'))) return;
     const t = Date.parse(c.date); if(!isFinite(t)) return;
-    out.push({id: 'c|' + c.title + '|' + t, title: c.title, t, impact: c.impact, forecast: c.forecast || '', previous: c.previous || ''});
+    out.push({id: c.mt5 ? 'm5|' + c.vid : 'c|' + c.title + '|' + t, vid: c.vid, mt5: !!c.mt5, kind: c.kind, title: c.title, t, impact: c.impact, forecast: c.forecast || '', previous: c.previous || '', actual: c.actual || ''});
   });
   S.manual.forEach(m => out.push(m));
   return out.sort((a, b) => a.t - b.t);
@@ -61,7 +75,34 @@ function evList(){
 const firedBy = id => S.fired.find(r => r.id === id);
 function nextEv(){
   const now = Date.now();
-  return evList().find(e => !firedBy(e.id) && e.t > now - 30 * MIN && polarity(e.title) !== 0) || null;
+  return evList().find(e => !firedBy(e.id) && e.t > now - 30 * MIN && tradeable(e)) || null;
+}
+
+/* ---------- v1.1.0: asli number apne aap (MT5 News Pusher -> Firebase /feed/news/act) ---------- */
+function gotAct(vid, a){
+  if(!a || !a.act) return;
+  S.act[vid] = a;
+  const ev = evList().find(e => e.vid === vid);
+  if(ev && !firedBy(ev.id) && tradeable(ev) && Date.now() - (a.seen || ev.t / 1000) * 1000 < 30 * MIN) fire(ev, a.act, a);
+}
+function stream(){
+  const u = fbUrl(keys(), 'feed/news/act'); if(!u || !window.EventSource || S.es) return;
+  try{
+    const es = new EventSource(u); S.es = es;
+    const on = e => { S.esOk = true; try{ const m = JSON.parse(e.data); if(!m) return;
+      if(m.path === '/'){ Object.entries(m.data || {}).forEach(([k, v]) => gotAct(k, v)) }
+      else { const k = m.path.split('/')[1]; if(k) gotAct(k, m.path.split('/').length > 2 ? Object.assign({}, S.act[k], m.data) : m.data) } }catch(x){} };
+    es.addEventListener('put', on); es.addEventListener('patch', on);
+    es.onerror = () => { S.esOk = false; es.close(); S.es = null; setTimeout(stream, 5000) };
+  }catch(e){ S.es = null }
+}
+/* stream na chale to: release ke aas-paas har 1.5 sec seedha poochho */
+async function poll(){
+  if(S.polling) return; const ev = nextEv(), now = Date.now();
+  if(!ev || !ev.vid || ev.t - now > 5000 || now - ev.t > 10 * MIN || (S.esOk && now - ev.t > 20000)) return;
+  S.polling = true;
+  try{ const r = await fetch(fbUrl(keys(), 'feed/news/act/' + ev.vid), {cache: 'no-store'}); if(r.ok) gotAct(ev.vid, await r.json()) }catch(e){}
+  finally{ S.polling = false }
 }
 
 /* ---------- sound / alert / screen ---------- */
@@ -90,21 +131,24 @@ document.addEventListener('visibilitychange', async () => { if(document.visibili
 function toast(m){ const t = $('#toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toast.h); toast.h = setTimeout(() => { t.style.display = 'none' }, 3200) }
 
 /* ---------- fire (number aate hi) ---------- */
-async function fire(ev, a){
+async function fire(ev, a, auto){
   if(firedBy(ev.id)) return;
-  const r = evaluate(ev, a);
-  if(!r.ok) return toast(r.why);
-  const now = Date.now();
-  const rec = {id: ev.id, title: ev.title, t: ev.t, firedAt: now, actual: String(a).trim(), forecast: ev.forecast, previous: ev.previous, test: !!ev.test,
-    flat: r.flat, usd: r.usd, conf: r.conf, conv: r.conv,
+  const fc = auto && auto.fc ? auto.fc : ev.forecast;
+  const r = evaluate(Object.assign({}, ev, {forecast: fc}), a, auto ? {mi: auto.mi} : {});
+  if(!r.ok){ if(!auto) toast(r.why); return }
+  const now = Date.now(), seen = auto && auto.seen ? auto.seen * 1000 : 0;
+  const rec = {id: ev.id, title: ev.title, t: ev.t, firedAt: seen && now - seen < 2 * MIN ? seen : now, gotAt: now, seen, src: auto ? 'mt5' : 'hand',
+    actual: String(a).trim(), forecast: fc, previous: auto && auto.pv ? auto.pv : ev.previous, test: !!ev.test,
+    flat: r.flat, usd: r.usd, conf: r.conf, conv: r.conv, mtOnly: !!r.mtOnly,
     sigs: r.sigs.map(s => ({sym: s.sym, name: s.name, dir: s.dir, entry: null, p5: null, p30: null, g5: null, g30: null, res: null}))};
+  if(auto && auto.px) rec.sigs.forEach(s => { const v = +auto.px[s.name]; if(v > 0){ s.entry = v; s.es = 'mt5' } });   /* MT5 ne number dekha usi pal ka bhaav */
   S.fired.unshift(rec); saveFired(); S.stage = ''; render();
   beep(990, 0.25); setTimeout(() => beep(1320, 0.25), 300);
   notify(rec.flat ? 'NO TRADE — ' + rec.title : rec.sigs.map(s => s.name + ' ' + s.dir).join(' · '), `${rec.title}: ${rec.actual} vs ${rec.forecast}`);
-  if(rec.flat) return;
+  if(rec.flat || rec.sigs.every(s => s.entry !== null)) return;
   try{
     const q = await quotes(keys(), PAIRS.map(p => p.sym), true);
-    rec.sigs.forEach(s => { if(q[s.sym] && q[s.sym].p > 0) s.entry = q[s.sym].p });
+    rec.sigs.forEach(s => { if(s.entry === null && q[s.sym] && q[s.sym].p > 0) s.entry = q[s.sym].p });
     saveFired(); render();
   }catch(e){}
 }
@@ -142,7 +186,7 @@ async function resolve(){
 /* ---------- screens ---------- */
 const dirCls = d => d === 'BUY' ? 'BUY' : d === 'SELL' ? 'SELL' : 'NO';
 function ruleCard(ev){
-  const r = rules(ev.title); if(!r) return '';
+  const r = rules(ev.title); if(!r) return ev.kind === 'ind' ? '<div class="note">Is news ka hamara rule nahi — MT5 ka apna andaza (number aate hi) chalega.</div>' : '';
   const box = (lbl, key) => {
     const ds = [...new Set(r.map(x => x[key]))], cls = ds.length === 1 ? ds[0] : 'MIX';
     return `<div class="rb ${cls}"><small>${lbl}</small><div>${r.map(x => `${esc(x.name)} → ${x[key]}`).join('<br>')}</div></div>`;
@@ -155,10 +199,10 @@ function nextCard(ev){
   if(left > 0) return `<div class="card nx"><span class="badge y">NEXT NEWS</span> <span class="badge ${imp}">${esc(ev.impact)} impact</span>
     <div class="ev">🇺🇸 ${esc(ev.title)}</div><div class="sub">${dayLbl(ev.t)} ${hm(ev.t)} IST · ${meta}</div>
     <div class="cd mono" id="cd">${fmtCd(left)}</div>${ruleCard(ev)}
-    <div class="note">Release ke time number aate hi yahan daalo — signal usi second. Pehle se rule upar dikh raha hai.</div></div>`;
+    <div class="note">${ev.mt5 ? '📡 MT5 se asli number <b>apne aap</b> aayega — signal usi second. Page khula rakho.' : 'Release ke time number aate hi yahan daalo — signal usi second.'} Pehle se rule upar dikh raha hai.</div></div>`;
   return `<div class="card rel"><span class="badge y">● RELEASING NOW</span> <span class="badge ${imp}">${esc(ev.impact)} impact</span>
     <div class="ev">🇺🇸 ${esc(ev.title)}</div><div class="sub">${meta}</div>
-    <div class="cd mono" id="cd">+${Math.floor(-left / 1000)}s</div><div class="sub">release ko ho gaye — asli number daalo</div>
+    <div class="cd mono" id="cd">+${Math.floor(-left / 1000)}s</div><div class="sub">${ev.mt5 ? '📡 MT5 se number ka intezaar… (na aaye to khud daalo)' : 'release ko ho gaye — asli number daalo'}</div>
     <div class="actrow"><input id="act" inputmode="decimal" autocomplete="off" placeholder="Actual" enterkeyhint="go"><button class="btn gold" data-act="fire">SIGNAL</button></div>
     ${ruleCard(ev)}<div class="note">Sirf number likho (jaise 0.4 ya 227) — % / K apne aap forecast jaisa lag jaata hai.</div></div>`;
 }
@@ -171,13 +215,13 @@ function resTxt(s, k){
 function sigCard(r){
   const age = Date.now() - r.firedAt, lag = Math.round((r.firedAt - r.t) / 1000);
   const main = r.flat ? 'NO' : dirCls(r.sigs[0].dir), why = r.flat ? 'Actual forecast ke barabar — koi surprise nahi, trade nahi.' :
-    `${r.title}: actual ${r.actual} vs forecast ${r.forecast} → USD ${r.usd > 0 ? 'mazboot' : 'kamzor'} → ${r.sigs.map(s => s.name + ' ' + s.dir).join(', ')}. Confidence sirf rule-based andaza hai (surprise jitna bada utna zyada), guarantee nahi.`;
+    `${r.title}: actual ${r.actual} vs forecast ${r.forecast} → USD ${r.usd > 0 ? 'mazboot' : 'kamzor'}${r.mtOnly ? ' (MT5 ka andaza)' : ''} → ${r.sigs.map(s => s.name + ' ' + s.dir).join(', ')}. Confidence sirf rule-based andaza hai (surprise jitna bada utna zyada), guarantee nahi.`;
   return `<div class="sig ${main}"><div class="top"><i></i>${r.test ? 'TEST ' : ''}LIVE SIGNAL<span style="flex:1"></span><span class="ago mono" data-t="${r.firedAt}">${Math.round(age / 1000)}s ago</span></div>
     ${r.flat ? '<div class="dir">NO TRADE</div>' : `<div class="dir">${esc(r.sigs[0].dir === r.sigs[1].dir ? r.sigs[0].dir : 'MIXED')}</div>`}
     ${r.sigs.filter(s => !r.flat).map(s => `<div class="prow"><span>${esc(s.name)}</span><span class="d">${s.dir}</span><span class="m mono">5m: ${resTxt(s, 5)}<br>30m: ${resTxt(s, 30)}</span></div>`).join('')}
     <div class="conf mono">${r.conf}% <small>confidence</small></div><span class="mtag">${r.conv} CONVICTION</span>
     <div class="ln"><b>${esc(r.title)}</b> ${esc(r.actual)} vs ${esc(r.forecast)} forecast · previous ${esc(r.previous || '—')}</div>
-    <div class="ln mono">Release ke ${lag}s baad · screen pe <span class="rem" data-t="${r.firedAt}">${mmss(30 * MIN - age)}</span> aur</div>
+    <div class="ln mono">${r.src === 'mt5' ? `📡 MT5 auto · release ke ${lag}s baad · phone tak ${Math.max(0, Math.round((r.gotAt - r.seen) / 100) / 10)}s` : `✍️ haath se · release ke ${lag}s baad`} · screen pe <span class="rem" data-t="${r.firedAt}">${mmss(30 * MIN - age)}</span> aur</div>
     <details><summary>Kyun ${r.flat ? 'NO TRADE' : esc(r.sigs[0].dir)}?</summary><p>${esc(why)}</p></details></div>`;
 }
 function liveTab(){
@@ -194,12 +238,12 @@ function todayTab(){
   const now = Date.now(), list = evList().filter(e => e.t > now - 8 * 3600e3 && e.t < now + 40 * 3600e3);
   if(!list.length) return `<div class="wrap"><div class="card empty">${esc(S.calErr || 'Aaj-kal koi High-impact USD news nahi.')}</div></div>`;
   return `<div class="wrap">${list.map(e => {
-    const r = firedBy(e.id), pol = polarity(e.title);
+    const r = firedBy(e.id), pol = tradeable(e);
     let st = e.t > now ? `<span class="st go">in ${fmtCd(e.t - now)}</span>` : '<span class="st no">done</span>';
     if(r) st = r.flat ? '<span class="st no">NO TRADE</span>' : `<span class="st ${r.sigs[0].dir}">${r.sigs[0].dir}</span>`;
     else if(!pol) st = '<span class="st no">no trade</span>';
     return `<div class="row"><div class="tm"><b class="mono">${hm(e.t)}</b><small>${dayLbl(e.t)}</small></div>
-      <div class="nm">🇺🇸 ${esc(e.title)}<small>F ${esc(e.forecast || '—')} · P ${esc(e.previous || '—')}${pol ? '' : ' · speech / statement'}</small></div>${st}</div>`;
+      <div class="nm">🇺🇸 ${esc(e.title)}<small>F ${esc(e.forecast || '—')} · P ${esc(e.previous || '—')}${e.actual ? ' · <b>A ' + esc(e.actual) + '</b>' : ''}${pol ? '' : ' · speech / statement'}</small></div>${st}</div>`;
   }).join('')}</div>`;
 }
 function histTab(){
@@ -209,7 +253,7 @@ function histTab(){
     <div class="note">Nateeja = signal ke 5 min baad ki keemat entry se (WIN / LOSS / FLAT). Kam trade ho to win rate par bharosa mat karo — kam se kam 30+ signal dekho. Spread / slippage is ginti me shamil nahi.</div>`;
   if(!S.fired.length) return h + '<div class="card empty">Abhi koi signal nahi. Pehla signal yahan dikhega.</div></div>';
   h += S.fired.map(r => `<div class="hrow"><div class="l1"><span>${r.test ? '🧪 ' : ''}${esc(r.title)}</span><span class="mono">${hm(r.firedAt)}</span></div>
-    <div class="l2">${dayLbl(r.firedAt)} · actual ${esc(r.actual)} vs forecast ${esc(r.forecast)} · ${r.flat ? 'NO TRADE' : r.conf + '% ' + r.conv}</div>
+    <div class="l2">${r.src === 'mt5' ? '📡 ' : ''}${dayLbl(r.firedAt)} · actual ${esc(r.actual)} vs forecast ${esc(r.forecast)} · ${r.flat ? 'NO TRADE' : r.conf + '% ' + r.conv}</div>
     ${r.flat ? '' : r.sigs.map(s => `<div class="pr"><span><b>${esc(s.name)}</b> ${s.dir}</span><span class="mono ${s.res || ''}">${s.res ? (s.g5 > 0 ? '+' : '') + s.g5 + 'p ' + s.res : 'measuring…'}${s.g30 !== null ? ' · 30m ' + (s.g30 > 0 ? '+' : '') + s.g30 + 'p' : ''}</span></div>`).join('')}</div>`).join('');
   return h + `<button class="btn ghost" data-act="clrtest">TEST wale hatao</button>${real.length ? '' : ''}</div>`;
 }
@@ -226,7 +270,9 @@ function setTab(){
     <div class="tg" style="margin-top:10px"><span>Calendar: ${esc(S.calSrc || '—')}${S.calAt ? ' · ' + hm(S.calAt) : ''}</span><button data-act="reload">Refresh</button></div>
     <div class="note">Bhaav: ${f ? (f.ok ? 'MT5 Data Feed chal raha' : esc(f.why || 'MT5 feed band') + ' — TwelveData key se') : '…'}</div></div>
   <div class="card"><h3>ℹ️ Kaise kaam karta hai</h3><div class="note" style="margin-top:0">USD ka data forecast se <b>zyada</b> = USD mazboot → XAUUSD aur EURUSD <b>SELL</b>. <b>Kam</b> = USD kamzor → <b>BUY</b>. (Unemployment / Claims me ulta.) Speech / statement par koi signal nahi.<br><br>
-    v1 me asli number tum daalte ho; calendar free hai. Page band ho to alert nahi aata — uske liye server chahiye (v2).<br><br>
+    <b>v1.1:</b> VPS pe <b>SamuSignal News Pusher</b> EA chal raha ho to calendar aur asli number MT5 se <b>apne aap</b> (📡) — signal usi second. EA band ho to Forex Factory calendar + number haath se.<br>
+    MT5 News Pusher: ${S.calSrc === 'MT5' ? '✅ chal raha (' + hm(S.calAt) + ')' : '❌ data nahi mila'} · live: ${S.esOk ? '✅ jude hain' : '…'}<br>
+    Page band ho to alert nahi aata — uske liye server chahiye.<br><br>
     Ye analysis hai, guarantee nahi. News ke second me spread / slippage bahut hota hai. Pehle demo par aazmao.<br><br>NEWS SIGNAL v${NEWS_VERSION}</div></div></div>`;
 }
 function render(){
@@ -239,7 +285,7 @@ function render(){
   $('#nav').innerHTML = tabs.map(t => `<button data-act="tab" data-v="${t[0]}" class="${S.tab === t[0] ? 'on' : ''}"><b>${t[1]}</b>${t[2]}</button>`).join('');
   const f = S.feed;
   $('#chips').innerHTML = `<span class="pill ${f && f.ok ? 'ok' : keys().tdKey ? 'warn' : 'bad'}">${f && f.ok ? 'MT5 FEED' : keys().tdKey ? 'TWELVEDATA' : 'BHAAV NAHI'}</span>
-    <span class="pill ${S.cal.length ? 'ok' : 'bad'}">${S.cal.length ? 'CALENDAR' : 'CALENDAR NAHI'}</span><span class="pill">IST ${hm(Date.now())}</span>`;
+    <span class="pill ${S.cal.length ? 'ok' : 'bad'}">${S.calSrc === 'MT5' ? '📡 MT5 AUTO' : S.cal.length ? 'CALENDAR (haath se)' : 'CALENDAR NAHI'}</span><span class="pill">IST ${hm(Date.now())}</span>`;
 }
 
 /* ---------- tick ---------- */
@@ -296,8 +342,9 @@ function act(a, d){
   await loadCal(false); S.stage = ''; render();
   try{ S.feed = await feedStatus(keys()) }catch(e){}
   render(); resolve();
+  stream(); setInterval(poll, 1500);
   setInterval(tick, 250);
   setInterval(resolve, 30000);
   setInterval(async () => { try{ S.feed = await feedStatus(keys()) }catch(e){} }, 45000);
-  setInterval(() => loadCal(false).then(() => { if(S.tab !== 'live') render() }), 10 * MIN);
+  setInterval(() => loadCal(false).then(() => { if(S.tab !== 'live') render() }), 5 * MIN);
 })();

@@ -32,3 +32,12 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Badlav sirf `index.html` me 2 jagah (grid 4 -> 5 column + ek button). app.js / sw.js / package.json nahi chhue.
 - Wapas aane ke liye news page ka ← button.
 - App version 1.9.6 -> **1.9.7** (app.js, sw.js, package.json teeno ek jaise; version test pass). News page ka apna version 1.0.0.
+
+## NEWS SIGNAL v1.1.0 (app v1.9.8) — asli number MT5 se APNE AAP
+- VPS pe EA `Samusignal/vps-ea/SamuSignal News Pusher v1.00.mq5` (Data Feed wale terminal pe, trade nahi karta):
+  MT5 ka apna Economic Calendar padhta hai -> Firebase `/feed/news/cal` (har 10 min) + `/feed/news/act/<id>` (number aate hi, 0.5 sec check) + `/feed/news/meta`.
+  act = {t, title, act, fc, pv, mi (MT5 andaza +1/-1), seen (UTC sec), px:{XAUUSD, EURUSD} usi pal ka bid}.
+- news.js: calendar pehle MT5 se (na mile to Forex Factory); act ko EventSource (Firebase stream) + release ke aas-paas 1.5 sec poll se sunta hai -> `fire()` apne aap.
+  Entry = EA ka px (usi pal), signal time = seen. Card: "📡 MT5 auto · release ke Xs baad · phone tak Ys". Haath se number backup.
+- newsrules: `tradeable(ev)` (hamara rule ya MT5 indicator, speech kabhi nahi), `evaluate(ev, a, {mi})` — hamara rule na ho to MT5 ka andaza.
+- Tests: news 16.
