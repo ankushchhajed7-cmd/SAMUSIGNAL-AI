@@ -4,8 +4,8 @@
    Confidence = sirf rule-based andaza (surprise kitna bada) — guarantee nahi. Asli sach History me dikhta hai. */
 
 export const PAIRS = [
-  {sym: 'XAU/USD', name: 'XAUUSD', usdDir: -1, pip: 0.10, flat: 10},      /* 1 pip = $0.10, 10 pip se kam hilna = FLAT */
-  {sym: 'EUR/USD', name: 'EURUSD', usdDir: -1, pip: 0.0001, flat: 3}
+  {sym: 'XAU/USD', name: 'XAUUSD', usdDir: -1, pip: 0.10, flat: 10, cs: 100},      /* 1 pip = $0.10, 10 pip se kam hilna = FLAT; 1 lot = 100 oz */
+  {sym: 'EUR/USD', name: 'EURUSD', usdDir: -1, pip: 0.0001, flat: 3, cs: 100000}
 ];
 
 /* "227K" "0.3%" "1.2M" "-0.4%" "4,200" -> number. samajh na aaye to NaN */
@@ -86,4 +86,35 @@ export function summary(list){
   let w = 0, l = 0, f = 0;
   list.filter(r => !r.test).forEach(r => r.sigs.forEach(s => { if(s.res === 'WIN') w++; else if(s.res === 'LOSS') l++; else if(s.res === 'FLAT') f++ }));
   return {win: w, loss: l, flat: f, n: w + l + f, rate: w + l ? Math.round(w / (w + l) * 100) : null};
+}
+
+/* ---------- v1.2.0: "✅ maine trade liya" — $ hisaab (sirf record, koi order nahi) ---------- */
+export const DEF_TGT = {'XAU/USD': 10, 'EUR/USD': 3};          /* default target $ (0.01 lot): gold $10, EURUSD $3 (= 30 pip) */
+/* entry se exit tak $ (direction ke hisaab se, + = nafa). spread shamil nahi */
+export function usdOf(sym, dir, entry, exit, lot){
+  const p = PAIRS.find(x => x.sym === sym);
+  if(!p || !isFinite(entry) || !isFinite(exit) || !(lot > 0) || (dir !== 'BUY' && dir !== 'SELL')) return null;
+  return Math.round((exit - entry) * (dir === 'BUY' ? 1 : -1) * p.cs * lot * 100) / 100;
+}
+/* $ target ka bhaav: SELL 4039.10, 0.01 lot, $10 -> 4029.10 */
+export function tpPrice(sym, dir, entry, lot, usd){
+  const p = PAIRS.find(x => x.sym === sym);
+  if(!p || !isFinite(entry) || !(lot > 0) || !(usd > 0)) return null;
+  const mv = usd / (p.cs * lot);
+  return dir === 'BUY' ? entry + mv : entry - mv;
+}
+/* pts = [{t, h, l}] samay ke kram me (entry ke BAAD ke) -> target pehli baar kab chhua (t) ya null */
+export function scanTp(dir, tp, pts){
+  for(const x of pts){ if(dir === 'BUY' ? x.h >= tp : x.l <= tp) return x.t }
+  return null;
+}
+/* mere trades ka saar: 1 min exit / $ target / 5 min / haath se band */
+export function takeSummary(list){
+  const T = [];
+  list.filter(r => !r.test).forEach(r => (r.sigs || []).forEach(s => { if(s.take) T.push(s.take) }));
+  const grp = k => { const v = T.map(t => t[k]).filter(x => typeof x === 'number'); const w = v.filter(x => x > 0).length;
+    return {n: v.length, win: w, rate: v.length ? Math.round(w / v.length * 100) : null, usd: Math.round(v.reduce((a, b) => a + b, 0) * 100) / 100} };
+  const d = T.map(t => t.delay).filter(x => typeof x === 'number');
+  return {n: T.length, m1: grp('u1'), tgt: grp('uT'), m5: grp('u5'), hand: grp('uX'), hits: T.filter(t => t.hit).length,
+    delay: d.length ? Math.round(d.reduce((a, b) => a + b, 0) / d.length) : null};
 }
