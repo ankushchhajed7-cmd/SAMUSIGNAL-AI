@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseNum, parseActual, polarity, rules, evaluate, grade, summary} from '../src/newsrules.js';
+import {parseNum, parseActual, polarity, rules, evaluate, grade, summary, tradeable, speechy} from '../src/newsrules.js';
 
 test('parseNum units', () => {
   assert.equal(parseNum('0.3%'), 0.3);
@@ -70,4 +70,33 @@ test('grade pips / WIN / LOSS / FLAT', () => {
 test('summary TEST ko nahi ginta', () => {
   const s = summary([{test: true, sigs: [{res: 'WIN'}]}, {sigs: [{res: 'WIN'}, {res: 'LOSS'}]}, {sigs: [{res: 'FLAT'}, {res: null}]}]);
   assert.deepEqual(s, {win: 1, loss: 1, flat: 1, n: 3, rate: 50});
+});
+
+test('v1.1 MT5 naam: Nonfarm Payrolls / Initial Jobless Claims / Core CPI', () => {
+  assert.equal(polarity('Nonfarm Payrolls'), 1);
+  assert.equal(polarity('Initial Jobless Claims'), -1);
+  assert.equal(polarity('Core CPI m/m'), 1);
+  assert.equal(polarity('Fed Chair Powell Testimony'), 0);
+});
+test('v1.1 tradeable: hamara rule ya MT5 indicator (speech kabhi nahi)', () => {
+  assert.equal(tradeable({title: 'CPI m/m'}), true);
+  assert.equal(tradeable({title: 'Philadelphia Fed Manufacturing Index', kind: 'ind'}), true);
+  assert.equal(tradeable({title: 'Philadelphia Fed Manufacturing Index'}), false);
+  assert.equal(tradeable({title: 'Fed Chair Powell Speech', kind: 'event'}), false);
+  assert.equal(tradeable({title: 'FOMC Member Speaks', kind: 'ind'}), false);
+  assert.equal(speechy('FOMC Minutes'), true);
+});
+test('v1.1 MT5 andaza (mi) — rule na ho to MT5 ki disha', () => {
+  const ev = {title: 'Philadelphia Fed Manufacturing Index', kind: 'ind', forecast: '5.0', previous: '2.0'};
+  const up = evaluate(ev, '12.0', {mi: 1});
+  assert.equal(up.ok, true); assert.equal(up.usd, 1); assert.equal(up.mtOnly, true);
+  assert.deepEqual(up.sigs.map(s => s.dir), ['SELL', 'SELL']);
+  const dn = evaluate(ev, '1.0', {mi: -1});
+  assert.equal(dn.usd, -1); assert.deepEqual(dn.sigs.map(s => s.dir), ['BUY', 'BUY']);
+  assert.equal(evaluate(ev, '12.0', {}).ok, false);                                    /* MT5 andaza nahi -> trade nahi */
+  assert.equal(evaluate({title: 'Fed Chair Powell Speech', kind: 'ind', forecast: '1'}, '2', {mi: 1}).ok, false);
+});
+test('v1.1 hamara rule MT5 andaze se upar (CPI zyada = SELL, chahe mi kuch bhi)', () => {
+  const r = evaluate({title: 'CPI m/m', kind: 'ind', forecast: '0.3%', previous: '0.2%'}, '0.5%', {mi: -1});
+  assert.deepEqual(r.sigs.map(s => s.dir), ['SELL', 'SELL']); assert.equal(r.mtOnly, false);
 });

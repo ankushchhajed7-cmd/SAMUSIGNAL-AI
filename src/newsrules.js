@@ -29,10 +29,13 @@ export function parseActual(actual, forecast){
   return parseNum(fu ? a + fu[1] : a);
 }
 
+/* v1.1.0: speech / statement / minutes — inka number nahi hota, kabhi trade nahi */
+const SPEECHY = /speaks|speech|testifies|testimony|press conference|minutes|statement|member|meeting|beige|auction|bill |bond|holiday|president|chair/;
+export const speechy = title => SPEECHY.test(String(title || '').toLowerCase());
 /* +1: zyada aaya = USD mazboot, -1: zyada aaya = USD kamzor, 0: koi number-rule nahi (speech / statement / anjaan) */
 export function polarity(title){
   const t = String(title || '').toLowerCase();
-  if(/speaks|speech|testifies|press conference|minutes|statement|member|meeting|beige|auction|bill |bond|holiday|president|chair/.test(t)) return 0;
+  if(SPEECHY.test(t)) return 0;
   if(/unemployment|jobless|claims/.test(t)) return -1;
   if(/non-?farm|nfp|employment change|average hourly|payroll|cpi|ppi|pce|retail sales|gdp|ism|pmi|durable|industrial production|consumer (confidence|sentiment)|michigan|uom|jolts|job openings|housing starts|building permits|home sales|federal funds|interest rate|core /.test(t)) return 1;
   return 0;
@@ -47,20 +50,26 @@ export function rules(title){
   return PAIRS.map(p => ({sym: p.sym, name: p.name, higher: side(pol, p), lower: side(-pol, p)}));
 }
 
-/* actual aate hi signal. ev = {title, forecast, previous} */
-export function evaluate(ev, actualStr){
-  const pol = polarity(ev.title);
+/* v1.1.0: MT5 calendar wali news jiska naam hamari list me nahi (jaise Philly Fed index) —
+   number wala indicator ho to MT5 ka apna andaza (mi) chalega */
+export function tradeable(ev){ return polarity(ev.title) !== 0 || (ev.kind === 'ind' && !speechy(ev.title)) }
+
+/* actual aate hi signal. ev = {title, forecast, previous}. opt.mi = MT5 ka andaza (+1 USD mazboot / -1 kamzor) */
+export function evaluate(ev, actualStr, opt = {}){
+  let pol = polarity(ev.title);
+  const mtOnly = !pol && ev.kind === 'ind' && !speechy(ev.title) && (opt.mi === 1 || opt.mi === -1);
   const a = parseActual(actualStr, ev.forecast), f = parseNum(ev.forecast), p = parseNum(ev.previous);
   if(!isFinite(a)) return {ok: false, why: 'Number samajh nahi aaya — jaise 0.4 ya 227K likho'};
-  if(!pol) return {ok: false, why: 'Is news ka koi rule nahi (speech / statement) — trade nahi'};
+  if(!pol && !mtOnly) return {ok: false, why: 'Is news ka koi rule nahi (speech / statement) — trade nahi'};
   if(!isFinite(f)) return {ok: false, why: 'Is news ka forecast nahi mila — signal nahi ban sakta'};
   const surprise = a - f;
+  if(mtOnly) pol = Math.sign(surprise) * opt.mi || 1;     /* MT5: is surprise se USD upar (+1) ya neeche (-1) */
   if(surprise === 0) return {ok: true, flat: true, usd: 0, conf: 50, conv: 'LOW', surprise, sigs: PAIRS.map(x => ({sym: x.sym, name: x.name, dir: 'NO TRADE'}))};
   const scale = Math.max(Math.abs(f), isFinite(p) ? Math.abs(p) : 0, 1e-9);
   const r = Math.abs(surprise) / scale;
   const conf = 50 + Math.min(15, Math.round(r * 30));
   const usd = Math.sign(surprise) * pol;               /* +1 USD mazboot, -1 USD kamzor */
-  return {ok: true, flat: false, usd, surprise, conf, conv: conf >= 59 ? 'HIGH' : conf >= 54 ? 'MED' : 'LOW',
+  return {ok: true, flat: false, usd, surprise, conf, mtOnly, conv: conf >= 59 ? 'HIGH' : conf >= 54 ? 'MED' : 'LOW',
     sigs: PAIRS.map(x => ({sym: x.sym, name: x.name, dir: side(usd, x)}))};
 }
 
