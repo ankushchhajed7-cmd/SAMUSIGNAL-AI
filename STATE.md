@@ -31,3 +31,4 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - `index.html` me home ki tools wali pankti me ek "📰 News" button (Council · Order Flow · **News** · Refresh · Data). Dabane par `news.html` khulta hai.
 - Badlav sirf `index.html` me 2 jagah (grid 4 -> 5 column + ek button). app.js / sw.js / package.json nahi chhue.
 - Wapas aane ke liye news page ka ← button.
+- App version 1.9.6 -> **1.9.7** (app.js, sw.js, package.json teeno ek jaise; version test pass). News page ka apna version 1.0.0.
