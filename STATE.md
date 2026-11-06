@@ -48,3 +48,9 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Bhaav: News Pusher v1.02 ka TAPE (`/feed/news/tape/<key>`, news ke baad 6 min har second ka bid); na ho to 1-min candles.
 - History me "🤖 Auto trade का हिसाब": har exit ka jeet % + $, target kitni baar, औसत देर.
 - MT5 par koi order NAHI. Asli auto trade: pehle 15–20 news ka data -> demo pe EA -> phir hi real (alag "Final").
+
+## NEWS SIGNAL v1.3.0 (app v1.10.0) — VPS pe auto paper + phone push (app band ho tab bhi)
+- EA `SamuSignal News Pusher v1.03` (Samusignal/vps-ea): High USD news pe khud signal (app jaisa niyam) + paper trade (usi pal ka bid, 0.01 lot, gold $10 / baaki $3 target), 1 min / 5 min / target (na aaye to 30 min) -> `/feed/news/paper/<id>`.
+  MT5 PUSH (SendNotification): 5 min + 1 min pehle, number aate hi SIGNAL, 1 min nateeja, TARGET. Terminal me Tools > Options > Notifications (MetaQuotes ID).
+- news.js: `/feed/news/paper` har 20 sec; History me VPS wale trade (🖥) — phone band tha unke bhi; summary VPS + local (jo VPS pe nahi). Local auto take sirf jab VPS ka na ho.
+- MT5 par koi order NAHI.

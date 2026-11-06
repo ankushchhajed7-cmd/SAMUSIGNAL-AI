@@ -5,7 +5,7 @@
 import {keys, quotes, series, feedStatus, LS, fbUrl} from './data.js';
 import {PAIRS, rules, evaluate, grade, summary, polarity, tradeable, DEF_TGT, usdOf, tpPrice, scanTp, takeSummary} from './newsrules.js';
 
-export const NEWS_VERSION = '1.2.0';
+export const NEWS_VERSION = '1.3.0';
 const FF = 'https://nfs.faireconomy.media/ff_calendar_thisweek.json';
 const MIN = 60000;
 const $ = s => document.querySelector(s);
@@ -15,7 +15,7 @@ const S = {
   tab: 'live', cal: [], calSrc: '', calAt: 0, calErr: '',
   manual: LS.get('news_manual', []), fired: LS.get('news_fired', []),
   cfg: Object.assign({sound: true, medium: false, lot: 0.01, tgt: Object.assign({}, DEF_TGT)}, LS.get('news_cfg', {})),
-  tapes: {},
+  tapes: {}, paper: {}, paperAt: 0,     /* v1.3.0: VPS (News Pusher v1.03) ke auto paper trade — app band ho tab bhi */
   now: Date.now(), stage: '', beep: '', feed: null, wake: null, resolving: false,
   act: {}, mt5At: 0, es: null, esOk: false, polling: false     /* v1.1.0: MT5 News Pusher se asli number */
 };
@@ -173,7 +173,7 @@ async function resolveTakes(now, bars){
   let ch = false;
   for(const rec of S.fired){
     for(const s of rec.sigs || []){
-      if(!s.take && !rec.flat && (s.dir === 'BUY' || s.dir === 'SELL') && s.entry > 0 && now - rec.firedAt < 8 * 3600e3){   /* signal = trade */
+      if(!s.take && !rec.flat && (s.dir === 'BUY' || s.dir === 'SELL') && s.entry > 0 && now - rec.firedAt < 8 * 3600e3 && !(S.paper[vidOf(rec)] && now - rec.firedAt > 20000)){   /* signal = trade (VPS ka ho to wahi) */
         const tgt = S.cfg.tgt && S.cfg.tgt[s.sym] > 0 ? S.cfg.tgt[s.sym] : DEF_TGT[s.sym], lot = S.cfg.lot > 0 ? S.cfg.lot : 0.01;
         s.take = {auto: true, at: rec.firedAt, px: s.entry, lot, tgt, tp: tpPrice(s.sym, s.dir, s.entry, lot, tgt), delay: Math.round((rec.firedAt - rec.t) / 1000)}; ch = true;
       }
@@ -196,10 +196,29 @@ async function resolveTakes(now, bars){
   }
   return ch;
 }
+/* ---------- v1.3.0: VPS ke paper trade (/feed/news/paper) ---------- */
+async function loadPaper(){
+  const u = fbUrl(keys(), 'feed/news/paper'); if(!u) return;
+  try{ const r = await fetch(u, {cache: 'no-store'}); if(!r.ok) return; const j = await r.json(); S.paper = j && typeof j === 'object' ? j : {}; S.paperAt = Date.now() }catch(e){}
+}
+const vidOf = rec => rec && typeof rec.id === 'string' && rec.id.startsWith('m5|') ? rec.id.slice(3) : '';
+const num = v => typeof v === 'number' ? v : undefined;
+/* VPS wala sig -> app ke take jaisa */
+function srvTake(p, k){
+  const g = p && p.sigs && p.sigs[k]; if(!g) return null;
+  return {srv: true, px: g.entry, lot: g.lot, tgt: g.tgt, tp: g.tp, u1: num(g.u1), u5: num(g.u5), uT: num(g.uT), hit: g.hit || 0, delay: p.at && p.t ? p.at - p.t : null};
+}
+/* VPS ke paper jo is phone ki History me nahi (phone band tha) -> rec jaisa */
+function srvRecs(){
+  const have = new Set(S.fired.map(vidOf).filter(Boolean));
+  return Object.entries(S.paper || {}).filter(([v]) => !have.has(v)).map(([v, p]) => ({id: 'm5|' + v, srvOnly: true, src: 'mt5', title: p.title, t: (p.t || 0) * 1000, firedAt: (p.at || p.t || 0) * 1000,
+    actual: p.act, forecast: p.fc, previous: p.pv, conf: p.conf, conv: '', flat: false,
+    sigs: Object.entries(p.sigs || {}).map(([k, g]) => ({sym: k === 'XAUUSD' ? 'XAU/USD' : k === 'EURUSD' ? 'EUR/USD' : k, name: k, dir: g.dir, res: null, g5: null, g30: null}))}));
+}
 const usd$ = v => typeof v === 'number' ? `<b class="${v > 0 ? 'WIN' : v < 0 ? 'LOSS' : ''}">${v >= 0 ? '+' : '−'}$${Math.abs(v).toFixed(2)}</b>` : '<i>…</i>';
 function takeLine(rec, s){
-  const t = s.take; if(!t) return '';
-  return `<div class="tkl">🤖 Auto @${t.px} · ${t.lot} lot · TP ${t.tp ? t.tp.toFixed(PXD(s.sym)) : '—'} ($${t.tgt})<br>
+  const sp = S.paper[vidOf(rec)], t = srvTake(sp, s.name) || s.take; if(!t) return '';
+  return `<div class="tkl">${t.srv ? '🖥 VPS' : '🤖'} Auto @${t.px} · ${t.lot} lot · TP ${t.tp ? t.tp.toFixed(PXD(s.sym)) : '—'} ($${t.tgt})<br>
     ⏱ 1m: ${usd$(t.u1)} · 🎯 $${t.tgt}: ${t.hit ? `<b class="WIN">TP ${t.hit < 60 ? t.hit + 's' : Math.round(t.hit / 60) + 'm'}</b>` : t.uT !== undefined ? usd$(t.uT) + ' <small>(30m)</small>' : '<i>…</i>'} · 5m: ${usd$(t.u5)}</div>`;
 }
 
@@ -298,10 +317,12 @@ function todayTab(){
   }).join('')}</div>`;
 }
 function mineCard(){
-  const m = takeSummary(S.fired); if(!m.n) return '';
+  const loc = S.fired.filter(r => !S.paper[vidOf(r)]);
+  const srv = Object.values(S.paper || {}).map(p => ({sigs: Object.keys(p.sigs || {}).map(k => ({take: srvTake(p, k)}))}));
+  const m = takeSummary([...srv, ...loc]); if(!m.n) return '';
   const row = (lbl, g) => `<div class="mr"><span>${lbl}</span><span class="mono">${g.n} · ${g.rate === null ? '—' : g.rate + '% jeet'} · ${usd$(g.n ? g.usd : null)}</span></div>`;
   return `<div class="card mine"><h3>🤖 Auto trade का हिसाब (${m.n})</h3>${row('⏱ 1 min exit', m.m1)}${row('🎯 $ target (na aaya to 30m)', m.tgt)}${row('5 min exit', m.m5)}
-    <div class="note">Har signal = ek paper trade (MT5 ne number dekha usi pal ka bhaav). Target ${m.hits} baar poora hua · signal औसतन release ke ${m.delay === null ? '—' : m.delay + 's'} baad. 15–20 news ke baad dekhna kaunsa exit behtar. Spread / slippage shamil nahi. MT5 pe koi order nahi.</div></div>`;
+    <div class="note">Har High news signal = ek paper trade — 🖥 VPS pe (app band ho tab bhi) MT5 ne number dekha usi pal ka bhaav. Target ${m.hits} baar poora hua · signal औसतन release ke ${m.delay === null ? '—' : m.delay + 's'} baad. 15–20 news ke baad dekhna kaunsa exit behtar. Spread / slippage shamil nahi. MT5 pe koi order nahi.</div></div>`;
 }
 function histTab(){
   const real = S.fired.filter(r => !r.test), sm = summary(S.fired);
@@ -309,10 +330,11 @@ function histTab(){
     <div class="tile"><span class="lbl">FLAT</span><b class="FLAT">${sm.flat}</b></div><div class="tile"><span class="lbl">Win rate</span><b>${sm.rate === null ? '—' : sm.rate + '%'}</b></div></div>
     ${mineCard()}
     <div class="note">Nateeja = signal ke 5 min baad ki keemat entry se (WIN / LOSS / FLAT). Kam trade ho to win rate par bharosa mat karo — kam se kam 30+ signal dekho. Spread / slippage is ginti me shamil nahi.</div>`;
-  if(!S.fired.length) return h + '<div class="card empty">Abhi koi signal nahi. Pehla signal yahan dikhega.</div></div>';
-  h += S.fired.map(r => `<div class="hrow"><div class="l1"><span>${r.test ? '🧪 ' : ''}${esc(r.title)}</span><span class="mono">${hm(r.firedAt)}</span></div>
-    <div class="l2">${r.src === 'mt5' ? '📡 ' : ''}${dayLbl(r.firedAt)} · actual ${esc(r.actual)} vs forecast ${esc(r.forecast)} · ${r.flat ? 'NO TRADE' : r.conf + '% ' + r.conv}</div>
-    ${r.flat ? '' : r.sigs.map(s => `<div class="pr"><span><b>${esc(s.name)}</b> ${s.dir}</span><span class="mono ${s.res || ''}">${s.res ? (s.g5 > 0 ? '+' : '') + s.g5 + 'p ' + s.res : 'measuring…'}${s.g30 !== null ? ' · 30m ' + (s.g30 > 0 ? '+' : '') + s.g30 + 'p' : ''}</span></div>${takeLine(r, s)}`).join('')}</div>`).join('');
+  const all = [...S.fired, ...srvRecs()].sort((a, b) => b.firedAt - a.firedAt);
+  if(!all.length) return h + '<div class="card empty">Abhi koi signal nahi. Pehla signal yahan dikhega.</div></div>';
+  h += all.map(r => `<div class="hrow"><div class="l1"><span>${r.test ? '🧪 ' : ''}${esc(r.title)}</span><span class="mono">${hm(r.firedAt)}</span></div>
+    <div class="l2">${r.srvOnly ? '🖥 VPS (phone band tha) · ' : r.src === 'mt5' ? '📡 ' : ''}${dayLbl(r.firedAt)} · actual ${esc(r.actual)} vs forecast ${esc(r.forecast)} · ${r.flat ? 'NO TRADE' : r.conf + '%' + (r.conv ? ' ' + r.conv : '')}</div>
+    ${r.flat ? '' : r.sigs.map(s => `<div class="pr"><span><b>${esc(s.name)}</b> ${s.dir}</span>${r.srvOnly ? '' : `<span class="mono ${s.res || ''}">${s.res ? (s.g5 > 0 ? '+' : '') + s.g5 + 'p ' + s.res : 'measuring…'}${s.g30 !== null ? ' · 30m ' + (s.g30 > 0 ? '+' : '') + s.g30 + 'p' : ''}</span>`}</div>${takeLine(r, s)}`).join('')}</div>`).join('');
   return h + `<button class="btn ghost" data-act="clrtest">TEST wale hatao</button>${real.length ? '' : ''}</div>`;
 }
 function setTab(){
@@ -333,7 +355,7 @@ function setTab(){
   <div class="card"><h3>ℹ️ Kaise kaam karta hai</h3><div class="note" style="margin-top:0">USD ka data forecast se <b>zyada</b> = USD mazboot → XAUUSD aur EURUSD <b>SELL</b>. <b>Kam</b> = USD kamzor → <b>BUY</b>. (Unemployment / Claims me ulta.) Speech / statement par koi signal nahi.<br><br>
     <b>v1.1:</b> VPS pe <b>SamuSignal News Pusher</b> EA chal raha ho to calendar aur asli number MT5 se <b>apne aap</b> (📡) — signal usi second. EA band ho to Forex Factory calendar + number haath se.<br>
     MT5 News Pusher: ${S.calSrc === 'MT5' ? '✅ chal raha (' + hm(S.calAt) + ')' : '❌ data nahi mila'} · live: ${S.esOk ? '✅ jude hain' : '…'}<br>
-    Page band ho to alert nahi aata — uske liye server chahiye.<br><b>v1.2:</b> 🤖 har signal apne aap paper trade (MT5 order nahi): ⏱ 1 min exit, 🎯 $ target, 5 min ka nateeja (MT5 tape se har second ka bhaav).<br><br>
+    Page band ho to alert nahi aata — uske liye server chahiye.<br><b>v1.3:</b> 🖥 VPS (News Pusher v1.03) khud paper trade + phone push (MT5 app) — app band ho tab bhi; History me sab. <b>v1.2:</b> 🤖 har signal apne aap paper trade (MT5 order nahi): ⏱ 1 min exit, 🎯 $ target, 5 min ka nateeja (MT5 tape se har second ka bhaav).<br><br>
     Ye analysis hai, guarantee nahi. News ke second me spread / slippage bahut hota hai. Pehle demo par aazmao.<br><br>NEWS SIGNAL v${NEWS_VERSION}</div></div></div>`;
 }
 function render(){
@@ -369,7 +391,7 @@ document.addEventListener('pointerdown', audio, {once: true});
 document.addEventListener('keydown', e => { if(e.key === 'Enter' && e.target && e.target.id === 'act') act('fire') });
 document.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if(b) act(b.dataset.act, b.dataset) });
 function act(a, d){
-  if(a === 'tab'){ S.tab = d.v; S.stage = ''; render(); return }
+  if(a === 'tab'){ S.tab = d.v; S.stage = ''; render(); if(d.v === 'hist') loadPaper().then(() => { if(S.tab === 'hist') render() }); return }
   if(a === 'fire'){ const ev = nextEv(), i = $('#act'); if(!ev || ev.t > Date.now()) return toast('Abhi release nahi hua'); if(!i || !i.value.trim()) return toast('Pehle number likho'); fire(ev, i.value); return }
   if(a === 'fs'){ try{ document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen() }catch(e){ toast('Full-screen nahi chala') } return }
   if(a === 'snd'){ audio(); const was = S.cfg.sound; S.cfg.sound = true; beep(880, 0.15); setTimeout(() => beep(1100, 0.15), 200); S.cfg.sound = was; toast('Awaaz aayi? Nahi aayi to phone ka volume / silent dekho'); return }
@@ -405,6 +427,8 @@ function act(a, d){
   await loadCal(false); S.stage = ''; render();
   try{ S.feed = await feedStatus(keys()) }catch(e){}
   render(); resolve();
+  await loadPaper(); render();
+  setInterval(() => loadPaper().then(() => { if(S.tab === 'hist' || S.fired.some(r => Date.now() - r.firedAt < 31 * MIN)) render() }), 20000);
   stream(); setInterval(poll, 1500);
   setInterval(tick, 250);
   setInterval(resolve, 30000);
