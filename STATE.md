@@ -58,3 +58,15 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 ## v1.11.0 — 🟦 PERSONAL FX jaisa (paper)
 - REAL account (PERSONAL FX) ka niyam: $0.25 TP (0.01 lot), SL NAHI. Har signal pe paper: LIMIT fill wahi, phir TP kitne min me + bhaav sabse zyada kitna ulta gaya (DD $) — chhupa khatra. 48h me TP nahi = TIMEOUT.
 - History me alag dabba + har row me "🟦 P: TP 12m · DD −$x". Firebase paperRow me `pfx`. Grid / averaging shamil nahi.
+
+## NEWS SIGNAL v1.4.0 (branch feature-news-ai-v1.4.0) — 🤖 AI tab: ख़बर-AI + purane Gemini ka hisaab saath-saath
+- Naya tab **🤖 AI** (news.html me 5 tab). Baaki app (index.html, app.js, sw.js, package.json, ai.js) ko chhoota nahi; app version 1.11.0 wahi.
+- Naya `src/newsbrief.js`: Gemini + **Google Search grounding** se live ख़बरों ka saar — XAUUSD / EURUSD ke liye UP / DOWN / NEUTRAL + 2-3 line wajah + ख़बरें + sources. Button dabane par hi chalta hai (apne aap nahi — Gemini limit bachti hai).
+- Sirf jaankari + paper hisaab: BUY/SELL signal nahi, MT5 / Firebase par kuch nahi jaata.
+- Nateeja: brief ke time ka bhaav (p0) vs 30 min baad ka bhaav (p1). WIN/LOSS; FLAT = gold < $1 (10 pip) / EURUSD < 3 pip; NEUTRAL ginti me nahi.
+- Do hisaab saath: (1) 🧠 purana Gemini (Council) — app ka `sai_cLedger` sirf PADHA jaata hai (jeet %, $), (2) 📰 naya ख़बर-AI — `sai_news_briefs` me apna.
+- Bhaav ke liye `quotes()` (MT5 feed ya TwelveData) — 30 min baad ek baar; 2 ghante se purana ho to nateeja nahi lagta.
+- Tests: `tests/newsbrief.test.mjs` (5). Poore 43 pass. `package.json` ka "test" script nahi badla (news tests alag chalte hain: `node --test tests/news.test.mjs tests/newsbrief.test.mjs`).
+### Pending
+- Kam se kam 20-30 nateeje jama hone par dono ki jeet % ki tulna.
+- Agar Google Search grounding free key par na chale to error dikhega — tab batao.
