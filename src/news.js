@@ -3,9 +3,10 @@
    v1: calendar free (Forex Factory feed), ASLI number tum daalte ho (Enter) — signal usi second.
    Auto number / band-app phone alert ke liye server chahiye (v2). */
 import {keys, quotes, series, feedStatus, LS, fbUrl} from './data.js';
+import {fetchBrief, judge, ledger, councilLedger, JUDGE_MIN} from './newsbrief.js';
 import {PAIRS, rules, evaluate, grade, summary, polarity, tradeable, DEF_TGT, usdOf, tpPrice, scanTp, takeSummary} from './newsrules.js';
 
-export const NEWS_VERSION = '1.3.0';
+export const NEWS_VERSION = '1.4.0';
 const FF = 'https://nfs.faireconomy.media/ff_calendar_thisweek.json';
 const MIN = 60000;
 const $ = s => document.querySelector(s);
@@ -16,6 +17,7 @@ const S = {
   manual: LS.get('news_manual', []), fired: LS.get('news_fired', []),
   cfg: Object.assign({sound: true, medium: false, lot: 0.01, tgt: Object.assign({}, DEF_TGT)}, LS.get('news_cfg', {})),
   tapes: {}, paper: {}, paperAt: 0,     /* v1.3.0: VPS (News Pusher v1.03) ke auto paper trade — app band ho tab bhi */
+  briefs: LS.get('news_briefs', []), briefBusy: false, briefErr: '',     /* v1.4.0: ख़बर-AI (Gemini + Google Search) */
   now: Date.now(), stage: '', beep: '', feed: null, wake: null, resolving: false,
   act: {}, mt5At: 0, es: null, esOk: false, polling: false     /* v1.1.0: MT5 News Pusher se asli number */
 };
@@ -358,13 +360,73 @@ function setTab(){
     Page band ho to alert nahi aata — uske liye server chahiye.<br><b>v1.3:</b> 🖥 VPS (News Pusher v1.03) khud paper trade + phone push (MT5 app) — app band ho tab bhi; History me sab. <b>v1.2:</b> 🤖 har signal apne aap paper trade (MT5 order nahi): ⏱ 1 min exit, 🎯 $ target, 5 min ka nateeja (MT5 tape se har second ka bhaav).<br><br>
     Ye analysis hai, guarantee nahi. News ke second me spread / slippage bahut hota hai. Pehle demo par aazmao.<br><br>NEWS SIGNAL v${NEWS_VERSION}</div></div></div>`;
 }
+
+/* ---------- v1.4.0: 🤖 AI tab — naya ख़बर-AI + purane Gemini (Council) ka hisaab saath-saath ---------- */
+const BI = {UP: ['⬆ UP', 'var(--up)'], DOWN: ['⬇ DOWN', 'var(--dn2)'], NEUTRAL: ['➖ NEUTRAL', 'var(--mu)']};
+const bTag = b => `<b style="color:${BI[b][1]}">${BI[b][0]}</b>`;
+const resTag = r => r ? `<b class="${r}">${r === 'WIN' ? '✅ WIN' : r === 'LOSS' ? '❌ LOSS' : '➖ FLAT'}</b>` : '<span class="sub">—</span>';
+const saveBriefs = () => { S.briefs = S.briefs.slice(0, 100); LS.set('news_briefs', S.briefs) };
+function ledBox(title, sub, o, extra){
+  return `<div class="card"><h3>${title}</h3><div class="sub" style="margin-bottom:8px">${sub}</div>
+    <div class="tiles"><div class="tile"><span class="lbl">WIN</span><b class="WIN">${o.win}</b></div><div class="tile"><span class="lbl">LOSS</span><b class="LOSS">${o.loss}</b></div>
+    <div class="tile"><span class="lbl">JEET %</span><b>${o.pct === null ? '—' : o.pct + '%'}</b></div><div class="tile"><span class="lbl">${extra ? extra[0] : 'FLAT'}</span><b>${extra ? extra[1] : (o.flat || 0)}</b></div></div></div>`;
+}
+function aiTab(){
+  const b = S.briefs[0], L = ledger(S.briefs), cl = councilLedger(LS.get('cLedger', {}));
+  const xl = L['XAU/USD'], el = L['EUR/USD'], tot = {win: xl.win + el.win, loss: xl.loss + el.loss, flat: xl.flat + el.flat};
+  tot.pct = tot.win + tot.loss ? Math.round(tot.win / (tot.win + tot.loss) * 100) : null;
+  const cur = b ? `<div class="card nx"><span class="badge y">📰 ताज़ा ख़बर-AI</span> <span class="sub">${hm(b.t)} IST</span>
+    <div class="rg"><div class="rb ${b.xau === 'UP' ? 'BUY' : b.xau === 'DOWN' ? 'SELL' : 'MIX'}"><small>XAUUSD</small><div>${BI[b.xau][0]}</div></div>
+    <div class="rb ${b.eur === 'UP' ? 'BUY' : b.eur === 'DOWN' ? 'SELL' : 'MIX'}"><small>EURUSD</small><div>${BI[b.eur][0]}</div></div></div>
+    <div class="note" style="color:var(--tx)">${esc(b.sum)}</div>
+    ${b.heads.length ? '<div class="tkl">' + b.heads.map(h => '• ' + esc(h)).join('<br>') + '</div>' : ''}
+    ${(b.src || []).length ? '<div class="note">स्रोत: ' + b.src.map(x => `<a style="color:var(--gold)" target="_blank" rel="noopener noreferrer" href="${esc(x.u)}">${esc(x.t)}</a>`).join(' · ') + '</div>' : ''}
+    <div class="note">⏱ ${JUDGE_MIN} min बाद नतीजा अपने आप। ये सिर्फ़ जानकारी + paper हिसाब है — BUY/SELL signal नहीं, MT5 पर कुछ नहीं जाता।</div></div>`
+    : `<div class="empty">अभी कोई ख़बर-AI नहीं।<br>नीचे 🔄 दबाओ।</div>`;
+  const rows = S.briefs.slice(0, 15).map(r => {
+    return `<div class="hrow"><div class="l1"><span>${hm(r.t)} · ${dayLbl(r.t)}</span><span class="sub">${r.p1 ? '' : 'बाक़ी ' + Math.max(0, Math.ceil((JUDGE_MIN * MIN - (Date.now() - r.t)) / MIN)) + ' min'}</span></div>
+      <div class="pr"><span>XAUUSD ${bTag(r.xau)}</span><span>${resTag(r.p1 ? judge(r.xau, (r.p0 || {})['XAU/USD'], r.p1['XAU/USD'], 'XAU/USD') : null)}</span></div>
+      <div class="pr"><span>EURUSD ${bTag(r.eur)}</span><span>${resTag(r.p1 ? judge(r.eur, (r.p0 || {})['EUR/USD'], r.p1['EUR/USD'], 'EUR/USD') : null)}</span></div>${t0 ? '' : ''}</div>` }).join('');
+  return `<div class="wrap">
+    <button class="btn gold" data-act="brief" ${S.briefBusy ? 'disabled' : ''}>${S.briefBusy ? '⏳ ख़बरें पढ़ रहा है…' : '🔄 अभी की ख़बरें पढ़ो (Gemini + Google)'}</button>
+    ${S.briefErr ? `<div class="note" style="color:var(--dn2)">${esc(S.briefErr)}</div>` : ''}
+    ${cur}
+    ${ledBox('🧠 पुराना Gemini (Council) का नतीजा', 'App के Home/Council वाला — हर ANALYZE का paper नतीजा' + (cl.n ? '' : ' · अभी कोई पूरा नतीजा नहीं'), cl, ['कुल $', (cl.usd >= 0 ? '+' : '') + cl.usd])}
+    ${ledBox('📰 नया ख़बर-AI का नतीजा', `सब मिलाकर (XAUUSD + EURUSD) · ${JUDGE_MIN} min बाद keemat से`, tot)}
+    <div class="card"><h3>अलग-अलग pair</h3><div class="pr"><span>XAUUSD</span><span class="mono">✅ ${xl.win} · ❌ ${xl.loss} · ➖ ${xl.flat} · ${xl.pct === null ? '—' : xl.pct + '%'}</span></div>
+      <div class="pr"><span>EURUSD</span><span class="mono">✅ ${el.win} · ❌ ${el.loss} · ➖ ${el.flat} · ${el.pct === null ? '—' : el.pct + '%'}</span></div></div>
+    ${rows ? '<div class="card"><h3>हिस्ट्री</h3><div style="display:flex;flex-direction:column;gap:8px">' + rows + '</div></div>' : ''}
+    <div class="note">कम से कम 20-30 नतीजे जमा होने के बाद ही दोनों की तुलना पर भरोसा करना। ये guarantee नहीं है।</div></div>`;
+}
+async function runBrief(){
+  if(S.briefBusy) return; S.briefBusy = true; S.briefErr = ''; render();
+  try{
+    const k = keys(), q = await quotes(k, PAIRS.map(p => p.sym), true).catch(() => ({}));
+    const b = await fetchBrief(k.gKey);
+    const p0 = {}; PAIRS.forEach(p => { if(q[p.sym] && q[p.sym].p > 0) p0[p.sym] = q[p.sym].p });
+    S.briefs.unshift({id: 'b' + Date.now(), t: Date.now(), xau: b.xau, eur: b.eur, sum: b.sum, heads: b.heads, src: b.src, p0, p1: null}); saveBriefs();
+  }catch(e){ S.briefErr = String(e.message || e).slice(0, 140) }
+  S.briefBusy = false; render();
+}
+async function resolveBriefs(){
+  const now = Date.now(), due = S.briefs.filter(r => !r.p1 && now - r.t >= JUDGE_MIN * MIN);
+  if(!due.length) return;
+  try{
+    const q = await quotes(keys(), PAIRS.map(p => p.sym), false), p1 = {};
+    PAIRS.forEach(p => { if(q[p.sym] && q[p.sym].p > 0) p1[p.sym] = q[p.sym].p });
+    if(Object.keys(p1).length < PAIRS.length) return;
+    due.forEach(r => { r.p1 = p1 });   /* kaafi purana (>2h) ho to bhi aaj ka bhaav nahi lagana */
+    due.filter(r => now - r.t > 2 * 60 * MIN).forEach(r => { r.p1 = {} });
+    saveBriefs(); if(S.tab === 'ai') render();
+  }catch(e){}
+}
 function render(){
   if(S.tab === 'live'){
     const keep = $('#act') ? $('#act').value : '';
     $('#main').innerHTML = liveTab();
     const i = $('#act'); if(i){ if(keep) i.value = keep; try{ i.focus() }catch(e){} }
-  }else $('#main').innerHTML = S.tab === 'today' ? todayTab() : S.tab === 'hist' ? histTab() : setTab();
-  const tabs = [['live', '⚡', 'LIVE'], ['today', '📅', 'AAJ'], ['hist', '📈', 'HISTORY'], ['set', '⚙️', 'SETTING']];
+  }else $('#main').innerHTML = S.tab === 'today' ? todayTab() : S.tab === 'hist' ? histTab() : S.tab === 'ai' ? aiTab() : setTab();
+  const tabs = [['live', '⚡', 'LIVE'], ['today', '📅', 'AAJ'], ['hist', '📈', 'HISTORY'], ['ai', '🤖', 'AI'], ['set', '⚙️', 'SETTING']];
   $('#nav').innerHTML = tabs.map(t => `<button data-act="tab" data-v="${t[0]}" class="${S.tab === t[0] ? 'on' : ''}"><b>${t[1]}</b>${t[2]}</button>`).join('');
   const f = S.feed;
   $('#chips').innerHTML = `<span class="pill ${f && f.ok ? 'ok' : keys().tdKey ? 'warn' : 'bad'}">${f && f.ok ? 'MT5 FEED' : keys().tdKey ? 'TWELVEDATA' : 'BHAAV NAHI'}</span>
@@ -393,6 +455,7 @@ document.addEventListener('click', e => { const b = e.target.closest('[data-act]
 function act(a, d){
   if(a === 'tab'){ S.tab = d.v; S.stage = ''; render(); if(d.v === 'hist') loadPaper().then(() => { if(S.tab === 'hist') render() }); return }
   if(a === 'fire'){ const ev = nextEv(), i = $('#act'); if(!ev || ev.t > Date.now()) return toast('Abhi release nahi hua'); if(!i || !i.value.trim()) return toast('Pehle number likho'); fire(ev, i.value); return }
+  if(a === 'brief'){ runBrief(); return }
   if(a === 'fs'){ try{ document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen() }catch(e){ toast('Full-screen nahi chala') } return }
   if(a === 'snd'){ audio(); const was = S.cfg.sound; S.cfg.sound = true; beep(880, 0.15); setTimeout(() => beep(1100, 0.15), 200); S.cfg.sound = was; toast('Awaaz aayi? Nahi aayi to phone ka volume / silent dekho'); return }
   if(a === 'soundcfg'){ S.cfg.sound = !S.cfg.sound; saveCfg(); render(); return }
@@ -432,6 +495,7 @@ function act(a, d){
   stream(); setInterval(poll, 1500);
   setInterval(tick, 250);
   setInterval(resolve, 30000);
+  resolveBriefs(); setInterval(resolveBriefs, 60000);
   setInterval(() => { const now = Date.now(); if(S.fired.some(r => now - r.firedAt < 7 * MIN || (r.sigs || []).some(s => s.take && !s.take.done && now - s.take.at < 7 * MIN))) resolve() }, 5000);
   setInterval(async () => { try{ S.feed = await feedStatus(keys()) }catch(e){} }, 45000);
   setInterval(() => loadCal(false).then(() => { if(S.tab !== 'live') render() }), 5 * MIN);
