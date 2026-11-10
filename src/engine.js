@@ -166,7 +166,8 @@ export function evaluate(sig, bars, now = Date.now(), pip = 0.0001){
 /* v1.11.0: 🟦 PERSONAL FX jaisa (REAL account ka niyam) — LIMIT ka fill wahi, phir TP chhota (tpPips, jaise $0.25), SL NAHI.
    mae = bhaav sabse zyada kitna ulta gaya (pips) = chhupa khatra. 48 ghante me TP na aaye to TIMEOUT (tab ka haal).
    Fill wali candle pe TP tabhi jab close bhi paar ho. PERSONAL FX ka grid / averaging isme shamil NAHI (sirf pehla trade). */
-export function evaluatePfx(sig, bars, now = Date.now(), pip = 0.0001, tpPips = 2.5){
+/* v1.13.0: slPips (REAL Strategy 3 jaisa SL) — candle me pehle SL dekho (savdhaan), phir TP. 0 = SL nahi */
+export function evaluatePfx(sig, bars, now = Date.now(), pip = 0.0001, tpPips = 2.5, slPips = 0){
   const B = sig.dir === 'BUY' ? 1 : -1, after = bars.filter(b => b.t >= sig.at), fillBy = sig.at + (sig.exp || VALID_MIN) * 60000;
   let fi = -1;
   for(let i = 0; i < after.length; i++){
@@ -179,6 +180,7 @@ export function evaluatePfx(sig, bars, now = Date.now(), pip = 0.0001, tpPips = 
   for(let i = fi; i < after.length; i++){
     const b = after[i];
     mae = Math.max(mae, (B > 0 ? en - b.l : b.h - en) / pip);
+    if(slPips > 0 && mae >= slPips) return {state: 'SL', done: true, filledAt: f0, exitAt: b.t, mae: slPips, pips: -slPips};
     const best = i === fi ? (B > 0 ? b.c - en : en - b.c) / pip : (B > 0 ? b.h - en : en - b.l) / pip;
     if(best >= tpPips) return {state: 'TP', done: true, filledAt: f0, exitAt: b.t, mae, pips: tpPips};
     cur = (B > 0 ? b.c - en : en - b.c) / pip;
