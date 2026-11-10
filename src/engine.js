@@ -134,11 +134,85 @@ export function analyze({b15, b1h, live, spec, now = Date.now()}){
   const mSlRaw = dir > 0 ? pbLow - 0.1 * A : pbHigh + 0.1 * A;
   const mRisk = Math.min(2 * A, Math.max(0.6 * A, Math.abs(live - mSlRaw)));
   const mkt = {ok: mOk, checks: mChecks, entry: r(live, d), sl: r(live - dir * mRisk, d), tp: r(live + dir * mRisk, d)};
+  const smart = smartOrder({b15, b1h, live, A, dir, al15, al1h, ax, e21L: e21[L], entry, sl, tp0: tp[0], d, now});   /* v1.14.0 */
   return {dir: D, type: D + ' LIMIT', entry: r(entry, d), zone: zone.map(v => r(v, d)), sl: r(sl, d), tp: tp.map(v => r(v, d)),
     rr: '1 : 1', grade, buyPct, sellPct: 100 - buyPct, adx: +ax.toFixed(1),
     regime: ax >= 25 ? 'Trend' : ax < 20 ? 'Range' : 'Weak trend', danger: dRatio > 1.6 ? 'high' : dRatio > 1.2 ? 'medium' : 'calm',
     live: r(live, d), atr: A, fibX: pick ? pick.x : null, leg: {hi: r(leg.hi, d), lo: r(leg.lo, d)}, t15, t1h, reasons,
-    mkt, at: now, exp: VALID_MIN, expiresAt: now + VALID_MIN * 60000};
+    mkt, smart, at: now, exp: VALID_MIN, expiresAt: now + VALID_MIN * 60000};
+}
+
+/* v1.14.0: 🎯 SMART ORDER (SIRF PAPER) — situation dekh ke LIMIT / MARKET / STOP.
+   STOP (breakout): 15m + 1H + 4H ek disha, pichhli 10 candle ki tang range (<= 1.5 ATR), bhaav range ke kinare (0.3 ATR),
+     mazboot candle (body >= 60%, trend ki disha), London / NY (07-17 UTC). Entry kinare se 0.25 ATR aage (wick se bachav),
+     SL range ke doosri taraf (0.8-2 ATR), TP 1R, 45 min me na bhare to hat jaaye. Jhootha breakout: 15m candle wapas
+     range ke andar band = jaldi bahar (evaluateStop).
+   MARKET: 15m + 1H saath + ADX >= 25, LIMIT 0.7 ATR se door, bhaav EMA21 ke paas (-0.2..1.2 ATR), RSI zyada nahi (<72 / >28),
+     aakhri candle trend ki disha. Entry abhi ka bhaav, SL pichhli 10 candle ke swing ke paar (0.8-2 ATR), TP 1R.
+   Baaki sab: LIMIT (jaisa abhi). */
+export function smartOrder(o){
+  const {b15, b1h, live, A, dir: B, al15, al1h, ax, e21L, d, now} = o, r = v => +(+v).toFixed(d);
+  const L = b15.length - 1, last = b15[L], cl = b15.map(x => x.c);
+  const b4 = []; for(let i = b1h.length % 4; i + 4 <= b1h.length; i += 4){ const g = b1h.slice(i, i + 4); b4.push({o: g[0].o, h: Math.max(...g.map(x => x.h)), l: Math.min(...g.map(x => x.l)), c: g[3].c}) }
+  const t4 = b4.length > 55 ? trendScore(b4) : 0, al4 = Math.sign(t4) === B;
+  const body = Math.abs(last.c - last.o), span = Math.max(last.h - last.l, 1e-12), withT = B * (last.c - last.o) > 0;
+  const strong = withT && body / span >= 0.6, hr = new Date(now).getUTCHours(), sess = hr >= 7 && hr < 17;
+  const box = b15.slice(-11, -1), hi = Math.max(...box.map(x => x.h)), lo = Math.min(...box.map(x => x.l));
+  const tight = hi - lo <= 1.5 * A, edge = B > 0 ? hi : lo;
+  const nearEdge = B > 0 ? hi - live <= 0.3 * A && live <= hi + 0.1 * A : live - lo <= 0.3 * A && live >= lo - 0.1 * A;
+  const clamp = x => Math.min(2 * A, Math.max(0.8 * A, x));
+  if(al15 && al1h && al4 && tight && nearEdge && strong && sess){
+    const en = edge + B * 0.25 * A, slRaw = (B > 0 ? lo : hi) - B * 0.1 * A, risk = clamp(Math.abs(en - slRaw));
+    return {type: 'STOP', entry: r(en), sl: r(en - B * risk), tp: r(en + B * risk), exp: 45, range: {hi: r(hi), lo: r(lo)},
+      why: ['15m + 1H + 4H ek disha', 'tang range (' + ((hi - lo) / A).toFixed(1) + ' ATR) ke kinare', 'mazboot candle', 'London / NY']};
+  }
+  const rs = rsi(cl), dist = B * (live - e21L) / A, limFar = B * (live - o.entry) / A > 0.7;
+  const stretched = dist > 1.2 || (B > 0 ? rs > 72 : rs < 28);
+  if(al15 && al1h && ax >= 25 && limFar && !stretched && dist >= -0.2 && withT){
+    const look = b15.slice(-10), sw = B > 0 ? Math.min(...look.map(x => x.l)) : Math.max(...look.map(x => x.h));
+    const risk = clamp(Math.abs(live - sw) + 0.1 * A);
+    return {type: 'MARKET', entry: r(live), sl: r(live - B * risk), tp: r(live + B * risk), exp: 0,
+      why: ['tez trend (ADX ' + ax.toFixed(0) + ')', 'LIMIT ' + (B * (live - o.entry) / A).toFixed(1) + ' ATR door', 'bhaav zyada nahi bhaaga', 'candle trend ki disha']};
+  }
+  return {type: 'LIMIT', entry: r(o.entry), sl: r(o.sl), tp: r(o.tp0), exp: VALID_MIN,
+    why: [!(al15 && al1h) ? '15m / 1H saath nahi' : stretched ? 'bhaav zyada bhaag chuka' : !limFar ? 'LIMIT paas hi hai' : 'pullback ka intezaar']};
+}
+/* v1.14.0: STOP order ka nateeja. opt.early = jhootha breakout: fill ke baad koi 15m candle wapas range ke andar band -> wahin bahar.
+   Candle me pehle SL (savdhaan), fill wali candle pe TP tabhi jab close bhi paar. */
+export function evaluateStop(s, at, dir, bars, now = Date.now(), pip = 0.0001, opt = {early: true}){
+  const B = dir === 'BUY' ? 1 : -1, after = bars.filter(b => b.t >= at), fillBy = at + (s.exp || 45) * 60000, Q = 900e3;
+  let fi = -1;
+  for(let i = 0; i < after.length; i++){
+    if(after[i].t > fillBy) break;
+    if(B > 0 ? after[i].h >= s.entry : after[i].l <= s.entry){ fi = i; break }
+  }
+  if(fi < 0){ const ex = now > fillBy && (after.length && after[after.length - 1].t > fillBy || now - fillBy > 10 * 60000); return {state: ex ? 'EXPIRED' : 'PENDING', done: ex} }
+  const f0 = after[fi].t, edge = B > 0 ? s.range.hi : s.range.lo;
+  for(let i = fi; i < after.length; i++){
+    const b = after[i];
+    if(B > 0 ? b.l <= s.sl : b.h >= s.sl) return {state: 'SL', done: true, filledAt: f0, exitAt: b.t, pips: -Math.abs(s.entry - s.sl) / pip};
+    const hit = i === fi ? (B > 0 ? b.c >= s.tp : b.c <= s.tp) : (B > 0 ? b.h >= s.tp : b.l <= s.tp);
+    if(hit) return {state: 'TP1', done: true, filledAt: f0, exitAt: b.t, pips: Math.abs(s.tp - s.entry) / pip};
+    const nx = after[i + 1];
+    if(opt.early && nx && Math.floor(nx.t / Q) !== Math.floor(b.t / Q) && B * (b.c - edge) < 0)
+      return {state: 'EARLY', done: true, filledAt: f0, exitAt: b.t, pips: B * (b.c - s.entry) / pip};
+  }
+  return {state: 'OPEN', done: false, filledAt: f0};
+}
+/* v1.14.0: STOP ka doosra tarika (#3) — 15m candle range ke bahar BAND ho tab entry (us close pe), SL / TP wahi doori */
+export function evaluateStopConfirm(s, at, dir, bars, now = Date.now(), pip = 0.0001){
+  const B = dir === 'BUY' ? 1 : -1, after = bars.filter(b => b.t >= at), fillBy = at + (s.exp || 45) * 60000, Q = 900e3;
+  const edge = B > 0 ? s.range.hi : s.range.lo, risk = Math.abs(s.entry - s.sl);
+  for(let i = 0; i < after.length - 1; i++){
+    const b = after[i], nx = after[i + 1];
+    if(b.t > fillBy) break;
+    if(Math.floor(nx.t / Q) !== Math.floor(b.t / Q) && B * (b.c - edge) > 0){
+      const m = {entry: b.c, sl: b.c - B * risk, tp: b.c + B * risk}, res = evaluateMarket(m, nx.t, dir, bars, pip);
+      return Object.assign(res, {filledAt: nx.t, entry: m.entry});
+    }
+  }
+  const ex = now > fillBy && (after.length && after[after.length - 1].t > fillBy || now - fillBy > 10 * 60000);
+  return {state: ex ? 'EXPIRED' : 'PENDING', done: ex};
 }
 
 /* Nateeja: signal ke BAAD ki candles (5m / 1m) se. Pehle fill (60 min me), phir SL / TP1..3.
