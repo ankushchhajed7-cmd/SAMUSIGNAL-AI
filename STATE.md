@@ -70,3 +70,6 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 ### Pending
 - Kam se kam 20-30 nateeje jama hone par dono ki jeet % ki tulna.
 - Agar Google Search grounding free key par na chale to error dikhega — tab batao.
+
+## v1.12.0 — ANALYZE akshar gol ghoomte
+- User ka chitra (E4): button ke chaaron or ek hi baar "A N A L Y Z E" (SVG textPath, radius 43), 9 sec me ek chakkar; neeche ka label chhupa (screen reader ke liye rakha). prefers-reduced-motion pe ruk jaata hai.
