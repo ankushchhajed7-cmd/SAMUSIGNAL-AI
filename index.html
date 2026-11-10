@@ -83,6 +83,13 @@ nav.bar a.on{color:var(--gold)}
 nav.bar .fab{position:relative}
 nav.bar .fab span.c{position:absolute;top:-64px;width:62px;height:62px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--metal);box-shadow:0 0 0 5px #0b0c10,0 10px 28px rgba(232,195,90,0.4)}
 nav.bar .fab b{font-size:10px;font-weight:800;color:var(--gold);letter-spacing:.5px}
+/* v1.12.0: ANALYZE ke akshar button ke chaaron or gol, dheere ghoomte (user ka chitra) */
+nav.bar .fab .fring{position:absolute;top:-84px;left:50%;width:102px;height:102px;margin-left:-51px;pointer-events:none;animation:fspin 9s linear infinite;z-index:0}
+nav.bar .fab .fring text{font:800 11.5px Manrope,system-ui,sans-serif;letter-spacing:3.2px;fill:var(--gold)}
+nav.bar .fab span.c{z-index:1}
+nav.bar .fab b.fsr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@keyframes fspin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){nav.bar .fab .fring{animation:none}}
 #splash{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:inherit;background-color:#07080b;transition:opacity .4s}
 #splash.hide{opacity:0;pointer-events:none}
 .ov{position:fixed;inset:0;z-index:40;display:none;align-items:flex-end;justify-content:center;background:rgba(3,4,6,0.6);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
@@ -243,7 +250,7 @@ nav.bar .fab b{font-size:10px;font-weight:800;color:var(--gold);letter-spacing:.
 
 <nav class="bar" id="nav">
 <a href="#" data-s="home" class="on"><span data-ic="chart"></span>Chart</a><a href="#" data-s="his"><span data-ic="clock"></span>History</a>
-<a href="#" class="fab" id="fab"><span class="c" data-ic="spark"></span><b>ANALYZE</b></a>
+<a href="#" class="fab" id="fab" aria-label="ANALYZE"><svg class="fring" viewBox="0 0 102 102" aria-hidden="true"><defs><path id="fringP" d="M51,51 m-43,0 a43,43 0 1,1 86,0 a43,43 0 1,1 -86,0"/></defs><text><textPath href="#fringP">A  N  A  L  Y  Z  E</textPath></text></svg><span class="c" data-ic="spark"></span><b class="fsr">ANALYZE</b></a>
 <a href="#" data-s="pairs"><span data-ic="list"></span>Pairs</a><a href="#" data-s="set"><span data-ic="gear"></span>Settings</a></nav>
 
 <!-- SCAN -->
