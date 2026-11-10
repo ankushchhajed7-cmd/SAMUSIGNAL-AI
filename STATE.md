@@ -73,3 +73,9 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 
 ## v1.12.0 — ANALYZE akshar gol ghoomte
 - User ka chitra (E4): button ke chaaron or ek hi baar "A N A L Y Z E" (SVG textPath, radius 43), 9 sec me ek chakkar; neeche ka label chhupa (screen reader ke liye rakha). prefers-reduced-motion pe ruk jaata hai.
+
+## v1.13.0 — 🟦 PERSONAL FX jaisa = REAL Strategy 3 ($0.25 TP + $1.50 SL)
+- User ka faisla (11 Nov, 50 trade ke baad): sirf point 2 — paper ka "PERSONAL FX jaisa" ab REAL jaisa: TP $0.25, SL $1.50 (0.01 lot). Candle me pehle SL (savdhaan), phir TP.
+- Purane (bina SL) hisaab: jo $1.50 se zyada ulta gaya (DD) = SL maana (TP se pehle hi), v=2 nishaan.
+- History: net $, TP / SL ginti, jeet %, "86% se zyada jeet chahiye" note. Row: "🟦 P: SL −$1.50".
+- Point 1 (🚀 se MARKET) user ne NAHI chuna — 🚀 abhi LIMIT hi.

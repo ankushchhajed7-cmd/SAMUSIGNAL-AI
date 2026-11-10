@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot, aiCouncil} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.12.0';
+export const VERSION = '1.13.0';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -228,11 +228,11 @@ function mUsd(r){
 const TRAIL = {start: 0.50, lock: 0.25, step: 0.10};
 function rates0(){ const o = {}; Object.keys(st.q).forEach(k => { if(st.q[k] && st.q[k].p) o[k] = st.q[k].p }); return o }
 /* v1.11.0: 🟦 PERSONAL FX jaisa — $0.25 TP (0.01 lot), SL nahi */
-const PFX = {usd: 0.25, lot: 0.01};
+const PFX = {usd: 0.25, sl: 1.50, lot: 0.01, v: 2};   /* v1.13.0: REAL Strategy 3 jaisa — TP $0.25, SL $1.50 */
 const pfxPu = sym => pipUsd(sym, PFX.lot, rates0()) || 0.1;
 function pUsd(r){
   const p = r.pres; if(!p || !p.filledAt) return;
-  const pu = pfxPu(r.sym); p.dd = +((p.mae || 0) * pu).toFixed(2); p.usd = p.state === 'TP' ? PFX.usd : +((p.pips || 0) * pu).toFixed(2);
+  const pu = pfxPu(r.sym); p.dd = +((p.mae || 0) * pu).toFixed(2); p.usd = p.state === 'TP' ? PFX.usd : p.state === 'SL' ? -PFX.sl : +((p.pips || 0) * pu).toFixed(2); p.v = PFX.v;
   p.mins = p.exitAt ? Math.max(1, Math.round((p.exitAt - p.filledAt) / 60000)) : null;
 }
 function trailPips(sym){ const pu = pipUsd(sym, vLot(), rates0()) || 0.1; return {start: TRAIL.start / pu, lock: TRAIL.lock / pu, step: TRAIL.step / pu} }
@@ -378,7 +378,7 @@ async function evalSym(sym, recs){
   if(!d) d = await series(s, sym, '5min', 300);
   recs.forEach(r => { if(!(r.res && r.res.done)){ r.res = Object.assign(evaluate(Object.assign({}, r, {tp: r.tp.slice(0, 1)}), d.bars, now, SPECS[sym].pip), {src: d.src, at: now}); usdOf(r) }
     if(r.mkt && !(r.mres && r.mres.done)){ r.mres = evaluateMarket(r.mkt, r.at, r.dir, d.bars, SPECS[sym].pip); mUsd(r) }
-    if(!(r.pres && r.pres.done)){ r.pres = evaluatePfx(r, d.bars, now, SPECS[sym].pip, PFX.usd / pfxPu(sym)); pUsd(r) }   /* v1.11.0 */
+    if(!(r.pres && r.pres.done)){ r.pres = evaluatePfx(r, d.bars, now, SPECS[sym].pip, PFX.usd / pfxPu(sym), PFX.sl / pfxPu(sym)); pUsd(r) }   /* v1.11.0 / v1.13.0 SL */
     if(!(r.tres && r.tres.done)){ r.tres = evaluateTrail(Object.assign({}, r, {tp: r.tp.slice(0, 1)}), d.bars, now, SPECS[sym].pip, trailPips(sym)); tUsd(r) }
     const c = r.council; if(c && c.dir && !(r.cres && r.cres.done)){                    /* v1.9.0: 🧠 Council ka nateeja */
       r.cres = c.order === 'MARKET' ? evaluateMarket(c, c.at, c.dir, d.bars, SPECS[sym].pip) : evaluate({dir: c.dir, entry: c.entry, sl: c.sl, tp: [c.tp], at: c.at, exp: 60}, d.bars, now, SPECS[sym].pip); cUsd(r) } });
@@ -564,13 +564,14 @@ ${MO.length ? `<br><span class="note">⚡ नियम ने MARKET कहा �
   const TD = st.hist.filter(r => r.tres && (isWin(r.tres.state) || isLoss(r.tres.state))), tp_ = +TD.reduce((t, r) => t + tUsd(r), 0).toFixed(2), tw = TD.filter(r => isWin(r.tres.state)).length;
   $('stBal').innerHTML += `<div style="margin-top:8px;font-size:12px;line-height:1.6" class="mono"><span class="lbl">🔒 Trail नियम से ($0.50 पर $0.25 lock, हर $0.10)</span><br>
 <b style="color:${tp_ >= 0 ? 'var(--up)' : 'var(--dn2)'}">${usdTxt(tp_)}</b> <span class="note">· ${TD.length} trade · ${TD.length ? Math.round(tw / TD.length * 100) : 0}% जीत · ${TD.filter(r => r.tres.state === 'LOCK').length} lock</span></div>`;
-  const PF = st.hist.filter(r => r.pres && r.pres.filledAt), PT = PF.filter(r => r.pres.state === 'TP'), PO = PF.filter(r => r.pres.state === 'OPEN'), PX = PF.filter(r => r.pres.state === 'TIMEOUT');
+  const PF = st.hist.filter(r => r.pres && r.pres.filledAt), PT = PF.filter(r => r.pres.state === 'TP'), PO = PF.filter(r => r.pres.state === 'OPEN'), PX = PF.filter(r => r.pres.state === 'TIMEOUT'), PS = PF.filter(r => r.pres.state === 'SL');
+  const pNet = +(PT.length * PFX.usd - PS.length * PFX.sl + PX.reduce((t, r) => t + (r.pres.usd || 0), 0)).toFixed(2), pDone = PT.length + PS.length + PX.length;
   const pMax = PF.length ? Math.max(...PF.map(r => r.pres.dd || 0)) : 0, pAvg = PT.length ? Math.round(PT.reduce((t, r) => t + (r.pres.mins || 0), 0) / PT.length) : 0;
   const pOpen = PO.reduce((t, r) => t + (r.pres.usd || 0), 0);
-  $('stBal').innerHTML += `<div style="margin-top:8px;font-size:12px;line-height:1.6" class="mono"><span class="lbl">🟦 PERSONAL FX जैसा ($0.25 TP · SL नहीं)</span><br>
-<b style="color:var(--up)">${PT.length}/${PF.length} TP</b> <span class="note">· ${usdTxt(PT.length * PFX.usd)} · औसत ${pAvg} min</span><br>
-<span class="note">सबसे बुरा उल्टा गया:</span> <b style="color:${pMax >= 5 ? 'var(--dn2)' : 'var(--gold)'}">−$${pMax.toFixed(2)}</b>${PO.length ? ` <span class="note">· अभी ${PO.length} खुले (${usdTxt(+pOpen.toFixed(2))})</span>` : ''}${PX.length ? ` <span class="note">· 48h में TP नहीं: ${PX.length}</span>` : ''}
-<div class="note" style="font-size:10px">REAL account जैसा: छोटा TP, SL नहीं — जीत ज़्यादा, पर "उल्टा गया" ही छुपा ख़तरा है (grid / averaging शामिल नहीं)।</div></div>`;
+  $('stBal').innerHTML += `<div style="margin-top:8px;font-size:12px;line-height:1.6" class="mono"><span class="lbl">🟦 PERSONAL FX जैसा — REAL Strategy 3 ($0.25 TP · $1.50 SL)</span><br>
+<b style="color:${pNet >= 0 ? 'var(--up)' : 'var(--dn2)'}">${usdTxt(pNet)}</b> <span class="note">· ${PT.length} TP / ${PS.length} SL${pDone ? ' · ' + Math.round(PT.length / pDone * 100) + '% जीत' : ''} · औसत TP ${pAvg} min</span><br>
+<span class="note">सबसे बुरा उल्टा (TP से पहले):</span> <b style="color:${pMax >= PFX.sl ? 'var(--dn2)' : 'var(--gold)'}">−$${pMax.toFixed(2)}</b>${PO.length ? ` <span class="note">· अभी ${PO.length} खुले (${usdTxt(+pOpen.toFixed(2))})</span>` : ''}${PX.length ? ` <span class="note">· 48h: ${PX.length}</span>` : ''}
+<div class="note" style="font-size:10px">$0.25 जीतकर $1.50 का SL भरने के लिए ~86% से ज़्यादा जीत चाहिए। Spread / grid शामिल नहीं।</div></div>`;
   const CL = Object.values(LS.get('cLedger', {})), cp = +CL.reduce((t, x) => t + x.usd, 0).toFixed(2), cw = CL.filter(x => x.win).length;
   $('stBal').innerHTML += `<div style="margin-top:8px;font-size:12px;line-height:1.6" class="mono"><span class="lbl">🧠 AI Council का फ़ैसला (हिसाब)</span><br>
 <b style="color:${cp >= 0 ? 'var(--up)' : 'var(--dn2)'}">${usdTxt(cp)}</b> <span class="note">· ${CL.length} trade · ${CL.length ? Math.round(cw / CL.length * 100) : 0}% जीत</span></div>`;
@@ -592,7 +593,7 @@ ${MO.length ? `<br><span class="note">⚡ नियम ने MARKET कहा �
       (r.tres && (isWin(r.tres.state) || isLoss(r.tres.state)) ? `<div style="font-size:10px;color:${isWin(r.tres.state) ? 'var(--up)' : 'var(--dn2)'}">🔒 T: ${r.tres.state === 'LOCK' ? 'LOCK' : isWin(r.tres.state) ? 'TP' : 'SL'} ${usdTxt(tUsd(r))}</div>` : r.tres && r.tres.state === 'OPEN' ? `<div style="font-size:10px" class="note">🔒 T: चालू${r.tres.lock ? ' · lock ' + usdTxt(r.tres.lock * pipUsd(r.sym, vLot(), rates0())) : ''}</div>` : '');
     const cs = r.cres && r.cres.state;
     const cl = r.council && r.council.dir ? `<div style="font-size:10px;color:${isWin(cs) ? 'var(--up)' : isLoss(cs) ? 'var(--dn2)' : 'var(--mu)'}">🧠 C: ${r.council.dir[0]}${r.council.order === 'MARKET' ? 'M' : 'L'} ${isWin(cs) ? 'TP ' + usdTxt(cUsd(r)) : isLoss(cs) ? 'SL ' + usdTxt(cUsd(r)) : cs === 'EXPIRED' ? 'नहीं भरा' : 'चालू'}</div>` : '';
-    const pf = r.pres && r.pres.filledAt ? `<div style="font-size:10px;color:${r.pres.state === 'TP' ? 'var(--up)' : 'var(--gold)'}">🟦 P: ${r.pres.state === 'TP' ? 'TP ' + (r.pres.mins || 1) + 'm' : r.pres.state === 'TIMEOUT' ? '48h' : 'चालू'} · DD −$${(r.pres.dd || 0).toFixed(2)}</div>` : '';
+    const pf = r.pres && r.pres.filledAt ? `<div style="font-size:10px;color:${r.pres.state === 'TP' ? 'var(--up)' : r.pres.state === 'SL' ? 'var(--dn2)' : 'var(--gold)'}">🟦 P: ${r.pres.state === 'TP' ? 'TP ' + (r.pres.mins || 1) + 'm' : r.pres.state === 'SL' ? 'SL −$' + PFX.sl.toFixed(2) : r.pres.state === 'TIMEOUT' ? '48h' : 'चालू'} · DD −$${(r.pres.dd || 0).toFixed(2)}</div>` : '';
     return `<div class="row" data-open="${r.id}"><span style="width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:${B ? 'var(--up)' : 'var(--dn)'};background:${B ? 'rgba(47,224,138,0.12)' : 'rgba(255,93,108,0.12)'}">${r.dir}</span>
 <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:14px">${esc(SPECS[r.sym] ? SPECS[r.sym].n : r.sym)} <span style="font-size:11px;font-weight:600;color:var(--mu)">LIMIT · ${istD(r.at)} ${ist(r.at)}</span></div>
 <div style="font-size:11px;color:var(--mu)" class="mono">Entry ${fmtS(r.sym, r.entry)} · Grade ${r.grade}${r.sent.length ? '<span class="kind k-mt5">MT5</span>' : ''}${r.src === 'shot' ? '<span class="kind k-shot">📷</span>' : ''}</div></div>
@@ -693,7 +694,10 @@ async function paperSync(){
    Pehle pakka karo ki EXPIRED wala nateeja Firebase (INVESTOR-ID report) tak ja chuka — report me ginti bani rahe.
    24 ghante baad bina sync ke bhi hata do (Firebase band ho tab bhi History saaf rahe). */
 /* v1.11.1: purane atke hue 'PENDING + done' dobara khol do (taaki EXPIRED / fill sahi ho) */
-function unstick(){ let n = 0; st.hist.forEach(r => ['res', 'tres', 'pres', 'cres'].forEach(k => { const x = r[k]; if(x && x.state === 'PENDING' && x.done){ x.done = false; n++ } })); if(n) saveHist() }
+/* v1.13.0: purane "SL nahi" wale PERSONAL FX hisaab ko REAL jaisa ($1.50 SL) karo: jo $1.50 se zyada ulta gaya = SL (TP se pehle) */
+function pfxMigrate(){ let n = 0; st.hist.forEach(r => { const p = r.pres; if(!p || !p.filledAt || p.v === PFX.v) return;
+  if((p.dd || 0) >= PFX.sl){ p.state = 'SL'; p.done = true; p.usd = -PFX.sl; p.dd = PFX.sl; p.mae = PFX.sl / pfxPu(r.sym) } p.v = PFX.v; n++ }); if(n) saveHist() }
+function unstick(){ pfxMigrate(); let n = 0; st.hist.forEach(r => ['res', 'tres', 'pres', 'cres'].forEach(k => { const x = r[k]; if(x && x.state === 'PENDING' && x.done){ x.done = false; n++ } })); if(n) saveHist() }
 function pruneExpired(){
   unstick();
   const now = Date.now(), n0 = st.hist.length;

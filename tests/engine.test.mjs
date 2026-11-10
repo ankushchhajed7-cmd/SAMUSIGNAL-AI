@@ -142,3 +142,14 @@ test('v1.11.1 PENDING kabhi done nahi — fillBy ke turant baad PENDING, phir EX
   assert.equal(b.state, 'EXPIRED'); assert.equal(b.done, true);
   assert.equal(evaluatePfx(sig, bars, 65 * m, 0.0001, 25).done, false);
 });
+
+test('v1.13 PERSONAL FX jaisa + SL: $1.50 SL pehle aaya to SL (REAL Strategy 3)', () => {
+  const m = 60000, pip = 0.0001, sig = {dir: 'BUY', entry: 1.1000, at: 0, exp: 60};
+  const bars = [{t: 0, o: 1.1010, h: 1.1012, l: 1.1004, c: 1.1006}, {t: m, o: 1.1006, h: 1.1007, l: 1.0999, c: 1.1001},
+    {t: 2 * m, o: 1.1001, h: 1.1002, l: 1.0980, c: 1.0985}, {t: 3 * m, o: 1.0985, h: 1.1030, l: 1.0984, c: 1.1028}];
+  const s = evaluatePfx(sig, bars, 4 * m, pip, 2.5, 15);          /* SL 15 pip: 20 pip ulta -> SL */
+  assert.equal(s.state, 'SL'); assert.equal(s.exitAt, 2 * m); assert.equal(s.pips, -15);
+  const t = evaluatePfx(sig, bars, 4 * m, pip, 25, 25);           /* SL 25 pip: 20 pip ulta tak theek, phir TP */
+  assert.equal(t.state, 'TP');
+  assert.equal(evaluatePfx(sig, bars, 4 * m, pip, 25).state, 'TP'); /* SL 0 = purana tarika */
+});
