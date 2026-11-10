@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot, aiCouncil} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.11.0';
+export const VERSION = '1.11.1';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -692,7 +692,10 @@ async function paperSync(){
 /* v1.5.1: EXPIRED (entry bhari hi nahi) trade expire hone ke 6 ghante baad History se hat jaata hai.
    Pehle pakka karo ki EXPIRED wala nateeja Firebase (INVESTOR-ID report) tak ja chuka — report me ginti bani rahe.
    24 ghante baad bina sync ke bhi hata do (Firebase band ho tab bhi History saaf rahe). */
+/* v1.11.1: purane atke hue 'PENDING + done' dobara khol do (taaki EXPIRED / fill sahi ho) */
+function unstick(){ let n = 0; st.hist.forEach(r => ['res', 'tres', 'pres', 'cres'].forEach(k => { const x = r[k]; if(x && x.state === 'PENDING' && x.done){ x.done = false; n++ } })); if(n) saveHist() }
 function pruneExpired(){
+  unstick();
   const now = Date.now(), n0 = st.hist.length;
   st.hist = st.hist.filter(r => {
     if(!(r.res && r.res.state === 'EXPIRED')) return true;

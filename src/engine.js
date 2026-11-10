@@ -151,7 +151,7 @@ export function evaluate(sig, bars, now = Date.now(), pip = 0.0001){
     if(after[i].t > fillBy) break;
     if(B > 0 ? after[i].l <= sig.entry : after[i].h >= sig.entry){ fi = i; break }
   }
-  if(fi < 0) return {state: now > fillBy && (after.length && after[after.length - 1].t > fillBy || now - fillBy > 10 * 60000) ? 'EXPIRED' : 'PENDING', done: now > fillBy};
+  if(fi < 0){ const ex = now > fillBy && (after.length && after[after.length - 1].t > fillBy || now - fillBy > 10 * 60000); return {state: ex ? 'EXPIRED' : 'PENDING', done: ex} }   /* v1.11.1: PENDING kabhi 'done' nahi (pehle atak jaata tha) */
   /* v1.4.0: sirf TP1 — TP1 = jeet (band), SL = haar. Ek candle me dono = SL (savdhaan).
      Fill wali candle pe TP tabhi jab close bhi TP ke paar ho (high/low fill se pehle ho sakta hai). */
   const tp = sig.tp[0];
@@ -173,7 +173,7 @@ export function evaluatePfx(sig, bars, now = Date.now(), pip = 0.0001, tpPips = 
     if(after[i].t > fillBy) break;
     if(B > 0 ? after[i].l <= sig.entry : after[i].h >= sig.entry){ fi = i; break }
   }
-  if(fi < 0) return {state: now > fillBy && (after.length && after[after.length - 1].t > fillBy || now - fillBy > 10 * 60000) ? 'EXPIRED' : 'PENDING', done: now > fillBy};
+  if(fi < 0){ const ex = now > fillBy && (after.length && after[after.length - 1].t > fillBy || now - fillBy > 10 * 60000); return {state: ex ? 'EXPIRED' : 'PENDING', done: ex} }   /* v1.11.1: PENDING kabhi 'done' nahi (pehle atak jaata tha) */
   const en = sig.entry, f0 = after[fi].t;
   let mae = 0, cur = 0;
   for(let i = fi; i < after.length; i++){

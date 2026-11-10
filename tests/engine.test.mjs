@@ -132,3 +132,13 @@ test('v1.11 PERSONAL FX jaisa: fill ke baad chhota TP, SL nahi, mae (sabse bura)
   const e2 = evaluatePfx({dir: 'SELL', entry: 1.2000, at: 0, exp: 60}, bars, 2 * 3600e3, pip, 25);
   assert.equal(e2.state, 'EXPIRED');
 });
+
+test('v1.11.1 PENDING kabhi done nahi — fillBy ke turant baad PENDING, phir EXPIRED', () => {
+  const m = 60000, sig = {dir: 'BUY', entry: 1.0, at: 0, exp: 60, sl: 0.99, tp: [1.01]};
+  const bars = [{t: 0, o: 1.01, h: 1.02, l: 1.005, c: 1.01}];
+  const a = evaluate(sig, bars, 65 * m, 0.0001);
+  assert.equal(a.state, 'PENDING'); assert.equal(a.done, false);
+  const b = evaluate(sig, bars, 75 * m, 0.0001);
+  assert.equal(b.state, 'EXPIRED'); assert.equal(b.done, true);
+  assert.equal(evaluatePfx(sig, bars, 65 * m, 0.0001, 25).done, false);
+});
