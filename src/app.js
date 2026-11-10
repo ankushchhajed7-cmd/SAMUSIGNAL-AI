@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot, aiCouncil} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.14.0';
+export const VERSION = '1.15.0';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -415,17 +415,28 @@ async function runAnalyze(sym = st.pair){
     const sig = analyze({b15: a.bars, b1h: b.bars, live, spec: SPECS[sym]});
     scanUI(2); await wait(350); scanUI(3); await wait(300); if(cancelled) return;
     const rec = Object.assign({id: 'r' + Date.now().toString(36), sym, tf: '15m', src: a.src, sent: [], res: null, ai: null}, sig);
-    if(act){ rec.preview = act.id; st.preview = rec }                       /* v1.4.1: pehla trade chaalu -> sirf preview */
-    else { rec.taken = {at: rec.at, px: rec.entry, auto: true}; st.hist.unshift(rec); saveHist() }   /* v1.3.0: apne aap trade record */
+    /* v1.15.0: ab apne aap paper trade NAHI — "✅ मैंने trade लिया" dabane par hi (ya 🚀 MT5 bhejne par) */
+    rec.preview = act ? act.id : 'NEW'; st.preview = rec;
     scanUI(4); await wait(200);
     $('scan').classList.remove('on');
-    if(!act) paperSync();
     openRes(rec.id); if(act) toast(busyMsg(act).replace('TP या SL आने तक नया नहीं', 'ये नया analysis History में नहीं जुड़ा'), 4500);
     runCouncil(rec, sig, a.bars, b.bars);
     if(LS.get('aiOn', true) && s.gKey) aiCheck(s, sym, sig, a.bars).then(ai => { rec.ai = ai; saveHist(); paperSync(); if(st.cur === rec.id) renderAi(rec) })
       .catch(e => { rec.ai = {err: e.message}; if(st.cur === rec.id) renderAi(rec) });
   }catch(e){ $('scan').classList.remove('on'); dlg('Analysis नहीं हुआ', esc(e.message), 'OK', '') }
   finally{ st.busy = false }
+}
+/* v1.15.0: ✅ मैंने trade लिया — preview ko paper trade bana do (us pal se gina jaayega) */
+async function takeTrade(id, viaMt5){
+  const r = st.preview && st.preview.id === id ? st.preview : null;
+  if(!r || r.preview !== 'NEW'){ if(!viaMt5) toast('ये signal पहले ही जुड़ चुका / पुराना है'); return false }
+  if(SPECS[r.sym]){ const act = await activeFor(r.sym); if(act){ r.preview = act.id; openRes(r.id); toast(busyMsg(act), 4500); return false } }
+  const now = Date.now();
+  delete r.preview; r.taken = {at: now, px: r.entry, by: viaMt5 ? 'mt5' : 'hand'};
+  r.at = now; r.expiresAt = now + (r.exp || 60) * 60000;   /* fill / nateeja dabane ke pal se */
+  st.hist.unshift(r); st.preview = null; saveHist(); paperSync();
+  if(st.cur === id) openRes(id);
+  toast(viaMt5 ? '✅ MT5 pe gaya — paper में भी जुड़ गया' : '✅ Paper trade में जुड़ गया'); return true;
 }
 async function fromShot(file){
   const s = K(); if(!s.gKey){ dlg('Gemini key नहीं', 'Screenshot पढ़ने के लिए SamuSignal में Gemini key चाहिए।', 'OK', ''); return }
@@ -444,7 +455,7 @@ async function fromShot(file){
       entry: r(entry), zone: (D > 0 ? [entry - w, entry] : [entry, entry + w]).map(r), sl: r(j.sl), tp: [r(j.tp1)], rr: '1 : 1', grade,
       buyPct: D > 0 ? 60 : 40, sellPct: D > 0 ? 40 : 60, regime: '—', danger: '—', live: r(cur), reasons: [String(j.reason || 'Screenshot analysis').slice(0, 160)],
       at: Date.now(), exp: 60, expiresAt: Date.now() + 3600e3, sent: [], taken: {at: Date.now(), px: r(entry), auto: true}, res: null, ai: null};
-    if(act){ rec.preview = act.id; delete rec.taken; st.preview = rec } else { st.hist.unshift(rec); saveHist(); paperSync() }
+    delete rec.taken; rec.preview = act ? act.id : 'NEW'; st.preview = rec;   /* v1.15.0 */
     $('scan').classList.remove('on'); openRes(rec.id);
   }catch(e){ $('scan').classList.remove('on'); dlg('Screenshot नहीं पढ़ा गया', esc(e.message), 'OK', '') }
 }
@@ -457,8 +468,11 @@ async function openRes(id){
   const S = r.sym, sp = SPECS[S];
   $('rMeta').innerHTML = `<b style="color:var(--tx);font-size:16px">${esc(sp ? sp.n : S)}</b> · ${esc(r.tf)} · ${istD(r.at)} ${ist(r.at)}`;
   $('resKind').innerHTML = r.sent.length ? '<span class="kind k-mt5">MT5</span>' : '';
-  const pv = r.preview ? st.hist.find(x => x.id === r.preview) : null;
-  $('rPrev').innerHTML = r.preview ? `<div class="card" style="margin:10px 18px 0;padding:10px 14px;border-color:rgba(232,195,90,0.6);font-size:12px;line-height:1.5"><b style="color:var(--gold)">👀 सिर्फ़ देखने के लिए</b> — ${esc(S ? (sp ? sp.n : S) : '')} पर ${pv ? ist(pv.at) + ' वाला' : 'पहला'} paper trade चालू है, इसलिए ये analysis History में नहीं जुड़ा। REAL पर लगाना हो तो नीचे <b>🚀 MT5 पे लगाओ</b>।${pv ? ` <a href="#" data-open="${pv.id}" style="color:var(--gold);font-weight:800">पहला trade देखें ›</a>` : ''}</div>` : '';
+  const pv = r.preview && r.preview !== 'NEW' ? st.hist.find(x => x.id === r.preview) : null;
+  $('rPrev').innerHTML = r.preview === 'NEW' ? `<div class="card" style="margin:10px 18px 0;padding:12px 14px;border-color:rgba(47,224,138,0.6);font-size:12px;line-height:1.5">
+<button class="btn gold" style="width:100%;height:48px;font-size:15px" data-take="${r.id}">✅ मैंने trade लिया</button>
+<div class="note" style="margin-top:8px">ये signal अभी <b>paper में नहीं</b> है। आपने trade लिया हो तो ऊपर दबाइए — तभी History / paper हिसाब में जुड़ेगा (entry · SL · TP यही)। 🚀 MT5 पे भेजने पर अपने आप जुड़ जाता है।</div></div>`
+    : r.preview ? `<div class="card" style="margin:10px 18px 0;padding:10px 14px;border-color:rgba(232,195,90,0.6);font-size:12px;line-height:1.5"><b style="color:var(--gold)">👀 सिर्फ़ देखने के लिए</b> — ${esc(S ? (sp ? sp.n : S) : '')} पर ${pv ? ist(pv.at) + ' वाला' : 'पहला'} paper trade चालू है, इसलिए ये analysis History में नहीं जुड़ा। REAL पर लगाना हो तो नीचे <b>🚀 MT5 पे लगाओ</b>।${pv ? ` <a href="#" data-open="${pv.id}" style="color:var(--gold);font-weight:800">पहला trade देखें ›</a>` : ''}</div>` : '';
   $('rCard').innerHTML = sigCard(r);
   $('rWhy').innerHTML = r.reasons.map(t => `<div style="display:flex;gap:8px"><span style="color:var(--gold)">◆</span>${esc(t)}</div>`).join('') +
     (r.src !== 'shot' ? `<div style="display:flex;gap:8px"><span style="color:var(--gold)">◆</span>Regime: ${esc(r.regime)} · Danger: ${esc(r.danger)} · Buy ${r.buyPct}% / Sell ${r.sellPct}%</div>` : '');
@@ -544,7 +558,7 @@ ${real ? '<div class="warn" style="margin-top:10px">💰 REAL account — अस
   try{
     const sent = await sendLimit(s, r, live, pick);
     sent.forEach(o => r.sent.push(Object.assign(o, {status: 'NEW', at: Date.now()})));
-    saveHist(); toast('✅ PERSONAL FX को भेज दिया'); openRes(r.id);
+    saveHist(); toast('✅ PERSONAL FX को भेज दिया'); if(r.preview === 'NEW') await takeTrade(r.id, true); else openRes(r.id);
     setTimeout(refreshOrders, 8000); setTimeout(refreshOrders, 25000);
   }catch(e){ dlg('नहीं भेजा', esc(e.message), 'OK', '') }
 }
@@ -859,7 +873,7 @@ function boot(){
   $('flWin').onclick = e => { const b = e.target.closest('[data-fw]'); if(b){ FL.win = +b.dataset.fw; LS.set('flWin', FL.win); flChips(); flRender() } };
   $('flSize').onclick = e => { const b = e.target.closest('[data-fz]'); if(b){ FL.size = b.dataset.fz === 'w' ? 'w' : +b.dataset.fz; LS.set('flSize', FL.size); flChips(); flRender() } };
   document.addEventListener('visibilitychange', () => { if(st.scr !== 'flow') return; if(document.hidden) flowStop(); else flowStart() });
-  document.body.addEventListener('click', e => { const o = e.target.closest('[data-open]'); if(o){ e.preventDefault(); openRes(o.dataset.open) } const c = e.target.closest('[data-council]'); if(c){ e.preventDefault(); openCouncil(c.dataset.council) } const cr = e.target.closest('[data-cretry]'); if(cr){ e.preventDefault(); retryCouncil(cr.dataset.cretry) } const ar = e.target.closest('[data-airetry]'); if(ar){ e.preventDefault(); retryAi(ar.dataset.airetry) } });
+  document.body.addEventListener('click', e => { const o = e.target.closest('[data-open]'); if(o){ e.preventDefault(); openRes(o.dataset.open) } const c = e.target.closest('[data-council]'); if(c){ e.preventDefault(); openCouncil(c.dataset.council) } const cr = e.target.closest('[data-cretry]'); if(cr){ e.preventDefault(); retryCouncil(cr.dataset.cretry) } const ar = e.target.closest('[data-airetry]'); if(ar){ e.preventDefault(); retryAi(ar.dataset.airetry) } const tk = e.target.closest('[data-take]'); if(tk){ e.preventDefault(); takeTrade(tk.dataset.take) } });
   $('resBack').onclick = () => { const r = getRec(st.cur); show(r && (r.preview || r.sym === st.pair) ? 'home' : 'his') };   /* v1.8.2: preview se ← = Home */
   $('bRe').onclick = () => { const r = getRec(st.cur); if(r && SPECS[r.sym]){ st.pair = r.sym; LS.set('pair', r.sym); runAnalyze(r.sym) } };
   $('bMt5').onclick = onMt5;
@@ -893,6 +907,10 @@ function boot(){
   }
   /* v1.2.0: user ke kehne par purani History ek baar saaf — ab se nayi shuruaat */
   if(!LS.get('reset120', false)){ st.hist = []; saveHist(); LS.set('reset120', true) }
+  /* v1.15.0: user (11 Nov): purana sara paper data hatao — aaj se naye 100 trade */
+  if(!LS.get('reset1150', false)){ st.hist = []; st.preview = null; saveHist(); LS.set('cLedger', {}); LS.set('mLedger', {}); LS.set('reset1150', true); LS.set('reset1150fb', false) }
+  if(!LS.get('reset1150fb', true)) (async () => { try{ const u = fbUrl(K(), 'samuai/paper'); if(!u) return;
+    const x = await fetch(u, {method: 'DELETE'}); if(x.ok) LS.set('reset1150fb', true) }catch(e){} })();
   pruneExpired();
   /* v1.8.3: TwelveData limit pe intezaar — screen pe saaf sandesh */
   TD_WAIT.cb = left => { const t = `⏳ TwelveData की 1 मिनट की limit — ${left} sec में`;

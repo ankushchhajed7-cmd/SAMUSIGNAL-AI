@@ -85,3 +85,7 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Jhootha breakout: `evaluateStop` (15m close wapas range me = EARLY bahar), tulna ke liye `res0` (bina jaldi bahar) aur `evaluateStopConfirm` (#3 candle close entry).
 - History: "🎯 Smart Order" dabba (kul, MARKET / STOP / LIMIT alag, jaldi bahar + bachaya $, candle-close tarika). Result screen line + "क्यों". Firebase paperRow `smart`.
 - 🚀 abhi LIMIT hi (Kadam 2 alag Final se).
+
+## v1.15.0 — "✅ मैंने trade लिया" (auto paper band) + data reset (11 Nov)
+- Analysis ab apne aap paper trade NAHI banata: rec.preview = 'NEW' (st.preview), Result screen pe bada "✅ मैंने trade लिया" button. Dabane par (ya 🚀 MT5 bhejne par apne aap) History + paper me judta hai; us pal se gina jaata hai (r.at = dabane ka samay, entry / SL / TP signal wale). Ek pair pe ek chalu trade ka niyam wahi.
+- Ek baar reset: phone ki History + cLedger / mLedger saaf, Firebase /samuai/paper DELETE (fail ho to agli baar dobara). User: "aaj se 100 trade ka data aane pe final karenge".
