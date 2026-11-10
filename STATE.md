@@ -79,3 +79,9 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Purane (bina SL) hisaab: jo $1.50 se zyada ulta gaya (DD) = SL maana (TP se pehle hi), v=2 nishaan.
 - History: net $, TP / SL ginti, jeet %, "86% se zyada jeet chahiye" note. Row: "🟦 P: SL −$1.50".
 - Point 1 (🚀 se MARKET) user ne NAHI chuna — 🚀 abhi LIMIT hi.
+
+## v1.14.0 — 🎯 Smart Order (SIRF PAPER, Kadam 1)
+- `smartOrder` (engine, analyze me): situation dekh ke STOP / MARKET / LIMIT + `why`. Niyam engine.js me upar likhe (STOP: 15m+1H+4H saath, tang range kinare, mazboot candle, London/NY, 0.25 ATR gap, 45 min; MARKET: tez trend, LIMIT 0.7 ATR door, bhaga nahi; baaki LIMIT).
+- Jhootha breakout: `evaluateStop` (15m close wapas range me = EARLY bahar), tulna ke liye `res0` (bina jaldi bahar) aur `evaluateStopConfirm` (#3 candle close entry).
+- History: "🎯 Smart Order" dabba (kul, MARKET / STOP / LIMIT alag, jaldi bahar + bachaya $, candle-close tarika). Result screen line + "क्यों". Firebase paperRow `smart`.
+- 🚀 abhi LIMIT hi (Kadam 2 alag Final se).

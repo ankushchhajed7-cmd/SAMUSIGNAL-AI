@@ -153,3 +153,32 @@ test('v1.13 PERSONAL FX jaisa + SL: $1.50 SL pehle aaya to SL (REAL Strategy 3)'
   assert.equal(t.state, 'TP');
   assert.equal(evaluatePfx(sig, bars, 4 * m, pip, 25).state, 'TP'); /* SL 0 = purana tarika */
 });
+
+import {smartOrder, evaluateStop, evaluateStopConfirm} from '../src/engine.js';
+const Q = 900e3, bk = (t, o, h, l, c) => ({t, o, h, l, c});
+test('v1.14 evaluateStop: breakout bhara -> TP; jhootha breakout -> 15m close wapas andar = EARLY; na bhare = EXPIRED', () => {
+  const s = {entry: 1.1010, sl: 1.0990, tp: 1.1030, exp: 45, range: {hi: 1.1005, lo: 1.0980}}, pip = 0.0001, m5 = 300e3;
+  const good = [bk(0, 1.1000, 1.1012, 1.0999, 1.1011), bk(m5, 1.1011, 1.1020, 1.1008, 1.1018), bk(2 * m5, 1.1018, 1.1032, 1.1015, 1.1030), bk(3 * m5, 1.1030, 1.1031, 1.1025, 1.1028)];
+  assert.equal(evaluateStop(s, 0, 'BUY', good, 4 * m5, pip).state, 'TP1');
+  const fake = [bk(0, 1.1000, 1.1012, 1.0999, 1.1008), bk(m5, 1.1008, 1.1009, 1.1000, 1.1003), bk(2 * m5, 1.1003, 1.1004, 1.0996, 1.1000), bk(Q, 1.1000, 1.1001, 1.0995, 1.0998)];
+  const f = evaluateStop(s, 0, 'BUY', fake, Q + m5, pip);
+  assert.equal(f.state, 'EARLY'); assert.ok(Math.abs(f.pips + 10) < 1e-6);            /* 1.1010 -> 1.1000 = -10 pip, SL -20 se kam */
+  assert.equal(evaluateStop(s, 0, 'BUY', fake, Q + m5, pip, {early: false}).state, 'OPEN');
+  const none = [bk(0, 1.1000, 1.1004, 1.0999, 1.1001), bk(Q * 4, 1.1001, 1.1003, 1.0999, 1.1000)];
+  assert.equal(evaluateStop(s, 0, 'BUY', none, Q * 5, pip).state, 'EXPIRED');
+});
+test('v1.14 evaluateStopConfirm: 15m candle range ke bahar band ho tab entry', () => {
+  const s = {entry: 1.1010, sl: 1.0990, tp: 1.1030, exp: 45, range: {hi: 1.1005, lo: 1.0980}}, pip = 0.0001, m5 = 300e3;
+  const bars = [bk(0, 1.1000, 1.1009, 1.0999, 1.1004), bk(m5, 1.1004, 1.1010, 1.1002, 1.1006), bk(2 * m5, 1.1006, 1.1012, 1.1005, 1.1009), bk(Q, 1.1009, 1.1035, 1.1008, 1.1034)];
+  const r = evaluateStopConfirm(s, 0, 'BUY', bars, Q + m5, pip);
+  assert.equal(r.entry, 1.1009); assert.equal(r.state, 'TP1');
+});
+test('v1.14 smartOrder: tez trend + LIMIT door = MARKET; bhaav bhaag chuka = LIMIT', () => {
+  const A = 0.0010, b = []; let p = 1.1000;
+  for(let i = 0; i < 41; i++){ const o = p; p += i % 2 ? -0.0003 : 0.0004;   /* RSI ~57, aakhri candle upar */ b.push(bk(i * Q, o, Math.max(o, p) + 0.0002, Math.min(o, p) - 0.0002, p)) }
+  const live = b[b.length - 1].c, base = {b15: b, b1h: [], live, A, dir: 1, al15: true, al1h: true, ax: 30, d: 5, now: Date.UTC(2026, 10, 10, 3)};
+  const m = smartOrder(Object.assign({}, base, {e21L: live - 0.5 * A, entry: live - 1.5 * A, sl: live - 3 * A, tp0: live}));
+  assert.equal(m.type, 'MARKET'); assert.ok(m.sl < live && m.tp > live);
+  const l = smartOrder(Object.assign({}, base, {e21L: live - 2 * A, entry: live - 1.5 * A, sl: live - 3 * A, tp0: live}));
+  assert.equal(l.type, 'LIMIT');
+});
