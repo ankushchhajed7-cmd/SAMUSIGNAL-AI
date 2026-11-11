@@ -102,3 +102,15 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 ## v1.17.0 — History: sirf TP + SL gine, EXPIRED chhupa (11 Nov)
 - SIGNALS = sirf TP + SL (7 din), neeche chhota "· N चालू" (PENDING / OPEN).
 - EXPIRED (entry nahi bhari) History list aur Home chart (lastSig) me nahi dikhta. Andar se tab tak rehta hai jab tak MARKET / Smart / PFX / Council hisaab poora na ho, phir pruneExpired (6h) apne aap delete — taaki paper stats sahi rahein.
+
+## v1.17.1 (branch feature-v1.17.1) — code review ke 3 bug fix + 3 chhote sudhaar (11 Nov)
+- **Bug: chalu (OPEN) trade "EXPIRED" ban jaata tha.** Har baar fill dobara dhoondha jaata tha; candles ki khidki (5-min pe ~25 ghante) fill se aage nikalte hi OPEN -> EXPIRED -> History se chhup jaata, jeet % galat, 🟦 PERSONAL FX ka 48h TIMEOUT kabhi nahi aata.
+  Ab `filledAt` yaad: engine `evaluate` / `evaluatePfx` / `evaluateStop` me `fillAt` (app `evalSym` deta hai — res, tres, pres, cres, sres, sres0, sres3 sab). PFX ka DD (`mae0`) aur Trail ka peak (`peak0`, sirf jab fill wali candle data se bahar ho) bhi bana rehta hai.
+- **Bug: 🚀 MT5 pe gaya order record se gayab.** "Sirf dekhne ke liye" (us pair pe pehla trade chalu) signal ko 🚀 bhejne par order jaata tha par History me nahi judta — reload pe status gayab. Ab 🚀 se gaya har order HAMESHA History me (`takeTrade(id, true)` active-trade rok nahi lagata). "✅ मैंने trade लिया" ka ek-pair-ek-trade niyam waisa hi.
+- **Bug: ⚡ MARKET / 🎯 Smart MARKET ka paper bhaav purana.** "✅ मैंने trade लिया" / 🚀 dabane ke pal ka live bhaav lekar entry wahan khiskaate hain, SL / TP ki doori wahi (`reMarket`, engine). LIMIT / STOP nahi chhedte. Bhaav na mile to jaisa tha.
+- Gemini: "band" maana gaya model ab 24 ghante baad dobara aazmaaya jaata hai (`gDeadAt`) — pehle hamesha ke liye hat jaata tha.
+- `npm test` me ab news ke tests bhi (kul 50: engine 20 + version 1 + flow 4 + news 20 + newsbrief 5).
+- `sw.js` shell me `news.html` + `src/news.js` / `newsrules.js` / `newsbrief.js` — NEWS page pehli baar se offline.
+- News page ka apna version 1.4.0 wahi (news code nahi chhua).
+### Pending
+- **Firebase suraksha (user ne abhi chhoda):** database URL public repo me hai aur app bina auth ke likhta hai — rules band + Auth (app me khaana hai; VPS ke EA me bhi wahi) karna baaki.

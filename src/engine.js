@@ -182,16 +182,18 @@ export function smartOrder(o){
 export function evaluateStop(s, at, dir, bars, now = Date.now(), pip = 0.0001, opt = {early: true}){
   const B = dir === 'BUY' ? 1 : -1, after = bars.filter(b => b.t >= at), fillBy = at + (s.exp || 45) * 60000, Q = 900e3;
   let fi = -1;
-  for(let i = 0; i < after.length; i++){
+  const known = +opt.fillAt || 0;   /* v1.17.1: pehle bhar chuka -> dobara fill mat dhoondo */
+  if(known){ fi = after.findIndex(b => b.t >= known); if(fi < 0) return {state: 'OPEN', done: false, filledAt: known} }
+  else for(let i = 0; i < after.length; i++){
     if(after[i].t > fillBy) break;
     if(B > 0 ? after[i].h >= s.entry : after[i].l <= s.entry){ fi = i; break }
   }
   if(fi < 0){ const ex = now > fillBy && (after.length && after[after.length - 1].t > fillBy || now - fillBy > 10 * 60000); return {state: ex ? 'EXPIRED' : 'PENDING', done: ex} }
-  const f0 = after[fi].t, edge = B > 0 ? s.range.hi : s.range.lo;
+  const f0 = known || after[fi].t, edge = B > 0 ? s.range.hi : s.range.lo;
   for(let i = fi; i < after.length; i++){
     const b = after[i];
     if(B > 0 ? b.l <= s.sl : b.h >= s.sl) return {state: 'SL', done: true, filledAt: f0, exitAt: b.t, pips: -Math.abs(s.entry - s.sl) / pip};
-    const hit = i === fi ? (B > 0 ? b.c >= s.tp : b.c <= s.tp) : (B > 0 ? b.h >= s.tp : b.l <= s.tp);
+    const hit = b.t === f0 ? (B > 0 ? b.c >= s.tp : b.c <= s.tp) : (B > 0 ? b.h >= s.tp : b.l <= s.tp);
     if(hit) return {state: 'TP1', done: true, filledAt: f0, exitAt: b.t, pips: Math.abs(s.tp - s.entry) / pip};
     const nx = after[i + 1];
     if(opt.early && nx && Math.floor(nx.t / Q) !== Math.floor(b.t / Q) && B * (b.c - edge) < 0)
@@ -221,21 +223,26 @@ export function evaluate(sig, bars, now = Date.now(), pip = 0.0001){
   const B = sig.dir === 'BUY' ? 1 : -1, after = bars.filter(b => b.t >= sig.at);
   const fillBy = sig.at + (sig.exp || VALID_MIN) * 60000;
   let fi = -1;
-  for(let i = 0; i < after.length; i++){
+  /* v1.17.1 bug fix: sig.fillAt = pehle bhar chuka (OPEN). Tab dobara fill nahi dhoondte — purani candles data se nikal jaayein
+     to bhi chalu trade "EXPIRED" nahi banta (pehle ban jaata tha aur History se chhup jaata tha). */
+  const known = +sig.fillAt || 0;
+  if(known){ fi = after.findIndex(b => b.t >= known); if(fi < 0) return {state: 'OPEN', done: false, filledAt: known} }
+  else for(let i = 0; i < after.length; i++){
     if(after[i].t > fillBy) break;
     if(B > 0 ? after[i].l <= sig.entry : after[i].h >= sig.entry){ fi = i; break }
   }
   if(fi < 0){ const ex = now > fillBy && (after.length && after[after.length - 1].t > fillBy || now - fillBy > 10 * 60000); return {state: ex ? 'EXPIRED' : 'PENDING', done: ex} }   /* v1.11.1: PENDING kabhi 'done' nahi (pehle atak jaata tha) */
+  const f0 = known || after[fi].t;
   /* v1.4.0: sirf TP1 — TP1 = jeet (band), SL = haar. Ek candle me dono = SL (savdhaan).
      Fill wali candle pe TP tabhi jab close bhi TP ke paar ho (high/low fill se pehle ho sakta hai). */
   const tp = sig.tp[0];
   for(let i = fi; i < after.length; i++){
     const b = after[i];
-    if(B > 0 ? b.l <= sig.sl : b.h >= sig.sl) return {state: 'SL', done: true, filledAt: after[fi].t, exitAt: b.t, pips: -Math.abs(sig.entry - sig.sl) / pip};
-    const hit = i === fi ? (B > 0 ? b.c >= tp : b.c <= tp) : (B > 0 ? b.h >= tp : b.l <= tp);
-    if(hit) return {state: 'TP1', done: true, filledAt: after[fi].t, exitAt: b.t, pips: Math.abs(tp - sig.entry) / pip};
+    if(B > 0 ? b.l <= sig.sl : b.h >= sig.sl) return {state: 'SL', done: true, filledAt: f0, exitAt: b.t, pips: -Math.abs(sig.entry - sig.sl) / pip};
+    const hit = b.t === f0 ? (B > 0 ? b.c >= tp : b.c <= tp) : (B > 0 ? b.h >= tp : b.l <= tp);
+    if(hit) return {state: 'TP1', done: true, filledAt: f0, exitAt: b.t, pips: Math.abs(tp - sig.entry) / pip};
   }
-  return {state: 'OPEN', done: false, filledAt: after[fi].t};
+  return {state: 'OPEN', done: false, filledAt: f0};
 }
 /* v1.11.0: 🟦 PERSONAL FX jaisa (REAL account ka niyam) — LIMIT ka fill wahi, phir TP chhota (tpPips, jaise $0.25), SL NAHI.
    mae = bhaav sabse zyada kitna ulta gaya (pips) = chhupa khatra. 48 ghante me TP na aaye to TIMEOUT (tab ka haal).
@@ -244,18 +251,21 @@ export function evaluate(sig, bars, now = Date.now(), pip = 0.0001){
 export function evaluatePfx(sig, bars, now = Date.now(), pip = 0.0001, tpPips = 2.5, slPips = 0){
   const B = sig.dir === 'BUY' ? 1 : -1, after = bars.filter(b => b.t >= sig.at), fillBy = sig.at + (sig.exp || VALID_MIN) * 60000;
   let fi = -1;
-  for(let i = 0; i < after.length; i++){
+  const known = +sig.fillAt || 0, en = sig.entry;   /* v1.17.1: pehle bhar chuka -> fill yaad; mae0 = ab tak ka sabse bura ulta */
+  let mae = +sig.mae0 || 0, cur = 0;
+  if(known){ fi = after.findIndex(b => b.t >= known);
+    if(fi < 0) return now - known > 48 * 3600e3 ? {state: 'TIMEOUT', done: true, filledAt: known, mae, pips: +sig.cur0 || 0} : {state: 'OPEN', done: false, filledAt: known, mae, pips: +sig.cur0 || 0} }
+  else for(let i = 0; i < after.length; i++){
     if(after[i].t > fillBy) break;
     if(B > 0 ? after[i].l <= sig.entry : after[i].h >= sig.entry){ fi = i; break }
   }
   if(fi < 0){ const ex = now > fillBy && (after.length && after[after.length - 1].t > fillBy || now - fillBy > 10 * 60000); return {state: ex ? 'EXPIRED' : 'PENDING', done: ex} }   /* v1.11.1: PENDING kabhi 'done' nahi (pehle atak jaata tha) */
-  const en = sig.entry, f0 = after[fi].t;
-  let mae = 0, cur = 0;
+  const f0 = known || after[fi].t;
   for(let i = fi; i < after.length; i++){
     const b = after[i];
     mae = Math.max(mae, (B > 0 ? en - b.l : b.h - en) / pip);
     if(slPips > 0 && mae >= slPips) return {state: 'SL', done: true, filledAt: f0, exitAt: b.t, mae: slPips, pips: -slPips};
-    const best = i === fi ? (B > 0 ? b.c - en : en - b.c) / pip : (B > 0 ? b.h - en : en - b.l) / pip;
+    const best = b.t === f0 ? (B > 0 ? b.c - en : en - b.c) / pip : (B > 0 ? b.h - en : en - b.l) / pip;
     if(best >= tpPips) return {state: 'TP', done: true, filledAt: f0, exitAt: b.t, mae, pips: tpPips};
     cur = (B > 0 ? b.c - en : en - b.c) / pip;
   }
@@ -273,11 +283,14 @@ export function evaluateTrail(sig, bars, now = Date.now(), pip = 0.0001, tr = {s
   if(!base.filledAt) return {state: base.state, done: base.done};
   const B = sig.dir === 'BUY' ? 1 : -1, e = sig.entry, tpP = Math.abs(sig.tp[0] - e) / pip, slP = Math.abs(e - sig.sl) / pip;
   const after = bars.filter(b => b.t >= base.filledAt);
-  let peak = 0, lock = null;
+  /* v1.17.1: peak0 = pehle ka sabse upar — SIRF tab jab fill wali candle data se nikal chuki ho (warna poora hisaab candles se hi) */
+  const lost = !bars.length || bars[0].t > base.filledAt;
+  let peak = lost ? +sig.peak0 || 0 : 0, lock = null;
+  if(peak >= tr.start) lock = tr.lock + Math.floor((peak - tr.start) / tr.step + 1e-9) * tr.step;
   for(let i = 0; i < after.length; i++){
     const b = after[i];
     const worst = (B > 0 ? b.l - e : e - b.h) / pip;                       /* is candle ka sabse bura munafa (pips) */
-    const best = i === 0 ? (B > 0 ? b.c - e : e - b.c) / pip : (B > 0 ? b.h - e : e - b.l) / pip;
+    const best = b.t === base.filledAt ? (B > 0 ? b.c - e : e - b.c) / pip : (B > 0 ? b.h - e : e - b.l) / pip;
     if(lock !== null && worst <= lock) return {state: 'LOCK', done: true, filledAt: base.filledAt, exitAt: b.t, pips: lock, peak};
     if(lock === null && worst <= -slP) return {state: 'SL', done: true, filledAt: base.filledAt, exitAt: b.t, pips: -slP, peak};
     if(best >= tpP) return {state: 'TP1', done: true, filledAt: base.filledAt, exitAt: b.t, pips: tpP, peak: Math.max(peak, best)};
@@ -316,4 +329,15 @@ export function councilPlan(j, ctx){
     view: views.includes(String(b && b.view || '').toUpperCase()) ? String(b.view).toUpperCase() : 'WAIT', note: String(b && b.note || '').slice(0, 160)}));
   return {dir, order, entry: rd(entry), sl: rd(sl), tp: rd(tp), conf: Math.max(0, Math.min(100, Math.round(+f.confidence || 0))),
     summary: String(f.summary || '').slice(0, 300), bots, debate: (Array.isArray(j.debate) ? j.debate : []).slice(0, 4).map(x => String(x).slice(0, 200)), fixed};
+}
+
+/* v1.17.1: "✅ मैंने trade लिया" dabane ke pal ka bhaav — ⚡ MARKET / 🎯 Smart MARKET ki entry wahan khiskao, SL / TP ki doori wahi.
+   (Pehle analysis ke samay ka purana bhaav rehta tha -> der se dabane par paper nateeja galat.) */
+export function reMarket(r, live, d = 5){
+  if(!(live > 0)) return r;
+  const B = r.dir === 'BUY' ? 1 : -1, f = v => +(+v).toFixed(d);
+  const mv = m => { const risk = Math.abs(m.entry - m.sl), rew = Math.abs(m.tp - m.entry); m.entry = f(live); m.sl = f(live - B * risk); m.tp = f(live + B * rew) };
+  if(r.mkt && isFinite(r.mkt.entry)) mv(r.mkt);
+  if(r.smart && r.smart.type === 'MARKET') mv(r.smart);
+  return r;
 }
