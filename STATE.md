@@ -98,3 +98,7 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 
 ## v1.16.1 — ANALYZE gola neeche kat raha tha
 - Gola (span.c) 14px upar, ring path radius 43 -> 40, letter-spacing 2.6px, svg overflow visible — akshar ab screen ke neeche nahi katte, History label se bhi door.
+
+## v1.17.0 — History: sirf TP + SL gine, EXPIRED chhupa (11 Nov)
+- SIGNALS = sirf TP + SL (7 din), neeche chhota "· N चालू" (PENDING / OPEN).
+- EXPIRED (entry nahi bhari) History list aur Home chart (lastSig) me nahi dikhta. Andar se tab tak rehta hai jab tak MARKET / Smart / PFX / Council hisaab poora na ho, phir pruneExpired (6h) apne aap delete — taaki paper stats sahi rahein.
