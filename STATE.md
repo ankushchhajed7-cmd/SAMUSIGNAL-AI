@@ -114,3 +114,18 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - News page ka apna version 1.4.0 wahi (news code nahi chhua).
 ### Pending
 - **Firebase suraksha (user ne abhi chhoda):** database URL public repo me hai aur app bina auth ke likhta hai — rules band + Auth (app me khaana hai; VPS ke EA me bhi wahi) karna baaki.
+
+## v1.18.0 (branch feature-v1.18.0) — 🟦🎯 Smart entry + REAL niyam (SIRF PAPER) (11 Nov)
+- Sawaal (user): market ke hisaab se LIMIT / STOP / MARKET dena sahi hai kya — jabki REAL me LIMIT pe ~95% jeet (4–11 Nov, ~35 TP / 1 SL, BTC chhod kar).
+  Faisla: REAL aur 🚀 button **LIMIT hi** (kuch nahi badla). Paper me barabari ki tulna chahiye thi: Smart Order ka purana hisaab 1R TP se tha, REAL niyam $0.25 TP / $1.50 SL hai — jeet % ki tulna galat thi.
+- Naya: jahan Smart ne **MARKET / STOP** chuna, wahan usi entry par REAL niyam ka paper (`r.spres`): MARKET = signal ke pal bhara, STOP = bhaav entry ko aage ki taraf chhue tab (45 min), phir $0.25 TP / $1.50 SL, 48h TIMEOUT.
+  Engine `evaluatePfx` me `sig.stop` (STOP jaisa fill; fill wali candle ka DD sirf close se). LIMIT wale Smart ka yahi hisaab pehle se `r.pres` hai.
+- History: naya dabba "🟦🎯 Smart entry + REAL नियम" — ⚡ MARKET aur 🚀 STOP alag, har ek me **usi signal par** "MARKET / STOP se" vs "wahi LIMIT se" (net $, TP / SL, %, nahi bhara, chalu). `pfxStat` (engine).
+- Result screen: Smart Order line ke neeche "🟦 REAL नियम ($0.25 / $1.50) इसी entry पर: …". Firebase paperRow `smart.pfx`.
+- Spread / slippage shamil NAHI — asal me MARKET / STOP thoda kam kamaenge (dabbe me likha hai).
+- Bug fix: 🟦 PERSONAL FX jaisa hisaab (pres / spres) 48 ghante baad "chalu" atka reh jaata tha (jaanch 48h par band, TIMEOUT 48h ke baad) — ab `refreshResults` 48h par TIMEOUT / EXPIRED laga deta hai. (v1.17.1 ke note me "48h TIMEOUT ab aayega" isi se poora hua.)
+- Tests: kul 52.
+### Pending
+- Kam se kam 20–30 MARKET + STOP signal jama hone par tulna dekh kar faisla (100 trade wale review ke saath). Tab tak REAL = LIMIT.
+- Spread ko hisaab me jodna (MT5 feed ke `sp` ki unit pakki karke).
+- Firebase suraksha (rules + Auth) — abhi bhi baaki.

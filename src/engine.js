@@ -255,15 +255,17 @@ export function evaluatePfx(sig, bars, now = Date.now(), pip = 0.0001, tpPips = 
   let mae = +sig.mae0 || 0, cur = 0;
   if(known){ fi = after.findIndex(b => b.t >= known);
     if(fi < 0) return now - known > 48 * 3600e3 ? {state: 'TIMEOUT', done: true, filledAt: known, mae, pips: +sig.cur0 || 0} : {state: 'OPEN', done: false, filledAt: known, mae, pips: +sig.cur0 || 0} }
+  /* v1.18.0: sig.stop = STOP order (breakout) — bhaav entry ko AAGE ki taraf chhue tab bharta hai (BUY: high >= entry).
+     Fill wali candle me ulta (DD) sirf close se (us candle ka low / high fill se pehle ka hota hai). */
   else for(let i = 0; i < after.length; i++){
     if(after[i].t > fillBy) break;
-    if(B > 0 ? after[i].l <= sig.entry : after[i].h >= sig.entry){ fi = i; break }
+    if(sig.stop ? (B > 0 ? after[i].h >= en : after[i].l <= en) : (B > 0 ? after[i].l <= en : after[i].h >= en)){ fi = i; break }
   }
   if(fi < 0){ const ex = now > fillBy && (after.length && after[after.length - 1].t > fillBy || now - fillBy > 10 * 60000); return {state: ex ? 'EXPIRED' : 'PENDING', done: ex} }   /* v1.11.1: PENDING kabhi 'done' nahi (pehle atak jaata tha) */
   const f0 = known || after[fi].t;
   for(let i = fi; i < after.length; i++){
     const b = after[i];
-    mae = Math.max(mae, (B > 0 ? en - b.l : b.h - en) / pip);
+    mae = Math.max(mae, sig.stop && b.t === f0 ? Math.max(0, (B > 0 ? en - b.c : b.c - en) / pip) : (B > 0 ? en - b.l : b.h - en) / pip);
     if(slPips > 0 && mae >= slPips) return {state: 'SL', done: true, filledAt: f0, exitAt: b.t, mae: slPips, pips: -slPips};
     const best = b.t === f0 ? (B > 0 ? b.c - en : en - b.c) / pip : (B > 0 ? b.h - en : en - b.l) / pip;
     if(best >= tpPips) return {state: 'TP', done: true, filledAt: f0, exitAt: b.t, mae, pips: tpPips};
@@ -340,4 +342,12 @@ export function reMarket(r, live, d = 5){
   if(r.mkt && isFinite(r.mkt.entry)) mv(r.mkt);
   if(r.smart && r.smart.type === 'MARKET') mv(r.smart);
   return r;
+}
+
+/* v1.18.0: REAL niyam ka jod — L = records, k = 'pres' (LIMIT entry) ya 'spres' (Smart entry) */
+export function pfxStat(L, k, tpUsd = 0.25, slUsd = 1.50){
+  const P = L.map(r => r[k]).filter(Boolean), F = P.filter(p => p.filledAt), n = s => F.filter(p => p.state === s).length;
+  const tp = n('TP'), sl = n('SL'), to = F.filter(p => p.state === 'TIMEOUT');
+  return {n: L.length, tp, sl, open: n('OPEN'), nf: P.filter(p => p.state === 'EXPIRED').length, to: to.length,
+    usd: +(tp * tpUsd - sl * slUsd + to.reduce((t, p) => t + (p.usd || 0), 0)).toFixed(2), pc: tp + sl ? Math.round(tp / (tp + sl) * 100) : 0};
 }
