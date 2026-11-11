@@ -61,6 +61,21 @@ async function feedBars(s, sym, tf){
   return out;
 }
 
+/* v1.16.0: 📋 Scanner — ek tf ki SAARE pair ki band candles ek hi fetch me (MT5 feed) + bann rahi candle live se */
+export async function feedAllBars(s, tf){
+  const r = await fetch(fbUrl(s, 'feed/bars/' + tf), {cache: 'no-store'});
+  if(!r.ok) throw new Error('feed bars HTTP ' + r.status);
+  const j = (await r.json()) || {}, L = await feedLive(s).catch(() => ({})), out = {};
+  Object.entries(j).forEach(([k, str]) => {
+    if(typeof str !== 'string' || !str) return;
+    const b = str.split(';').map(x => { const v = x.split(',').map(Number); return {t: v[0] * 1000, o: v[1], h: v[2], l: v[3], c: v[4]} }).filter(x => x.c > 0);
+    const f = L[k] && L[k].f && L[k].f[tf];
+    if(f && b.length && f[0] * 1000 > b[b.length - 1].t) b.push({t: f[0] * 1000, o: f[1], h: f[2], l: f[3], c: f[4]});
+    out[k] = {bars: b, live: L[k] && L[k].b > 0 ? L[k].b : (b.length ? b[b.length - 1].c : 0)};
+  });
+  return out;
+}
+
 /* ---------------- TwelveData ---------------- */
 const TD = {cache: {}, q: {}};   /* v1.8.2: q = har pair ka alag cache {sym: {t, d}} */
 /* v1.8.3: TwelveData free = 8 credit / minute. Ab ek minute me 7 se zyada nahi (apna hisaab).
