@@ -1,12 +1,12 @@
 /* SAMUSIGNAL AI — personal app. SamuSignal ki keys + MT5 feed + PERSONAL FX bridge. */
 import {SPECS, PAIRS, fmt, fmtS, fromName, pipUsd} from './symbols.js';
 import {LS, keys, feedStatus, series, quotes, fbUrl, TD_WAIT, feedAllBars} from './data.js';
-import {analyze, evaluate, evaluateMarket, evaluateTrail, evaluatePfx, evaluateStop, evaluateStopConfirm, councilPlan, reMarket, ema, atr as atrOf, rsi, adx, macdHist, trendScore, isWin, isLoss} from './engine.js';
+import {analyze, evaluate, evaluateMarket, evaluateTrail, evaluatePfx, evaluateStop, evaluateStopConfirm, councilPlan, reMarket, pfxStat, ema, atr as atrOf, rsi, adx, macdHist, trendScore, isWin, isLoss} from './engine.js';
 import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot, aiCouncil} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.17.1';
+export const VERSION = '1.18.0';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -231,9 +231,10 @@ function rates0(){ const o = {}; Object.keys(st.q).forEach(k => { if(st.q[k] && 
 /* v1.11.0: 🟦 PERSONAL FX jaisa — $0.25 TP (0.01 lot), SL nahi */
 const PFX = {usd: 0.25, sl: 1.50, lot: 0.01, v: 2};   /* v1.13.0: REAL Strategy 3 jaisa — TP $0.25, SL $1.50 */
 const pfxPu = sym => pipUsd(sym, PFX.lot, rates0()) || 0.1;
-function pUsd(r){
-  const p = r.pres; if(!p || !p.filledAt) return;
-  const pu = pfxPu(r.sym); p.dd = +((p.mae || 0) * pu).toFixed(2); p.usd = p.state === 'TP' ? PFX.usd : p.state === 'SL' ? -PFX.sl : +((p.pips || 0) * pu).toFixed(2); p.v = PFX.v;
+const pUsd = r => pfxUsd(r.pres, r.sym);
+function pfxUsd(p, sym){   /* v1.18.0: pres (LIMIT) aur spres (Smart entry) dono ke liye */
+  if(!p || !p.filledAt) return;
+  const pu = pfxPu(sym); p.dd = +((p.mae || 0) * pu).toFixed(2); p.usd = p.state === 'TP' ? PFX.usd : p.state === 'SL' ? -PFX.sl : +((p.pips || 0) * pu).toFixed(2); p.v = PFX.v;
   p.mins = p.exitAt ? Math.max(1, Math.round((p.exitAt - p.filledAt) / 60000)) : null;
 }
 /* v1.14.0: 🎯 Smart Order (paper) ka $ — EARLY (jaldi bahar) bhi band nateeja */
@@ -397,13 +398,18 @@ async function evalSym(sym, recs){
             r.sres3 = Object.assign(evaluateMarket({entry: p3.entry, sl: p3.entry - B * risk, tp: p3.entry + B * risk}, p3.filledAt, r.dir, d.bars, pip), {filledAt: p3.filledAt, entry: p3.entry}) }
           else r.sres3 = evaluateStopConfirm(s, r.at, r.dir, d.bars, now, pip) } }
       sUsd(r) }
+    /* v1.18.0: 🟦🎯 Smart ki STOP / MARKET entry par REAL niyam ($0.25 TP / $1.50 SL) — LIMIT wale ka yahi hisaab r.pres hai */
+    if(r.smart && r.smart.type !== 'LIMIT' && !(r.spres && r.spres.done)){ const s = r.smart;
+      const q = {dir: r.dir, entry: s.entry, at: r.at, exp: s.exp || 45, mae0: (r.spres && r.spres.mae) || 0, cur0: (r.spres && r.spres.pips) || 0};
+      if(s.type === 'MARKET') q.fillAt = r.at; else { q.stop = true; q.fillAt = fa(r.spres) }
+      r.spres = evaluatePfx(q, d.bars, now, SPECS[sym].pip, PFX.usd / pfxPu(sym), PFX.sl / pfxPu(sym)); pfxUsd(r.spres, sym) }
     if(!(r.pres && r.pres.done)){ r.pres = evaluatePfx(Object.assign({}, r, {fillAt: fa(r.pres), mae0: (r.pres && r.pres.mae) || 0, cur0: (r.pres && r.pres.pips) || 0}), d.bars, now, SPECS[sym].pip, PFX.usd / pfxPu(sym), PFX.sl / pfxPu(sym)); pUsd(r) }   /* v1.11.0 / v1.13.0 SL */
     if(!(r.tres && r.tres.done)){ r.tres = evaluateTrail(Object.assign({}, r, {tp: r.tp.slice(0, 1), fillAt: fa(r.tres) || fa(r.res), peak0: (r.tres && r.tres.peak) || 0}), d.bars, now, SPECS[sym].pip, trailPips(sym)); tUsd(r) }
     const c = r.council; if(c && c.dir && !(r.cres && r.cres.done)){                    /* v1.9.0: 🧠 Council ka nateeja */
       r.cres = c.order === 'MARKET' ? evaluateMarket(c, c.at, c.dir, d.bars, SPECS[sym].pip) : evaluate({dir: c.dir, entry: c.entry, sl: c.sl, tp: [c.tp], at: c.at, exp: 60, fillAt: fa(r.cres)}, d.bars, now, SPECS[sym].pip); cUsd(r) } });
 }
 async function activeFor(sym){
-  const todo = st.hist.filter(r => r.sym === sym && (!(r.res && r.res.done) || (r.mkt && !(r.mres && r.mres.done)) || !(r.tres && r.tres.done) || (r.council && r.council.dir && !(r.cres && r.cres.done)) || !(r.pres && r.pres.done) || (r.smart && !(r.sres && r.sres.done))) && Date.now() - r.at < 48 * 3600e3);
+  const todo = st.hist.filter(r => r.sym === sym && (!(r.res && r.res.done) || (r.mkt && !(r.mres && r.mres.done)) || !(r.tres && r.tres.done) || (r.council && r.council.dir && !(r.cres && r.cres.done)) || !(r.pres && r.pres.done) || (r.smart && !(r.sres && r.sres.done)) || (r.smart && r.smart.type !== 'LIMIT' && !(r.spres && r.spres.done))) && Date.now() - r.at < 48 * 3600e3);
   if(todo.length && SPECS[sym]){ try{ await evalSym(sym, todo); saveHist() }catch(e){} }
   return st.hist.find(r => r.sym === sym && isActive(r)) || null;
 }
@@ -596,6 +602,11 @@ function renderAi(r){
   if(a.err){ el.innerHTML = `<div class="card" style="margin:12px 18px 0;padding:12px 14px;display:flex;align-items:center;gap:10px"><span class="note" style="flex:1">🤖 AI check नहीं हुआ: ${esc(a.err.slice(0, 90))}</span>${r.src !== 'shot' && SPECS[r.sym] ? `<button class="btn out" style="flex:none;padding:8px 12px;font-size:13px" data-airetry="${r.id}">🔄 दोबारा</button>` : ''}</div>`; return }
   el.innerHTML = `<div class="ai-box"><div style="display:flex;align-items:center;gap:10px"><span style="font-size:22px">🤖</span><b class="v" style="color:${a.agree ? 'var(--up)' : 'var(--dn2)'}">AI ${a.agree ? 'सहमत' : 'असहमत'} · ${a.conf}%</b></div><div class="why">${aiHi(a.reason)}</div></div>`;
 }
+/* v1.18.0: Smart entry + REAL niyam ka ek line nateeja */
+function spTxt(p){
+  const s = p.state, c = s === 'TP' ? 'var(--up)' : s === 'SL' ? 'var(--dn2)' : 'var(--gold)';
+  return `<b style="color:${c}">${s === 'TP' ? '✅ TP +$' + PFX.usd.toFixed(2) + ' · ' + (p.mins || 1) + ' min' : s === 'SL' ? '🔴 SL −$' + PFX.sl.toFixed(2) : s === 'TIMEOUT' ? '⏱ 48h · ' + usdTxt(p.usd || 0) : s === 'EXPIRED' ? '⌛ नहीं भरा' : s === 'OPEN' ? '🟢 चालू' : '⏳ इंतज़ार'}</b>`;
+}
 function renderStatus(r){
   const box = $('rStatus');
   const rows = r.sent.map(o => { const s = ORDER_ST[o.status || 'NEW'] || [o.status, 'mu'];
@@ -610,7 +621,7 @@ function renderStatus(r){
   const tr = r.tres && r.tres.filledAt ? `<div class="sr" style="flex-wrap:wrap">🔒 Trail नियम से <span class="note">(हिसाब)</span><em><b style="color:${isWin(ts) ? 'var(--up)' : isLoss(ts) ? 'var(--dn2)' : 'var(--gold)'}">${ts === 'LOCK' ? '🔒 LOCK · ' + usdTxt(tUsd(r)) : isWin(ts) ? '✅ TP hit · ' + usdTxt(tUsd(r)) : isLoss(ts) ? '🔴 SL hit · ' + usdTxt(tUsd(r)) : '🟢 चालू'}</b>${ts === 'OPEN' && pu ? `<br><span class="note">सबसे ऊपर ${usdTxt((r.tres.peak || 0) * pu)}${r.tres.lock ? ' · lock ' + usdTxt(r.tres.lock * pu) : ' · lock $0.50 पर शुरू'}</span>` : ''}</em></div>` : '';
   const sm = r.smart, ss = r.sres && r.sres.state, TI = {MARKET: '⚡ MARKET', STOP: '🚀 STOP', LIMIT: '📌 LIMIT'};
   const so = sm ? `<div class="sr" style="flex-wrap:wrap">🎯 Smart Order <span class="note">(paper)</span><em><b>${TI[sm.type]} ${r.dir}</b> @ ${fmtS(r.sym, sm.entry)} · SL ${fmtS(r.sym, sm.sl)} · TP ${fmtS(r.sym, sm.tp)}<br>
-<span class="note">क्यों: ${esc(sm.why.join(' · '))}</span><br><b style="color:${ss === 'TP1' ? 'var(--up)' : ss === 'SL' ? 'var(--dn2)' : ss === 'EARLY' ? 'var(--gold)' : 'var(--mu)'}">${ss === 'TP1' ? '✅ TP · ' + usdTxt(r.sres.usd || 0) : ss === 'SL' ? '🔴 SL · ' + usdTxt(r.sres.usd || 0) : ss === 'EARLY' ? '↩ झूठा breakout — जल्दी बाहर · ' + usdTxt(r.sres.usd || 0) : ss === 'EXPIRED' ? '⌛ नहीं भरा' : ss === 'OPEN' ? '🟢 चालू' : '⏳ इंतज़ार'}</b></em></div>` : '';
+<span class="note">क्यों: ${esc(sm.why.join(' · '))}</span><br><b style="color:${ss === 'TP1' ? 'var(--up)' : ss === 'SL' ? 'var(--dn2)' : ss === 'EARLY' ? 'var(--gold)' : 'var(--mu)'}">${ss === 'TP1' ? '✅ TP · ' + usdTxt(r.sres.usd || 0) : ss === 'SL' ? '🔴 SL · ' + usdTxt(r.sres.usd || 0) : ss === 'EARLY' ? '↩ झूठा breakout — जल्दी बाहर · ' + usdTxt(r.sres.usd || 0) : ss === 'EXPIRED' ? '⌛ नहीं भरा' : ss === 'OPEN' ? '🟢 चालू' : '⏳ इंतज़ार'}</b>${sm.type !== 'LIMIT' && r.spres ? '<br><span class="note">🟦 REAL नियम ($0.25 / $1.50) इसी entry पर:</span> ' + spTxt(r.spres) : ''}</em></div>` : '';
   box.innerHTML = rows || tk || res || mk || tr || so ? `<div class="card" style="margin:12px 18px 0">${rows}${tk}${res}${tr}${so}${mk}</div>` : '';
 }
 async function refreshOrders(){
@@ -657,7 +668,7 @@ ${real ? '<div class="warn" style="margin-top:10px">💰 REAL account — अस
 /* ---------------- HISTORY ---------------- */
 async function refreshResults(){
   const s = K(), now = Date.now();
-  const todo = st.hist.filter(r => SPECS[r.sym] && (!(r.res && r.res.done) || (r.mkt && !(r.mres && r.mres.done)) || !(r.tres && r.tres.done) || (r.council && r.council.dir && !(r.cres && r.cres.done)) || !(r.pres && r.pres.done) || (r.smart && !(r.sres && r.sres.done))) && now - r.at < 48 * 3600e3);
+  const todo = st.hist.filter(r => SPECS[r.sym] && (!(r.res && r.res.done) || (r.mkt && !(r.mres && r.mres.done)) || !(r.tres && r.tres.done) || (r.council && r.council.dir && !(r.cres && r.cres.done)) || !(r.pres && r.pres.done) || (r.smart && !(r.sres && r.sres.done)) || (r.smart && r.smart.type !== 'LIMIT' && !(r.spres && r.spres.done))) && now - r.at < 48 * 3600e3);
   const syms = [...new Set(todo.map(r => r.sym))].slice(0, (await feedStatus(s)).ok ? 12 : 3);
   for(const sym of syms){
     try{ await evalSym(sym, todo.filter(r => r.sym === sym)) }catch(e){}
@@ -665,6 +676,9 @@ async function refreshResults(){
   /* v1.8.2 bug fix: 48 ghante baad bhi band nahi hua — bhara hua (OPEN) trade ab "EXPIRED" nahi (warna 6 ghante me History se hat jaata), "TIMEOUT" */
   st.hist.filter(r => !(r.res && r.res.done) && now - r.at >= 48 * 3600e3).forEach(r => { const open = r.res && r.res.state === 'OPEN';
     r.res = Object.assign({}, r.res || {}, {state: open ? 'TIMEOUT' : 'EXPIRED', done: true}) });
+  /* v1.18.0 bug fix: 🟦 PERSONAL FX jaisa hisaab 48 ghante baad bhi "chalu" atka rehta tha (jaanch 48h pe band, TIMEOUT 48h ke baad) — ab yahin band */
+  st.hist.filter(r => now - r.at >= 48 * 3600e3).forEach(r => ['pres', 'spres'].forEach(k => { const p = r[k]; if(!p || p.done) return;
+    if(p.filledAt){ p.state = 'TIMEOUT'; p.done = true; pfxUsd(p, r.sym) } else { p.state = 'EXPIRED'; p.done = true } }));
   saveHist(); await refreshOrders(); await paperSync(); pruneExpired();
 }
 function renderHis(){
@@ -703,6 +717,13 @@ ${gS.n ? `<br><span class="note">STOP: झूठे breakout पर जल्द
 <b style="color:${pNet >= 0 ? 'var(--up)' : 'var(--dn2)'}">${usdTxt(pNet)}</b> <span class="note">· ${PT.length} TP / ${PS.length} SL${pDone ? ' · ' + Math.round(PT.length / pDone * 100) + '% जीत' : ''} · औसत TP ${pAvg} min</span><br>
 <span class="note">सबसे बुरा उल्टा (TP से पहले):</span> <b style="color:${pMax >= PFX.sl ? 'var(--dn2)' : 'var(--gold)'}">−$${pMax.toFixed(2)}</b>${PO.length ? ` <span class="note">· अभी ${PO.length} खुले (${usdTxt(+pOpen.toFixed(2))})</span>` : ''}${PX.length ? ` <span class="note">· 48h: ${PX.length}</span>` : ''}
 <div class="note" style="font-size:10px">$0.25 जीतकर $1.50 का SL भरने के लिए ~86% से ज़्यादा जीत चाहिए। Spread / grid शामिल नहीं।</div></div>`;
+  /* v1.18.0: 🟦🎯 Smart ki STOP / MARKET entry + REAL niyam, usi signal ke LIMIT se tulna */
+  const cmp = (ic, t) => { const L = st.hist.filter(r => r.smart && r.smart.type === t && r.spres); if(!L.length) return `<br><span class="note">${ic}: अभी कोई signal नहीं</span>`;
+    const a = pfxStat(L, 'spres', PFX.usd, PFX.sl), b = pfxStat(L, 'pres', PFX.usd, PFX.sl), col = v => v >= 0 ? 'var(--up)' : 'var(--dn2)';
+    const ln = (nm, g) => `<br><span class="note">&nbsp;&nbsp;${nm}:</span> <b style="color:${col(g.usd)}">${usdTxt(g.usd)}</b> <span class="note">· ${g.tp} TP / ${g.sl} SL${g.tp + g.sl ? ' · ' + g.pc + '%' : ''}${g.nf ? ' · ' + g.nf + ' नहीं भरा' : ''}${g.open ? ' · ' + g.open + ' चालू' : ''}</span>`;
+    return `<br><b>${ic} · ${L.length} signal</b>${ln(t + ' से', a)}${ln('वही LIMIT से', b)}` };
+  $('stBal').innerHTML += `<div style="margin-top:8px;font-size:12px;line-height:1.6" class="mono"><span class="lbl">🟦🎯 Smart entry + REAL नियम ($0.25 TP · $1.50 SL)</span>${cmp('⚡ MARKET', 'MARKET')}${cmp('🚀 STOP', 'STOP')}
+<div class="note" style="font-size:10px">सिर्फ़ वो signal जहाँ Smart ने MARKET / STOP चुना — दोनों तरीक़ों का नतीजा उसी signal पर। Spread / slippage शामिल नहीं: असल में MARKET / STOP थोड़ा कम कमाएँगे।</div></div>`;
   const CL = Object.values(LS.get('cLedger', {})), cp = +CL.reduce((t, x) => t + x.usd, 0).toFixed(2), cw = CL.filter(x => x.win).length;
   $('stBal').innerHTML += `<div style="margin-top:8px;font-size:12px;line-height:1.6" class="mono"><span class="lbl">🧠 AI Council का फ़ैसला (हिसाब)</span><br>
 <b style="color:${cp >= 0 ? 'var(--up)' : 'var(--dn2)'}">${usdTxt(cp)}</b> <span class="note">· ${CL.length} trade · ${CL.length ? Math.round(cw / CL.length * 100) : 0}% जीत</span></div>`;
@@ -804,7 +825,8 @@ const paperRow = r => ({id: r.id, sym: r.sym, dir: r.dir, entry: r.entry, sl: r.
   smart: r.smart ? {type: r.smart.type, entry: r.smart.entry, sl: r.smart.sl, tp: r.smart.tp, why: (r.smart.why || []).join('; '),
     res: r.sres ? {state: r.sres.state, done: !!r.sres.done, usd: r.sres.usd === undefined ? null : r.sres.usd} : null,
     res0: r.sres0 ? {state: r.sres0.state, usd: r.sres0.usd === undefined ? null : r.sres0.usd} : null,
-    res3: r.sres3 ? {state: r.sres3.state, usd: r.sres3.usd === undefined ? null : r.sres3.usd} : null} : null,
+    res3: r.sres3 ? {state: r.sres3.state, usd: r.sres3.usd === undefined ? null : r.sres3.usd} : null,
+    pfx: r.spres ? {state: r.spres.state, done: !!r.spres.done, usd: r.spres.usd === undefined ? null : r.spres.usd, dd: r.spres.dd === undefined ? null : r.spres.dd, mins: r.spres.mins === undefined ? null : r.spres.mins} : null} : null,
   pfx: r.pres ? {state: r.pres.state, done: !!r.pres.done, dd: r.pres.dd === undefined ? null : r.pres.dd, usd: r.pres.usd === undefined ? null : r.pres.usd,
     mins: r.pres.mins === undefined ? null : r.pres.mins, filledAt: r.pres.filledAt || null} : null,
   council: r.council && r.council.dir ? {dir: r.council.dir, order: r.council.order, entry: r.council.entry, sl: r.council.sl, tp: r.council.tp, conf: r.council.conf, fixed: !!r.council.fixed,
@@ -844,6 +866,7 @@ function pruneExpired(){
     if(r.tres && !r.tres.done && r.tres.state !== 'EXPIRED') return true;
     if(r.council && r.council.dir && !(r.cres && r.cres.done)) return true;   /* v1.9.0: Council hisaab chaalu */
     if(r.smart && !(r.sres && r.sres.done)) return true;                       /* v1.14.0: Smart Order chaalu */
+    if(r.spres && !r.spres.done) return true;                                  /* v1.18.0: Smart + REAL niyam chaalu */
     const age = now - (r.expiresAt || r.at);
     const synced = typeof r._pk === 'string' && r._pk.includes('"state":"EXPIRED"');
     return !(age > 6 * 3600e3 && (synced || age > 24 * 3600e3));

@@ -1,5 +1,5 @@
 /* SAMUSIGNAL AI — service worker. App shell cache; data (Firebase / TwelveData / Gemini) kabhi cache nahi. */
-const VERSION = '1.17.1';
+const VERSION = '1.18.0';
 const CACHE = 'sai-' + VERSION;
 const SHELL = ['./', 'index.html', 'manifest.json', 'src/app.js', 'src/engine.js', 'src/data.js', 'src/symbols.js', 'src/bridge.js', 'src/ai.js', 'src/flow.js',
   'news.html', 'src/news.js', 'src/newsrules.js', 'src/newsbrief.js',   /* v1.17.1: NEWS page bhi offline */

@@ -219,3 +219,34 @@ test('v1.17.1 reMarket: MARKET entry dabane ke pal ke bhaav par, SL / TP ki door
   const l = {dir: 'BUY', smart: {type: 'LIMIT', entry: 1.1, sl: 1.09, tp: 1.11}}; reMarket(l, 1.2, 5); assert.equal(l.smart.entry, 1.1);   /* LIMIT / STOP nahi chhedte */
   const z = {dir: 'BUY', mkt: {entry: 1, sl: 0.9, tp: 1.1}}; reMarket(z, 0, 5); assert.equal(z.mkt.entry, 1);                              /* bhaav na mile -> jaisa tha */
 });
+
+/* ---------------- v1.18.0 ---------------- */
+import {pfxStat} from '../src/engine.js';
+test('v1.18.0 Smart entry + REAL niyam: MARKET turant bhara, STOP aage ki taraf chhune par; TP / SL / na bhare', () => {
+  const M = 60000, at = 1.7e12, pip = 0.0001, bar = (i, o, h, l, c) => ({t: at + i * M, o, h, l, c});
+  /* MARKET BUY @1.1000 (fillAt = signal ka pal): +2.5 pip = TP */
+  const up = [bar(1, 1.1000, 1.1002, 1.0998, 1.1001), bar(2, 1.1001, 1.10026, 1.1000, 1.1002)];
+  const m = evaluatePfx({dir: 'BUY', entry: 1.1000, at, fillAt: at}, up, at + 5 * M, pip, 2.5, 15);
+  assert.equal(m.state, 'TP'); assert.equal(m.filledAt, at);
+  /* MARKET BUY, 15 pip ulta = SL (candle me pehle SL) */
+  assert.equal(evaluatePfx({dir: 'BUY', entry: 1.1000, at, fillAt: at}, [bar(1, 1.1000, 1.1004, 1.0984, 1.0990)], at + 5 * M, pip, 2.5, 15).state, 'SL');
+  /* STOP BUY @1.1010: LIMIT jaisa (low <= entry) nahi — high >= entry par bharta hai */
+  const brk = [bar(1, 1.1000, 1.1005, 1.0990, 1.1004), bar(2, 1.1004, 1.1012, 1.1003, 1.1011), bar(3, 1.1011, 1.1013, 1.1009, 1.1012)];
+  const s = evaluatePfx({dir: 'BUY', entry: 1.1010, at, exp: 45, stop: true}, brk, at + 5 * M, pip, 2.5, 15);
+  assert.equal(s.filledAt, at + 2 * M); assert.equal(s.state, 'TP'); assert.equal(s.exitAt, at + 3 * M);
+  assert.ok(s.mae < 2);                                                       /* fill wali candle ka purana low DD me nahi */
+  /* wahi candles LIMIT maan kar (stop nahi) -> pehli candle par hi bhar jaata (galat) */
+  assert.equal(evaluatePfx({dir: 'BUY', entry: 1.1010, at, exp: 45}, brk, at + 5 * M, pip, 2.5, 15).filledAt, at + M);
+  /* STOP kabhi nahi chhua -> EXPIRED */
+  const flat = [bar(1, 1.1000, 1.1005, 1.0995, 1.1001), bar(60, 1.1001, 1.1004, 1.0996, 1.1000)];
+  assert.equal(evaluatePfx({dir: 'BUY', entry: 1.1010, at, exp: 45, stop: true}, flat, at + 61 * M, pip, 2.5, 15).state, 'EXPIRED');
+  /* STOP SELL */
+  const dn = [bar(1, 1.1000, 1.1003, 1.0989, 1.0990), bar(2, 1.0990, 1.0991, 1.0986, 1.0987)];
+  assert.equal(evaluatePfx({dir: 'SELL', entry: 1.0990, at, exp: 45, stop: true}, dn, at + 5 * M, pip, 2.5, 15).state, 'TP');
+});
+test('v1.18.0 pfxStat: TP / SL / nahi bhara / chalu ka jod', () => {
+  const L = [{spres: {state: 'TP', filledAt: 1}, pres: {state: 'EXPIRED'}}, {spres: {state: 'TP', filledAt: 1}, pres: {state: 'TP', filledAt: 1}},
+    {spres: {state: 'SL', filledAt: 1}, pres: {state: 'OPEN', filledAt: 1}}, {spres: {state: 'TIMEOUT', filledAt: 1, usd: -0.4}}];
+  assert.deepEqual(pfxStat(L, 'spres'), {n: 4, tp: 2, sl: 1, open: 0, nf: 0, to: 1, usd: -1.4, pc: 67});
+  assert.deepEqual(pfxStat(L, 'pres'), {n: 4, tp: 1, sl: 0, open: 1, nf: 1, to: 0, usd: 0.25, pc: 100});
+});
