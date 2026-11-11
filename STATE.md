@@ -95,3 +95,6 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Top 5 (auto me 3) pe AI check (Gemini), 4 sec gap, same signal 60 min cache. Filter: AI सहमत / अच्छे / सारे. Row dabao -> poora signal (preview NEW: ✅ मैंने trade लिया / 🚀).
 - Auto scan (LS autoScan): app khula + MT5 feed ho to har nayi 15m candle ke 25 sec baad; naya Grade A + AI सहमत -> toast + vibrate + notification (ek signal ek baar, sxSeen 2 din).
 - Scan ke signal apne aap paper me nahi.
+
+## v1.16.1 — ANALYZE gola neeche kat raha tha
+- Gola (span.c) 14px upar, ring path radius 43 -> 40, letter-spacing 2.6px, svg overflow visible — akshar ab screen ke neeche nahi katte, History label se bhi door.
