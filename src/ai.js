@@ -6,6 +6,8 @@ const BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const MODELS = ['gemini-flash-latest', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite'];   /* v1.9.4: 2.0-flash band ho gaya */
 const DEAD = /no longer available|not found|is not supported|deprecated/i;
 const TIMEOUT = 40000;
+/* v1.17.1: "band" maana gaya model 24 ghante baad dobara aazmaao (pehle hamesha ke liye hat jaata tha — ek galat 404 se bhi) */
+const deadList = () => { if(Date.now() - LS.get('gDeadAt', 0) > 864e5){ LS.set('gDead', []); LS.set('gDeadAt', Date.now()) } return LS.get('gDead', []) };
 function think(m){ const v = parseFloat((m.match(/gemini-(\d+(?:\.\d+)?)/) || [])[1] || 0); return v >= 3 ? {thinkingLevel: 'low'} : /2\.5|flash-latest/.test(m) ? {thinkingBudget: 0} : null }
 async function call(key, model, parts, noThink, maxTok = 1500, tmo = TIMEOUT){
   const cfg = {temperature: 0.3, maxOutputTokens: maxTok, responseMimeType: 'application/json'};
@@ -26,7 +28,7 @@ async function call(key, model, parts, noThink, maxTok = 1500, tmo = TIMEOUT){
 /* v1.9.4: band model chhodo; sab fail ho to sabse kaam ki galti dikhao (aakhri "model band" wali nahi) */
 async function ask(key, parts, pref, maxTok, tmo){
   if(!key) throw new Error('Gemini key nahi (SamuSignal Settings me daalo)');
-  const dead = LS.get('gDead', []), good = LS.get('gOk', '');
+  const dead = deadList(), good = LS.get('gOk', '');
   const list = [...new Set([good, pref, ...MODELS].filter(m => m && !dead.includes(m)))];
   const errs = [];
   for(let round = 0; round < 2; round++){
@@ -44,7 +46,7 @@ async function ask(key, parts, pref, maxTok, tmo){
    Sirf Council ke liye (lamba jawab); band model yaad, vyast ho to 5 sec baad ek baar aur. */
 async function askFast(key, parts, pref, maxTok, tmo, stagger = 15000){
   if(!key) throw new Error('Gemini key nahi (SamuSignal Settings me daalo)');
-  const dead = LS.get('gDead', []);
+  const dead = deadList();
   let list = [...new Set([LS.get('gOk', ''), pref, ...MODELS].filter(m => m && !dead.includes(m)))].slice(0, 4);
   const errs = [];
   for(let round = 0; round < 2 && list.length; round++){

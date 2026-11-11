@@ -1,12 +1,12 @@
 /* SAMUSIGNAL AI — personal app. SamuSignal ki keys + MT5 feed + PERSONAL FX bridge. */
 import {SPECS, PAIRS, fmt, fmtS, fromName, pipUsd} from './symbols.js';
 import {LS, keys, feedStatus, series, quotes, fbUrl, TD_WAIT, feedAllBars} from './data.js';
-import {analyze, evaluate, evaluateMarket, evaluateTrail, evaluatePfx, evaluateStop, evaluateStopConfirm, councilPlan, ema, atr as atrOf, rsi, adx, macdHist, trendScore, isWin, isLoss} from './engine.js';
+import {analyze, evaluate, evaluateMarket, evaluateTrail, evaluatePfx, evaluateStop, evaluateStopConfirm, councilPlan, reMarket, ema, atr as atrOf, rsi, adx, macdHist, trendScore, isWin, isLoss} from './engine.js';
 import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot, aiCouncil} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.17.0';
+export const VERSION = '1.17.1';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -383,17 +383,24 @@ async function evalSym(sym, recs){
     try{ const x = await series(s, sym, '1min', 250); if(x.src === 'mt5' && x.bars.length && x.bars[0].t <= oldest) d = x }catch(e){}
   }
   if(!d) d = await series(s, sym, '5min', 300);
-  recs.forEach(r => { if(!(r.res && r.res.done)){ r.res = Object.assign(evaluate(Object.assign({}, r, {tp: r.tp.slice(0, 1)}), d.bars, now, SPECS[sym].pip), {src: d.src, at: now}); usdOf(r) }
+  /* v1.17.1 bug fix: jo trade bhar chuka (filledAt) uska fill yaad rakho — purani candles data se nikal jaayein to bhi OPEN "EXPIRED" na bane */
+  const fa = x => (x && x.filledAt) || 0;
+  recs.forEach(r => { if(!(r.res && r.res.done)){ r.res = Object.assign(evaluate(Object.assign({}, r, {tp: r.tp.slice(0, 1), fillAt: fa(r.res)}), d.bars, now, SPECS[sym].pip), {src: d.src, at: now}); usdOf(r) }
     if(r.mkt && !(r.mres && r.mres.done)){ r.mres = evaluateMarket(r.mkt, r.at, r.dir, d.bars, SPECS[sym].pip); mUsd(r) }
     if(r.smart && !(r.sres && r.sres.done)){ const s = r.smart, pip = SPECS[sym].pip;   /* v1.14.0 */
-      r.sres = s.type === 'STOP' ? evaluateStop(s, r.at, r.dir, d.bars, now, pip) : s.type === 'MARKET' ? evaluateMarket(s, r.at, r.dir, d.bars, pip)
-        : evaluate({dir: r.dir, entry: s.entry, sl: s.sl, tp: [s.tp], at: r.at, exp: s.exp || 60}, d.bars, now, pip);
-      if(s.type === 'STOP'){ r.sres0 = evaluateStop(s, r.at, r.dir, d.bars, now, pip, {early: false}); r.sres3 = evaluateStopConfirm(s, r.at, r.dir, d.bars, now, pip) }
+      r.sres = s.type === 'STOP' ? evaluateStop(s, r.at, r.dir, d.bars, now, pip, {early: true, fillAt: fa(r.sres)}) : s.type === 'MARKET' ? evaluateMarket(s, r.at, r.dir, d.bars, pip)
+        : evaluate({dir: r.dir, entry: s.entry, sl: s.sl, tp: [s.tp], at: r.at, exp: s.exp || 60, fillAt: fa(r.sres)}, d.bars, now, pip);
+      if(s.type === 'STOP'){ if(!(r.sres0 && r.sres0.done)) r.sres0 = evaluateStop(s, r.at, r.dir, d.bars, now, pip, {early: false, fillAt: fa(r.sres0)});
+        const p3 = r.sres3;
+        if(!(p3 && p3.done)){
+          if(p3 && p3.filledAt && isFinite(p3.entry)){ const B = r.dir === 'BUY' ? 1 : -1, risk = Math.abs(s.entry - s.sl);   /* candle-close entry pehle ho chuki — wahi rakho */
+            r.sres3 = Object.assign(evaluateMarket({entry: p3.entry, sl: p3.entry - B * risk, tp: p3.entry + B * risk}, p3.filledAt, r.dir, d.bars, pip), {filledAt: p3.filledAt, entry: p3.entry}) }
+          else r.sres3 = evaluateStopConfirm(s, r.at, r.dir, d.bars, now, pip) } }
       sUsd(r) }
-    if(!(r.pres && r.pres.done)){ r.pres = evaluatePfx(r, d.bars, now, SPECS[sym].pip, PFX.usd / pfxPu(sym), PFX.sl / pfxPu(sym)); pUsd(r) }   /* v1.11.0 / v1.13.0 SL */
-    if(!(r.tres && r.tres.done)){ r.tres = evaluateTrail(Object.assign({}, r, {tp: r.tp.slice(0, 1)}), d.bars, now, SPECS[sym].pip, trailPips(sym)); tUsd(r) }
+    if(!(r.pres && r.pres.done)){ r.pres = evaluatePfx(Object.assign({}, r, {fillAt: fa(r.pres), mae0: (r.pres && r.pres.mae) || 0, cur0: (r.pres && r.pres.pips) || 0}), d.bars, now, SPECS[sym].pip, PFX.usd / pfxPu(sym), PFX.sl / pfxPu(sym)); pUsd(r) }   /* v1.11.0 / v1.13.0 SL */
+    if(!(r.tres && r.tres.done)){ r.tres = evaluateTrail(Object.assign({}, r, {tp: r.tp.slice(0, 1), fillAt: fa(r.tres) || fa(r.res), peak0: (r.tres && r.tres.peak) || 0}), d.bars, now, SPECS[sym].pip, trailPips(sym)); tUsd(r) }
     const c = r.council; if(c && c.dir && !(r.cres && r.cres.done)){                    /* v1.9.0: 🧠 Council ka nateeja */
-      r.cres = c.order === 'MARKET' ? evaluateMarket(c, c.at, c.dir, d.bars, SPECS[sym].pip) : evaluate({dir: c.dir, entry: c.entry, sl: c.sl, tp: [c.tp], at: c.at, exp: 60}, d.bars, now, SPECS[sym].pip); cUsd(r) } });
+      r.cres = c.order === 'MARKET' ? evaluateMarket(c, c.at, c.dir, d.bars, SPECS[sym].pip) : evaluate({dir: c.dir, entry: c.entry, sl: c.sl, tp: [c.tp], at: c.at, exp: 60, fillAt: fa(r.cres)}, d.bars, now, SPECS[sym].pip); cUsd(r) } });
 }
 async function activeFor(sym){
   const todo = st.hist.filter(r => r.sym === sym && (!(r.res && r.res.done) || (r.mkt && !(r.mres && r.mres.done)) || !(r.tres && r.tres.done) || (r.council && r.council.dir && !(r.cres && r.cres.done)) || !(r.pres && r.pres.done) || (r.smart && !(r.sres && r.sres.done))) && Date.now() - r.at < 48 * 3600e3);
@@ -430,8 +437,12 @@ async function runAnalyze(sym = st.pair){
 /* v1.15.0: ✅ मैंने trade लिया — preview ko paper trade bana do (us pal se gina jaayega) */
 async function takeTrade(id, viaMt5){
   const r = st.preview && st.preview.id === id ? st.preview : null;
-  if(!r || r.preview !== 'NEW'){ if(!viaMt5) toast('ये signal पहले ही जुड़ चुका / पुराना है'); return false }
-  if(SPECS[r.sym]){ const act = await activeFor(r.sym); if(act){ r.preview = act.id; openRes(r.id); toast(busyMsg(act), 4500); return false } }
+  /* v1.17.1 bug fix: 🚀 MT5 pe gaya order HAMESHA History me (us pair pe pehla paper trade chalu ho tab bhi) — asli order ka record kabhi na khoye */
+  if(!r || (!viaMt5 && r.preview !== 'NEW')){ if(!viaMt5) toast('ये signal पहले ही जुड़ चुका / पुराना है'); return false }
+  if(!viaMt5 && SPECS[r.sym]){ const act = await activeFor(r.sym); if(act){ r.preview = act.id; openRes(r.id); toast(busyMsg(act), 4500); return false } }
+  /* v1.17.1 bug fix: ⚡ MARKET / 🎯 Smart MARKET ka paper entry = dabane ke pal ka bhaav (pehle analysis ke samay ka purana bhaav rehta tha) */
+  if(SPECS[r.sym]){ try{ const q = await quotes(K(), [r.sym]); Object.assign(st.q, q); reMarket(r, q[r.sym] && q[r.sym].p, SPECS[r.sym].d) }catch(e){} }
+  if(!(st.preview && st.preview.id === id)) return false;   /* intezaar ke dauraan do baar dabaya */
   const now = Date.now();
   delete r.preview; r.taken = {at: now, px: r.entry, by: viaMt5 ? 'mt5' : 'hand'};
   r.at = now; r.expiresAt = now + (r.exp || 60) * 60000;   /* fill / nateeja dabane ke pal se */
@@ -639,7 +650,7 @@ ${real ? '<div class="warn" style="margin-top:10px">💰 REAL account — अस
   try{
     const sent = await sendLimit(s, r, live, pick);
     sent.forEach(o => r.sent.push(Object.assign(o, {status: 'NEW', at: Date.now()})));
-    saveHist(); toast('✅ PERSONAL FX को भेज दिया'); if(r.preview === 'NEW') await takeTrade(r.id, true); else openRes(r.id);
+    saveHist(); toast('✅ PERSONAL FX को भेज दिया'); if(r.preview) await takeTrade(r.id, true); else openRes(r.id);
     setTimeout(refreshOrders, 8000); setTimeout(refreshOrders, 25000);
   }catch(e){ dlg('नहीं भेजा', esc(e.message), 'OK', '') }
 }

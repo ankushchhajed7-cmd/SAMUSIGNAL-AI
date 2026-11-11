@@ -182,3 +182,40 @@ test('v1.14 smartOrder: tez trend + LIMIT door = MARKET; bhaav bhaag chuka = LIM
   const l = smartOrder(Object.assign({}, base, {e21L: live - 2 * A, entry: live - 1.5 * A, sl: live - 3 * A, tp0: live}));
   assert.equal(l.type, 'LIMIT');
 });
+
+/* ---------------- v1.17.1 ---------------- */
+import {reMarket} from '../src/engine.js';
+test('v1.17.1 bhara hua (OPEN) trade purani candles nikalne par EXPIRED nahi banta', () => {
+  const M = 60000, at = Date.UTC(2026, 10, 10, 10, 0), sig = {dir: 'BUY', entry: 100, sl: 98, tp: [102], at, exp: 60};
+  const mk = (from, n, lo = 100.2, hi = 101) => Array.from({length: n}, (_, i) => ({t: from + i * 5 * M, o: 100.5, h: hi, l: from + i * 5 * M === at + 10 * M ? 99.9 : lo, c: 100.5}));
+  const first = evaluate(sig, mk(at - 50 * M, 100), at + 3 * 3600e3, 0.1);
+  assert.equal(first.state, 'OPEN');
+  const now = at + 27 * 3600e3, late = mk(now - 300 * 5 * M, 300);             /* 25 ghante ki khidki — fill wali candle bahar */
+  assert.equal(evaluate(sig, late, now, 0.1).state, 'EXPIRED');                 /* purana vyavhaar (fill yaad na ho) */
+  const again = evaluate(Object.assign({}, sig, {fillAt: first.filledAt}), late, now, 0.1);
+  assert.equal(again.state, 'OPEN'); assert.equal(again.filledAt, first.filledAt);
+  /* fill yaad + baad me TP / SL sahi */
+  assert.equal(evaluate(Object.assign({}, sig, {fillAt: first.filledAt}), mk(now - 300 * 5 * M, 300, 100.2, 102.5), now, 0.1).state, 'TP1');
+  assert.equal(evaluate(Object.assign({}, sig, {fillAt: first.filledAt}), mk(now - 300 * 5 * M, 300, 97.5), now, 0.1).state, 'SL');
+  /* PERSONAL FX jaisa: OPEN rahe, 48h baad TIMEOUT (pehle kabhi nahi aata tha), purana DD (mae) bana rahe */
+  const p = evaluatePfx(Object.assign({}, sig, {fillAt: first.filledAt, mae0: 12}), late, now, 0.1, 50, 0);
+  assert.equal(p.state, 'OPEN'); assert.equal(p.mae, 12);
+  const now2 = at + 50 * 3600e3;
+  assert.equal(evaluatePfx(Object.assign({}, sig, {fillAt: first.filledAt}), mk(now2 - 300 * 5 * M, 300), now2, 0.1, 50, 0).state, 'TIMEOUT');
+  /* Trail: fill yaad + pehle ka peak -> lock bana rahe */
+  const calm = mk(now - 300 * 5 * M, 300, 100.7, 100.75);   /* +7 pip se neeche nahi, +7.5 se upar nahi */
+  const t = evaluateTrail(Object.assign({}, sig, {fillAt: first.filledAt, peak0: 8}), calm, now, 0.1, {start: 5, lock: 2.5, step: 1});
+  assert.equal(t.state, 'OPEN'); assert.ok(Math.abs(t.lock - 5.5) < 1e-9);
+  /* bhaav lock (+5.5 pip) tak laute -> LOCK pe band */
+  assert.equal(evaluateTrail(Object.assign({}, sig, {fillAt: first.filledAt, peak0: 8}), late, now, 0.1, {start: 5, lock: 2.5, step: 1}).state, 'LOCK');
+  /* poori khidki ho to peak0 ka asar nahi (hisaab candles se hi) */
+  const full = mk(at - 50 * M, 100);
+  assert.deepEqual(evaluateTrail(Object.assign({}, sig, {peak0: 8}), full, at + 3 * 3600e3, 0.1), evaluateTrail(sig, full, at + 3 * 3600e3, 0.1));
+});
+test('v1.17.1 reMarket: MARKET entry dabane ke pal ke bhaav par, SL / TP ki doori wahi', () => {
+  const r = {dir: 'SELL', mkt: {entry: 1.1000, sl: 1.1020, tp: 1.0980}, smart: {type: 'MARKET', entry: 1.1000, sl: 1.1015, tp: 1.0985}};
+  reMarket(r, 1.0990, 5);
+  assert.deepEqual(r.mkt, {entry: 1.0990, sl: 1.1010, tp: 1.0970}); assert.deepEqual(r.smart, {type: 'MARKET', entry: 1.0990, sl: 1.1005, tp: 1.0975});
+  const l = {dir: 'BUY', smart: {type: 'LIMIT', entry: 1.1, sl: 1.09, tp: 1.11}}; reMarket(l, 1.2, 5); assert.equal(l.smart.entry, 1.1);   /* LIMIT / STOP nahi chhedte */
+  const z = {dir: 'BUY', mkt: {entry: 1, sl: 0.9, tp: 1.1}}; reMarket(z, 0, 5); assert.equal(z.mkt.entry, 1);                              /* bhaav na mile -> jaisa tha */
+});
