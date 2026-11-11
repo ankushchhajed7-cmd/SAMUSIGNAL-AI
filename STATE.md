@@ -89,3 +89,9 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 ## v1.15.0 — "✅ मैंने trade लिया" (auto paper band) + data reset (11 Nov)
 - Analysis ab apne aap paper trade NAHI banata: rec.preview = 'NEW' (st.preview), Result screen pe bada "✅ मैंने trade लिया" button. Dabane par (ya 🚀 MT5 bhejne par apne aap) History + paper me judta hai; us pal se gina jaata hai (r.at = dabane ka samay, entry / SL / TP signal wale). Ek pair pe ek chalu trade ka niyam wahi.
 - Ek baar reset: phone ki History + cLedger / mLedger saaf, Firebase /samuai/paper DELETE (fail ho to agli baar dobara). User: "aaj se 100 trade ka data aane pe final karenge".
+
+## v1.16.0 — 📋 Scanner (saare pair) + Auto scan + alert
+- Home tools me "📋 Scan" -> `s-scan`. `feedAllBars` (data.js): ek fetch me saare pair ki 15m / 1h band candles + live. Engine `analyze` har pair pe (free). Achhe = Grade A/B + 15m/1H saath + us pair pe chalu trade nahi; score se sort.
+- Top 5 (auto me 3) pe AI check (Gemini), 4 sec gap, same signal 60 min cache. Filter: AI सहमत / अच्छे / सारे. Row dabao -> poora signal (preview NEW: ✅ मैंने trade लिया / 🚀).
+- Auto scan (LS autoScan): app khula + MT5 feed ho to har nayi 15m candle ke 25 sec baad; naya Grade A + AI सहमत -> toast + vibrate + notification (ek signal ek baar, sxSeen 2 din).
+- Scan ke signal apne aap paper me nahi.
