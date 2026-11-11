@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot, aiCouncil} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.16.1';
+export const VERSION = '1.17.0';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -142,7 +142,8 @@ let homeChart, resChart, homeBars = null;
 function tfRow(){
   $('tfs').innerHTML = [['5min', '5m'], ['15min', '15m'], ['1h', '1H']].map(([v, t]) => `<button class="tf${st.tf === v ? ' on' : ''}" data-tf="${v}">${t}</button>`).join('');
 }
-function lastSig(sym){ return st.hist.find(r => r.sym === sym && Date.now() < r.expiresAt + 6 * 3600e3) }
+const isExp = r => !!(r.res && r.res.state === 'EXPIRED');   /* v1.17.0: entry nahi bhari — kahin dikhana nahi */
+function lastSig(sym){ return st.hist.find(r => r.sym === sym && !isExp(r) && Date.now() < r.expiresAt + 6 * 3600e3) }
 function sigCard(r, compact){
   const S = r.sym, live = st.q[S] && st.q[S].p;
   return `<div class="gb"><div class="gi">
@@ -658,7 +659,8 @@ async function refreshResults(){
 function renderHis(){
   const wk = st.hist.filter(r => Date.now() - r.at < 7 * 864e5), fin = wk.filter(r => r.res && (isWin(r.res.state) || isLoss(r.res.state)));
   const w = fin.filter(r => isWin(r.res.state)).length, l = fin.length - w;
-  $('stWin').textContent = fin.length ? Math.round(w / fin.length * 100) + '%' : '—'; $('stN').textContent = wk.length; $('stW').textContent = w; $('stL').textContent = l;
+  $('stWin').textContent = fin.length ? Math.round(w / fin.length * 100) + '%' : '—'; $('stN').textContent = fin.length;   /* v1.17.0: sirf TP + SL gine (EXPIRED / chaalu nahi) */
+  const run = st.hist.filter(isActive).length; $('stRun').textContent = run ? '· ' + run + ' चालू' : ''; $('stW').textContent = w; $('stL').textContent = l;
   const last = st.hist.filter(r => r.res && (isWin(r.res.state) || isLoss(r.res.state))).slice(0, 10);
   const done = st.hist.filter(r => r.res && (isWin(r.res.state) || isLoss(r.res.state))), pnl = +done.reduce((t, r) => t + usdOf(r), 0).toFixed(2), b0 = vBal();
   $('stBal').innerHTML = `<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><span class="lbl">💰 Virtual balance</span><span class="note">(${vLot()} lot / trade)</span></div>
@@ -699,6 +701,7 @@ ${gS.n ? `<br><span class="note">STOP: झूठे breakout पर जल्द
   $('hk').innerHTML = [['all', 'सब'], ['mt5', '🚀 MT5 पे गए'], ['app', '📱 सिर्फ़ app']].map(([k, t]) => `<button class="pill${st.hk === k ? ' on' : ''}" data-hk="${k}">${t}</button>`).join('');
   const L = st.hist.filter(r => {
     const s = r.res && r.res.state;
+    if(s === 'EXPIRED') return false;   /* v1.17.0: EXPIRED list me nahi (andar se hisaab poora hone par apne aap delete) */
     if(st.hf === 'won' && !isWin(s)) return false; if(st.hf === 'lost' && !isLoss(s)) return false;
     if(st.hf === 'pend' && (isWin(s) || isLoss(s) || s === 'EXPIRED' || s === 'TIMEOUT')) return false;
     if(st.hk === 'mt5' && !r.sent.length) return false; if(st.hk === 'app' && r.sent.length) return false;
