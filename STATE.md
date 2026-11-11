@@ -129,3 +129,15 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Kam se kam 20–30 MARKET + STOP signal jama hone par tulna dekh kar faisla (100 trade wale review ke saath). Tab tak REAL = LIMIT.
 - Spread ko hisaab me jodna (MT5 feed ke `sp` ki unit pakki karke).
 - Firebase suraksha (rules + Auth) — abhi bhi baaki.
+
+## v1.19.0 (branch feature-v1.19.0) — 🤖 Scan ke "AI सहमत" signal apne aap paper trade (11 Nov)
+- User: "Scan me AI sahmat wale saare trade auto paper trading me lag jaayein."
+- `sxPaper` (app.js): scan ke baad jin signal par AI check hua aur AI सहमत — apne aap History / paper me (`r.auto = 'scan'`, `taken.by = 'scan'`). Scan screen par button "🤖 AI सहमत → paper: ON / OFF" (LS `sxPaper`, default ON). Haath se scan aur ⏱ Auto scan dono me.
+- Niyam: ek pair pe ek chalu trade (wahi); wahi signal (pair + disha + entry) 2 din tak dobara nahi (LS `sxTaken`). AI check sirf top 5 (auto scan me top 3) par hota hai — utne hi jud sakte hain. In par Council NAHI chalta (Gemini limit). MT5 par kuch NAHI jaata.
+- History: upar nayi pankti "सब · ✋ मेरे · 🤖 Scan auto" (LS `hv`) — poora hisaab (jeet %, balance, MARKET, Trail, Smart, PFX, Council) chuni hui tarah par. Row me 🤖 nishaan. Firebase paperRow `auto`. mLedger / cLedger me `auto`.
+  **User ka "100 trade" wala data = ✋ मेरे.** Auto wale usme nahi milte.
+- 300 ki seema: zyada hone par pehle sabse purane poore ho chuke 🤖 auto hatte hain. Nateeja jaanch: MT5 feed par ek baar me 12 -> 30 pair.
+- Auto scan sirf app khula + MT5 feed LIVE ho tab (pehle jaisa) — band app par paper trade nahi bante.
+### Pending
+- Band app par bhi scan + paper (VPS / server chahiye).
+- Firebase suraksha (rules + Auth) — abhi bhi baaki.
