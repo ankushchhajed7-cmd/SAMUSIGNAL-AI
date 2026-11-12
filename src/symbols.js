@@ -10,15 +10,12 @@ export const FX = [
 const NAMES = {USD: 'US Dollar', EUR: 'Euro', GBP: 'British Pound', JPY: 'Japanese Yen', CHF: 'Swiss Franc', CAD: 'Canadian Dollar',
   AUD: 'Australian Dollar', NZD: 'NZ Dollar'};
 export const SPECS = {};
-/* v1.20.0: forex ke hisse (Pairs page tabs + Scanner filter) — Majors (USD wale) / EUR / GBP / AUD+NZD / CAD+CHF+JPY cross */
-const fxCat = (b, q) => b === 'USD' || q === 'USD' ? 'Majors' : b === 'EUR' ? 'EUR' : b === 'GBP' ? 'GBP' : b === 'AUD' || b === 'NZD' ? 'AUDNZD' : 'CCJ';
 FX.forEach(p => {
   const [b, q] = p.split('/'), jpy = q === 'JPY';
-  SPECS[p] = {sym: p, n: b + q, d: jpy ? 3 : 5, pip: jpy ? 0.01 : 0.0001, group: 'Forex', cat: fxCat(b, q), title: NAMES[b] + ' / ' + NAMES[q]};
+  SPECS[p] = {sym: p, n: b + q, d: jpy ? 3 : 5, pip: jpy ? 0.01 : 0.0001, group: 'Forex', title: NAMES[b] + ' / ' + NAMES[q]};
 });
-export const GROUPS = [['Majors', 'Majors'], ['EUR', 'EUR Cross'], ['GBP', 'GBP Cross'], ['AUDNZD', 'AUD / NZD'], ['CCJ', 'CAD / CHF / JPY'], ['Metals', 'Metals'], ['Crypto', 'Crypto']];
-SPECS['XAU/USD'] = {sym: 'XAU/USD', n: 'XAUUSD', d: 2, pip: 0.10, group: 'Metals', cat: 'Metals', title: 'Gold / US Dollar'};
-SPECS['BTC/USD'] = {sym: 'BTC/USD', n: 'BTCUSD', d: 2, pip: 1, group: 'Crypto', cat: 'Crypto', title: 'Bitcoin / US Dollar'};
+SPECS['XAU/USD'] = {sym: 'XAU/USD', n: 'XAUUSD', d: 2, pip: 0.10, group: 'Metals', title: 'Gold / US Dollar'};
+SPECS['BTC/USD'] = {sym: 'BTC/USD', n: 'BTCUSD', d: 2, pip: 1, group: 'Crypto', title: 'Bitcoin / US Dollar'};
 export const PAIRS = Object.keys(SPECS);
 export const fromName = n => PAIRS.find(p => SPECS[p].n === String(n || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 6)) || null;
 export const fmt = (sym, v) => (v === null || v === undefined || !isFinite(v)) ? '—' : (+v).toFixed(SPECS[sym] ? SPECS[sym].d : 5);
