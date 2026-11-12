@@ -147,3 +147,6 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - symbols.js: har forex pair me `cat` — Majors (USD wale 7) / EUR (6) / GBP (5) / AUDNZD (7) / CCJ = CAD/CHF/JPY cross (3); Gold `Metals`, BTC `Crypto`; `GROUPS` list. `group: 'Forex'` wahi (contract size wagairah).
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
+
+## v1.20.1 — v1.20.0 wapas (12 Nov)
+- User: "mujhe aisa nahi chahiye tha, pahile jaisa kar dena pair" — Pairs page (Favourites / Forex / Metals / Crypto) aur Scanner bina group filter, bilkul v1.19.0 jaisa. Sirf version 1.20.1.
