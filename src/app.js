@@ -1,12 +1,12 @@
 /* SAMUSIGNAL AI — personal app. SamuSignal ki keys + MT5 feed + PERSONAL FX bridge. */
-import {SPECS, PAIRS, fmt, fmtS, fromName, pipUsd} from './symbols.js';
+import {SPECS, PAIRS, GROUPS, fmt, fmtS, fromName, pipUsd} from './symbols.js';
 import {LS, keys, feedStatus, series, quotes, fbUrl, TD_WAIT, feedAllBars} from './data.js';
 import {analyze, evaluate, evaluateMarket, evaluateTrail, evaluatePfx, evaluateStop, evaluateStopConfirm, councilPlan, reMarket, pfxStat, ema, atr as atrOf, rsi, adx, macdHist, trendScore, isWin, isLoss} from './engine.js';
 import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot, aiCouncil} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.19.0';
+export const VERSION = '1.20.0';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -459,7 +459,7 @@ async function takeTrade(id, viaMt5){
   toast(viaMt5 ? '✅ MT5 pe gaya — paper में भी जुड़ गया' : '✅ Paper trade में जुड़ गया'); return true;
 }
 /* ---------------- 📋 SCANNER (v1.16.0) — saare pair, engine (free) + top 5 pe AI ---------------- */
-const SX = {rows: [], at: 0, busy: false, f: LS.get('sxF', 'ai'), seen: LS.get('sxSeen', {}), aiCache: {}};
+const SX = {rows: [], at: 0, busy: false, f: LS.get('sxF', 'ai'), g: LS.get('sxG', 'all'), seen: LS.get('sxSeen', {}), aiCache: {}};
 const sxKey = (sym, sig) => sym + '|' + sig.dir + '|' + sig.entry;
 async function runScan(quiet){
   if(SX.busy) return; SX.busy = true;
@@ -535,10 +535,14 @@ function renderScan(){
   $('sxGo').disabled = SX.busy; $('sxGo').textContent = SX.busy ? '⏳ Scan चल रहा है…' : '🔍 सारे pair scan करो';
   $('sxAt').textContent = SX.at ? ist(SX.at) + ' · ' + Math.round((Date.now() - SX.at) / 60000) + ' min पहले' : '';
   $('sxF').innerHTML = [['ai', '✅ AI सहमत'], ['cand', '⭐ अच्छे'], ['all', 'सारे']].map(([k, t]) => `<button class="pill${SX.f === k ? ' on' : ''}" data-sxf="${k}">${t}</button>`).join('');
-  const L = SX.rows.filter(r => SX.f === 'all' ? true : SX.f === 'cand' ? r.cand : r.cand && r.ai && r.ai.agree);
+  const byF = r => SX.f === 'all' ? true : SX.f === 'cand' ? r.cand : r.cand && r.ai && r.ai.agree;
+  /* v1.20.0: group filter (Pairs page jaise) — sirf dikhane ka; scan / AI check saare pair par wahi */
+  $('sxG').innerHTML = [['all', 'सब'], ...GROUPS].map(([k, t]) => { const n = SX.rows.filter(r => byF(r) && (k === 'all' || SPECS[r.sym].cat === k)).length;
+    return `<button class="pill${SX.g === k ? ' on' : ''}" data-sxg="${k}">${t}${SX.rows.length ? ' (' + n + ')' : ''}</button>` }).join('');
+  const L = SX.rows.filter(r => byF(r) && (SX.g === 'all' || SPECS[r.sym].cat === SX.g));
   const TI = {MARKET: '⚡ MARKET', STOP: '🚀 STOP', LIMIT: '📌 LIMIT'};
   $('sxList').innerHTML = !SX.rows.length ? '<div class="card note" style="padding:14px">अभी scan नहीं हुआ — ऊपर "🔍 सारे pair scan करो" दबाइए।</div>'
-    : !L.length ? `<div class="card note" style="padding:14px">${SX.f === 'ai' ? 'अभी कोई AI सहमत signal नहीं' + (SX.busy ? ' (AI check चल रहा है…)' : '') + ' — "⭐ अच्छे" देखिए।' : 'कुछ नहीं मिला।'}</div>`
+    : !L.length ? `<div class="card note" style="padding:14px">${SX.g !== 'all' ? 'इस group में: ' : ''}${SX.f === 'ai' ? 'अभी कोई AI सहमत signal नहीं' + (SX.busy ? ' (AI check चल रहा है…)' : '') + ' — "⭐ अच्छे" देखिए।' : 'कुछ नहीं मिला।'}</div>`
     : L.map(r => { const g = r.sig, B = g.dir === 'BUY', ai = r.ai, sp = SPECS[r.sym];
       return `<a href="#" data-sx="${r.sym}" class="card" style="display:block;padding:11px 13px;color:var(--tx);text-decoration:none;${r.cand ? '' : 'opacity:.6;'}">
 <div style="display:flex;align-items:center;gap:8px"><b style="font-size:15px">${esc(sp.n)}</b><span class="badge" style="color:${B ? 'var(--up)' : 'var(--dn2)'};border:1px solid ${B ? 'var(--up)' : 'var(--dn2)'}">${g.dir} LIMIT</span><span class="badge" style="color:var(--gold);border:1px solid var(--line)">${g.grade}</span>
@@ -780,9 +784,9 @@ ${gS.n ? `<br><span class="note">STOP: झूठे breakout पर जल्द
 
 /* ---------------- PAIRS ---------------- */
 async function renderPairs(fetchQ){
-  $('ptabs').innerHTML = [['fav', '★ Favourites'], ['Forex', 'Forex'], ['Metals', 'Metals'], ['Crypto', 'Crypto']].map(([k, t]) => `<button class="pill${st.ptab === k ? ' on' : ''}" data-pt="${k}">${t}</button>`).join('');
+  $('ptabs').innerHTML = [['fav', '★ Favourites'], ...GROUPS].map(([k, t]) => `<button class="pill${st.ptab === k ? ' on' : ''}" data-pt="${k}">${t}</button>`).join('');
   const qq = $('pSearch').value.trim().toUpperCase().replace('/', '');
-  let L = PAIRS.filter(p => qq ? SPECS[p].n.includes(qq) : st.ptab === 'fav' ? st.favs.includes(p) : SPECS[p].group === st.ptab);
+  let L = PAIRS.filter(p => qq ? SPECS[p].n.includes(qq) : st.ptab === 'fav' ? st.favs.includes(p) : SPECS[p].cat === st.ptab);   /* v1.20.0: Majors / EUR / GBP / AUD-NZD / CAD-CHF-JPY / Metals / Crypto */
   const star = on => `<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" fill="${on ? '#e8c35a' : 'none'}" stroke="${on ? '#e8c35a' : '#5c574c'}" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
   const draw = () => $('pList').innerHTML = L.length ? L.map(p => { const q = st.q[p], sp = SPECS[p], act = p === st.pair;
     return `<div style="display:flex;align-items:center;gap:12px;padding:11px 12px;${act ? 'background:rgba(232,195,90,0.10);border:1px solid rgba(232,195,90,0.5);border-radius:14px' : 'border-top:1px solid rgba(232,195,90,0.08)'}">
@@ -1016,6 +1020,7 @@ function boot(){
   $('sxPaper').onclick = () => { const on = !LS.get('sxPaper', true); LS.set('sxPaper', on); renderScan(); toast(on ? '🤖 ON — Scan के AI सहमत signal अपने आप paper trade बनेंगे' : '🤖 OFF — अब अपने आप paper में नहीं जुड़ेंगे') };
   $('hv').onclick = e => { const b = e.target.closest('[data-hv]'); if(b){ st.hv = b.dataset.hv; LS.set('hv', st.hv); renderHis() } };
   $('sxF').onclick = e => { const b = e.target.closest('[data-sxf]'); if(b){ SX.f = b.dataset.sxf; LS.set('sxF', SX.f); renderScan() } };
+  $('sxG').onclick = e => { const b = e.target.closest('[data-sxg]'); if(b){ SX.g = b.dataset.sxg; LS.set('sxG', SX.g); renderScan() } };
   $('sxList').onclick = e => { const b = e.target.closest('[data-sx]'); if(b){ e.preventDefault(); openScanRow(b.dataset.sx) } };
   $('cBtn').onclick = () => openCouncil(null); $('cBack').innerHTML = icon('back', '#f3efe6', 18); $('cBack').onclick = () => st.cBack === 'res' && getRec(st.cur) ? show('res') : show('home');
   $('cList').onclick = e => { const b = e.target.closest('[data-cpick]'); if(b){ e.preventDefault(); st.cRec = b.dataset.cpick; renderCPage(); window.scrollTo(0, 0) } };

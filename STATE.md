@@ -141,3 +141,9 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 ### Pending
 - Band app par bhi scan + paper (VPS / server chahiye).
 - Firebase suraksha (rules + Auth) — abhi bhi baaki.
+
+## v1.20.0 — Pairs + Scanner me forex ke hisse (12 Nov)
+- User: "pair divide kar dena — Majors, EUR cross, GBP cross, AUD/NZD, CAD/CHF..." + "Scanner me bhi..final".
+- symbols.js: har forex pair me `cat` — Majors (USD wale 7) / EUR (6) / GBP (5) / AUDNZD (7) / CCJ = CAD/CHF/JPY cross (3); Gold `Metals`, BTC `Crypto`; `GROUPS` list. `group: 'Forex'` wahi (contract size wagairah).
+- Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
+- Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
