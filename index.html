@@ -30,6 +30,11 @@ header.top{display:flex;align-items:center;gap:12px;padding:calc(14px + env(safe
 .hTools{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px;margin:6px 18px 0;padding:6px;border-radius:14px;border:1px solid rgba(232,195,90,0.35);background:linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015))}
 .hTools button,.hTools .hLive{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:0;padding:6px 1px;border-radius:10px;background:transparent;border:0;color:var(--mu);font:inherit;font-size:9.5px;font-weight:700;letter-spacing:0;white-space:nowrap;cursor:pointer}
 .hTools button:active{background:rgba(232,195,90,0.12)}
+/* v1.20.4: Scan sabse alag — sunehra dabba + halki chamak; Auto scan ON = kone me hara AUTO */
+.hTools #sxBtn{position:relative;background:linear-gradient(135deg,#f7e08a,#c9971f 45%,#fff3c4 62%,#e8c35a);color:#1a1408;font-weight:800;box-shadow:0 0 10px rgba(232,195,90,0.55),inset 0 0 0 1px rgba(255,246,207,0.6)}
+.hTools #sxBtn:active{filter:brightness(0.92)}
+.sxAutoB{position:absolute;top:-6px;right:-4px;display:none;padding:1px 4px;border-radius:6px;background:#2fe08a;color:#062014;font-size:7.5px;font-weight:900;letter-spacing:.3px;line-height:11px;box-shadow:0 0 6px rgba(47,224,138,0.8)}
+.sxAutoB.on{display:block}
 .hTools .ti{height:22px;display:flex;align-items:center;font-size:18px}
 .hTools .hLive .live{padding:2px 5px;font-size:9px;letter-spacing:.3px;gap:4px}
 .ib{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.04);border:1px solid var(--line);color:var(--tx)}
@@ -139,7 +144,7 @@ nav.bar .fab b.fsr{position:absolute;width:1px;height:1px;overflow:hidden;clip:r
 <div style="flex:1;min-width:0"><div class="mt" id="hName" style="font-family:Cinzel,serif;font-weight:700;font-size:clamp(17px,5.4vw,22px);letter-spacing:1px;white-space:nowrap">SAMUSIGNAL AI</div><div class="lbl" style="white-space:nowrap;font-size:10px;letter-spacing:1px">AI chart signals · <b id="hVer" style="color:var(--gold);text-transform:none"></b></div></div></header>
 <!-- v1.9.2: naam ke neeche ek box me saare button (overlap nahi) -->
 <div class="hTools" id="hTools">
-<button id="sxBtn" aria-label="Scanner"><span class="ti">📋</span><span>Scan</span></button>
+<button id="sxBtn" aria-label="Scanner"><span class="ti">📋</span><span>Scan</span><span class="sxAutoB" id="sxAutoB">AUTO</span></button>
 <button id="cBtn" aria-label="AI Council"><span class="ti">🧠</span><span>Council</span></button>
 <button id="flowBtn" aria-label="Order Flow"><span class="ti">🐋</span><span>Flow</span></button>
 <button id="newsBtn" aria-label="News Signal" onclick="location.href='news.html'"><span class="ti">📰</span><span>News</span></button>
