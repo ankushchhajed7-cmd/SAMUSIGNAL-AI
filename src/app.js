@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot, aiCouncil} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.20.1';
+export const VERSION = '1.20.2';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -34,6 +34,8 @@ function dlg(title, html, okTxt = 'OK', noTxt = 'Cancel'){
 /* ---------------- state ---------------- */
 const st = {pair: SPECS[LS.get('pair')] ? LS.get('pair') : 'EUR/USD', tf: LS.get('tf', '15min'), favs: LS.get('favs', ['EUR/USD', 'GBP/USD', 'USD/JPY', 'XAU/USD']),
   hist: LS.get('hist', []), cur: null, q: {}, src: '', ptab: 'fav', hf: 'all', hk: 'all', hv: LS.get('hv', 'all'), scr: 'home', busy: false, home: null};
+/* v1.20.2: Auto scan yaad nahi rakhte — har baar app khulne par OFF (purani saved value hata do) */
+let autoOn = false; try{ localStorage.removeItem('sai_autoScan') }catch(e){}
 /* v1.19.0: 300 se zyada ho to pehle sabse purane 🤖 Scan auto hatao — haath se liye trade auto ki bheed me na khoyein */
 const saveHist = () => { let extra = st.hist.length - 300; for(let i = st.hist.length - 1; i >= 0 && extra > 0; i--) if(st.hist[i].auto && st.hist[i].res && st.hist[i].res.done){ st.hist.splice(i, 1); extra-- }
   LS.set('hist', st.hist.slice(0, 300)) };
@@ -529,7 +531,7 @@ function sxAlert(rows){
 }
 function renderScan(){
   if(!$('sxList')) return;
-  const auto = LS.get('autoScan', false);
+  const auto = autoOn;
   $('sxAuto').textContent = auto ? '⏱ Auto: ON' : '⏱ Auto: OFF'; $('sxAuto').className = 'btn ' + (auto ? 'gold' : 'out');
   const pp = LS.get('sxPaper', true); $('sxPaper').textContent = '🤖 AI सहमत → paper: ' + (pp ? 'ON' : 'OFF'); $('sxPaper').className = 'btn ' + (pp ? 'gold' : 'out');
   $('sxGo').disabled = SX.busy; $('sxGo').textContent = SX.busy ? '⏳ Scan चल रहा है…' : '🔍 सारे pair scan करो';
@@ -1010,7 +1012,8 @@ function boot(){
   $('sxBtn').onclick = () => { show('scan'); if(!SX.rows.length || Date.now() - SX.at > 15 * 60000) runScan(false) };
   $('sxBack').innerHTML = icon('back', '#f3efe6', 18); $('sxBack').onclick = () => show('home');
   $('sxGo').onclick = () => runScan(false);
-  $('sxAuto').onclick = () => { const on = !LS.get('autoScan', false); LS.set('autoScan', on); renderScan();
+  /* v1.20.2: Auto scan sirf is baar ke liye — app band karke kholo to OFF, khud ON karna hoga */
+  $('sxAuto').onclick = () => { const on = autoOn = !autoOn; renderScan();
     if(on && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission();
     toast(on ? '⏱ Auto scan ON — हर नई 15m candle पर (app खुला हो तब)' : 'Auto scan OFF') };
   $('sxPaper').onclick = () => { const on = !LS.get('sxPaper', true); LS.set('sxPaper', on); renderScan(); toast(on ? '🤖 ON — Scan के AI सहमत signal अपने आप paper trade बनेंगे' : '🤖 OFF — अब अपने आप paper में नहीं जुड़ेंगे') };
@@ -1075,7 +1078,7 @@ function boot(){
     try{
       const now = Date.now(), fast = st.src !== 'td';
       if(st.scr === 'home' && now - T.home > (fast ? 12e3 : 60e3)){ T.home = now; loadHome(true) }
-      if(LS.get('autoScan', false) && fast){ const slot = Math.floor((now - 25000) / 900e3);   /* v1.16.0: har nayi 15m candle ke 25 sec baad */
+      if(autoOn && fast){ const slot = Math.floor((now - 25000) / 900e3);   /* v1.16.0: har nayi 15m candle ke 25 sec baad */
         if(slot !== T.sx){ const first = T.sx === undefined; T.sx = slot; if(!first || !SX.rows.length) runScan(st.scr !== 'scan') } }
       if(st.scr === 'scan' && $('sxAt') && SX.at) $('sxAt').textContent = ist(SX.at) + ' · ' + Math.round((now - SX.at) / 60000) + ' min पहले';
       if(st.scr === 'res' && now - T.res > (fast ? 15e3 : 60e3)){ T.res = now; const r = getRec(st.cur);
