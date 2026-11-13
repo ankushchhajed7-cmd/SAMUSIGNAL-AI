@@ -148,6 +148,12 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.20.3 — Chart: SELL / SL pill candle nahi dhakte (13 Nov)
+- User: SELL / SL pill aakhri candles ke upar aa kar unhe chhupa rahe the.
+- Daam ab right price-scale par rangeen label (createPriceLine axisLabelVisible + axisLabelColor): SL laal, TP hara, entry (naya line) sunehra.
+- Chart me sirf chhota tag "SELL / BUY", "SL", "TP" — aakhri candle ke daayein (logicalToCoordinate(n-1+1.2)); jagah na ho to scale ke baayein. Level bahar ho to ↑/↓ + daam. TP ab baayein nahi (pehle shuru ki candle dhakta tha).
+- rightOffset 14 → 20 (fit bhi n+20). Entry patti halki (0.02→0.10, border 0.55).
+
 ## v1.20.2 — Scanner Auto scan yaad nahi rehta (13 Nov)
 - User: app band karke kholo to ⏱ Auto scan apne aap **OFF**; khud ON karo tab chale. Pehle localStorage me save hota tha (khulte hi ON).
 - Ab sirf memory (`autoOn`); purani saved `sai_autoScan` hata di jaati hai. 🤖 paper wala toggle (sxPaper) waisa hi yaad rehta hai.

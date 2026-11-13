@@ -6,7 +6,7 @@ import {accounts, orders, sendLimit, ORDER_ST} from './bridge.js';
 import {aiCheck, aiShot, aiCouncil} from './ai.js';
 import {FLOW_SYMS, REST, WS, bookStats, decide, windowStats, whaleCut} from './flow.js';
 
-export const VERSION = '1.20.2';
+export const VERSION = '1.20.3';
 const $ = id => document.getElementById(id);
 const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IC = {chart: '<path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -45,7 +45,7 @@ const getRec = id => st.hist.find(x => x.id === id) || (st.preview && st.preview
 const K = () => keys();
 
 /* ---------------- charts ---------------- */
-/* v1.0.4: saaf levels — entry = halki gold patti, TP/SL = patli line + chhote pill (aapas me takraate nahi),
+/* v1.20.3: daam price-scale par, chart me chhote tag aakhri candle ke daayein. v1.0.4: saaf levels — entry = halki gold patti, TP/SL = patli line + chhote pill (aapas me takraate nahi),
    chart ke bahar wala level kinare pe ↑/↓ ke saath. Pill ke daam right price-scale ke andar nahi (khichdi khatam). */
 function mkChart(el){
   const LV = {sig: null};
@@ -53,7 +53,7 @@ function mkChart(el){
     layout: {background: {type: 'solid', color: 'rgba(0,0,0,0)'}, textColor: '#8f8775', fontFamily: 'Manrope', fontSize: 10, attributionLogo: false},
     grid: {vertLines: {visible: false}, horzLines: {color: 'rgba(232,195,90,0.05)'}},
     rightPriceScale: {borderVisible: false, scaleMargins: {top: 0.12, bottom: 0.22}},
-    timeScale: {borderVisible: false, timeVisible: true, secondsVisible: false, rightOffset: 14, barSpacing: 7},
+    timeScale: {borderVisible: false, timeVisible: true, secondsVisible: false, rightOffset: 20, barSpacing: 7}   /* v1.20.3: 14 -> 20, tag ke liye khaali jagah */,
     localization: {locale: 'en-US', timeFormatter: t => new Date(t * 1000).toISOString().slice(11, 16)},
     crosshair: {mode: 0}, handleScale: {axisPressedMouseMove: true}});
   const s = ch.addCandlestickSeries({upColor: '#2fe08a', downColor: '#ff5d6c', borderVisible: false, wickUpColor: '#2fe08a', wickDownColor: '#ff5d6c',
@@ -90,13 +90,15 @@ function mkChart(el){
     C.lines.forEach(l => s.removePriceLine(l)); C.lines = []; C.sig = sig || null; LV.sig = C.sig;
     ch.priceScale('right').applyOptions({autoScale: true});
     if(sig){
-      const L = (price, color, style) => C.lines.push(s.createPriceLine({price, color, lineStyle: style, lineWidth: 1, axisLabelVisible: false, title: ''}));
-      L(sig.sl, 'rgba(255,93,108,0.75)', 2); L(sig.tp[0], 'rgba(47,224,138,0.75)', 2);
+      /* v1.20.3: daam ab right price-scale par rangeen label (TradingView jaisa) — chart ke andar candle nahi dhakti */
+      const L = (price, color, style, bg, fg) => C.lines.push(s.createPriceLine({price, color, lineStyle: style, lineWidth: 1, axisLabelVisible: true, axisLabelColor: bg, axisLabelTextColor: fg, title: ''}));
+      L(sig.sl, 'rgba(255,93,108,0.75)', 2, '#ff5d6c', '#2a0a0e'); L(sig.tp[0], 'rgba(47,224,138,0.75)', 2, '#2fe08a', '#062014');
+      L(sig.entry, 'rgba(232,195,90,0.55)', 0, '#e8c35a', '#1a1408');
     }
     C.draw();
   };
   C.clear = () => { s.setData([]); C.levels(null); C.lastC = null; C.n = 0; C.sym = ''; C.tick() };   /* v1.8.3: pair badalte hi purana chart hatao */
-  C.fit = () => { const n = C.n; if(n > 100) ch.timeScale().setVisibleLogicalRange({from: n - 80, to: n + 14}); else ch.timeScale().fitContent() };
+  C.fit = () => { const n = C.n; if(n > 100) ch.timeScale().setVisibleLogicalRange({from: n - 80, to: n + 20}); else ch.timeScale().fitContent() };
   C.draw = () => {
     const g = C.sig; if(!g || !C.sym){ ov.innerHTML = ''; return }
     let W = 0, H = el.clientHeight; try{ W = ch.priceScale('right').width(); H = el.clientHeight - ch.timeScale().height() }catch(e){}
@@ -105,22 +107,25 @@ function mkChart(el){
     let html = '';
     if(top !== null && bot !== null){
       const t = Math.max(0, Math.min(top, bot)), h = Math.max(3, Math.abs(bot - top));
-      if(t < H) html += `<div style="position:absolute;left:0;right:${W}px;top:${t}px;height:${h}px;background:linear-gradient(90deg,rgba(232,195,90,0.04),rgba(232,195,90,0.22));border-top:1px solid rgba(232,195,90,0.85);border-bottom:1px solid rgba(232,195,90,0.45)"></div>`;
+      if(t < H) html += `<div style="position:absolute;left:0;right:${W}px;top:${t}px;height:${h}px;background:linear-gradient(90deg,rgba(232,195,90,0.02),rgba(232,195,90,0.10));border-top:1px solid rgba(232,195,90,0.55);border-bottom:1px solid rgba(232,195,90,0.30)"></div>`;
     }
-    const tags = [{p: (g.zone[0] + g.zone[1]) / 2, t: (g.dir === 'BUY' ? 'BUY ' : 'SELL ') + f(g.entry), bg: 'linear-gradient(120deg,#f7e08a,#c9971f 45%,#fff6cf 60%,#e8c35a)', c: '#1a1408', k: 0},
-      {p: g.sl, t: 'SL ' + f(g.sl), bg: '#ff5d6c', c: '#2a0a0e', k: 1}]
-      .concat([{p: g.tp[0], t: 'TP', bg: 'rgba(7,8,11,0.85)', c: '#2fe08a', bd: '1px solid rgba(47,224,138,0.7)', sm: 1, k: 2}]);   /* v1.4.0: sirf TP1 */
-    const PH = 18, GAP = 2;
+    /* v1.20.3: chart me sirf chhota tag (SELL / SL / TP) — daam price-scale par. Tag aakhri candle ke DAAYEIN khaali
+       jagah me; level chart ke bahar ho to kinare pe ↑/↓ + daam (tab scale par label nahi dikhta). */
+    const tags = [{p: g.entry, t: g.dir === 'BUY' ? 'BUY' : 'SELL', bg: 'linear-gradient(120deg,#f7e08a,#c9971f 45%,#fff6cf 60%,#e8c35a)', c: '#1a1408'},
+      {p: g.sl, t: 'SL', bg: '#ff5d6c', c: '#2a0a0e'},
+      {p: g.tp[0], t: 'TP', bg: 'rgba(7,8,11,0.85)', c: '#2fe08a', bd: '1px solid rgba(47,224,138,0.7)'}];   /* v1.4.0: sirf TP1 */
+    const PH = 16, GAP = 2;
     tags.forEach(x => { const c = y(x.p); x.out = c === null ? 0 : c < PH / 2 ? -1 : c > H - PH / 2 ? 1 : 0; x.y = c === null ? H / 2 : Math.min(H - PH / 2, Math.max(PH / 2, c)) });
-    /* v1.0.6: BUY / SL = daayein, T1-T3 = baayein (ulti taraf) — dono group alag-alag, aapas me takraate nahi */
-    [tags.filter(x => !x.sm), tags.filter(x => x.sm)].forEach(G => {
-      if(!G.length) return;
-      G.sort((a, b) => a.y - b.y);
-      for(let i = 1; i < G.length; i++) if(G[i].y - G[i - 1].y < PH + GAP) G[i].y = G[i - 1].y + PH + GAP;
-      const over = G[G.length - 1].y - (H - PH / 2);
-      if(over > 0) G.forEach(x => x.y -= over);
-    });
-    tags.forEach(x => { html += `<span style="position:absolute;${x.sm ? 'left:6px' : 'right:' + (W + 4) + 'px'};top:${(x.y - PH / 2).toFixed(1)}px;height:${PH}px;line-height:${PH}px;padding:0 ${x.sm ? 6 : 7}px;border-radius:6px;font:800 10px Manrope,sans-serif;letter-spacing:.3px;white-space:nowrap;color:${x.c};background:${x.bg};${x.bd ? 'border:' + x.bd + ';box-sizing:border-box;' : ''}box-shadow:0 2px 8px rgba(0,0,0,0.45)">${x.out < 0 ? '↑ ' : x.out > 0 ? '↓ ' : ''}${x.t}</span>` });
+    tags.sort((a, b) => a.y - b.y);
+    for(let i = 1; i < tags.length; i++) if(tags[i].y - tags[i - 1].y < PH + GAP) tags[i].y = tags[i - 1].y + PH + GAP;
+    const over = tags[tags.length - 1].y - (H - PH / 2);
+    if(over > 0) tags.forEach(x => x.y -= over);
+    /* aakhri candle ke daayein: x = aakhri candle + 1 bar; jagah na ho to price-scale ke theek baayein */
+    let lx = null; try{ const c = ch.timeScale().logicalToCoordinate(C.n - 1 + 1.2); if(c !== null && isFinite(c)) lx = c }catch(e){}
+    const plotW = el.clientWidth - W;
+    tags.forEach(x => { const txt = (x.out < 0 ? '↑ ' : x.out > 0 ? '↓ ' : '') + x.t + (x.out ? ' ' + f(x.p) : '');
+      const wEst = txt.length * 6.4 + 14, pos = (lx !== null && lx > 0 && lx + wEst < plotW - 2) ? 'left:' + lx.toFixed(1) + 'px' : 'right:' + (W + 4) + 'px';
+      html += `<span style="position:absolute;${pos};top:${(x.y - PH / 2).toFixed(1)}px;height:${PH}px;line-height:${PH}px;padding:0 6px;border-radius:5px;font:800 9.5px Manrope,sans-serif;letter-spacing:.3px;white-space:nowrap;color:${x.c};background:${x.bg};${x.bd ? 'border:' + x.bd + ';box-sizing:border-box;' : ''}box-shadow:0 2px 8px rgba(0,0,0,0.45)">${txt}</span>` });
     ov.innerHTML = html;
   };
   ch.timeScale().subscribeVisibleLogicalRangeChange(() => { C.draw(); C.tick() });
