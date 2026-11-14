@@ -9,7 +9,7 @@ import {SPECS, PAIRS, fmt, pipUsd} from './symbols.js';
 import {accounts, orderKey} from './bridge.js';
 import {DEF, signal, closedBars, paperResolve, stats, sendWindowMs} from './candlerules.js';
 
-export const CANDLE_VERSION = '1.0.3';
+export const CANDLE_VERSION = '1.0.4';
 const MAX_ON = 6;
 const $ = id => document.getElementById(id);
 const esc = s => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -21,7 +21,7 @@ const usd = v => (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(2);
 
 const S = {
   tab: 'live', q: '',
-  cfg: Object.assign({tf: 1, pairs: ['XAU/USD'], autoPaper: false, confirm: true, sound: true}, LS.get('candle_cfg', {})),
+  cfg: Object.assign({tf: 1, pairs: ['XAU/USD'], autoPaper: false, confirm: true, sound: true, screenOn: true}, LS.get('candle_cfg', {})),
   paper: LS.get('candle_paper', []),
   real: LS.get('candle_real', []),
   seen: LS.get('candle_seen', {}),
@@ -40,8 +40,26 @@ function audio(){ try{ AC = AC || new (window.AudioContext || window.webkitAudio
 function beep(f = 880, d = 0.15){
   if(!S.cfg.sound) return;
   try{ audio(); const o = AC.createOscillator(), g = AC.createGain(); o.frequency.value = f; o.connect(g); g.connect(AC.destination);
-    g.gain.setValueAtTime(0.25, AC.currentTime); g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + d); o.start(); o.stop(AC.currentTime + d) }catch(e){}
-  try{ if(navigator.vibrate) navigator.vibrate([200, 100, 200]) }catch(e){}
+    g.gain.setValueAtTime(0.6, AC.currentTime);   /* 1.0.4: zor se */ g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + d); o.start(); o.stop(AC.currentTime + d) }catch(e){}
+  try{ if(navigator.vibrate) navigator.vibrate([300, 120, 300, 120, 300]) }catch(e){}
+}
+/* 1.0.4: naya signal = 3 beep + poori screen par bada BUY / SELL flash (8 sec, tap se band) */
+function alertSig(sym, sg){
+  const hi = sg.dir === 'BUY' ? [990, 1320, 1760] : [660, 520, 440];
+  hi.forEach((f, i) => setTimeout(() => beep(f, 0.25), i * 300));
+  const el = $('flash'); if(!el) return;
+  el.className = 'on ' + sg.dir;
+  el.innerHTML = `<div class="fdir">${sg.dir}</div><div class="fsym">${esc(SPECS[sym] ? SPECS[sym].n : sym)}</div><div class="fln">${hm(sg.next)} की ${sg.tf}m candle · 🚀 MT5 जल्दी दबाएँ</div><div class="fx">tap = बंद</div>`;
+  clearTimeout(alertSig.h); alertSig.h = setTimeout(() => { el.className = '' }, 8000);
+}
+/* 1.0.4: Screen ON (Wake Lock) — ON rahe tab tak screen apne aap band nahi hogi */
+let WL = null;
+async function wakeSet(){
+  if(!S.cfg.screenOn){ try{ if(WL) await WL.release() }catch(e){} WL = null; S.wlTxt = 'OFF'; return }
+  if(!('wakeLock' in navigator)){ S.wlTxt = 'इस phone / browser में support नहीं'; return }
+  if(document.hidden) return;
+  try{ if(!WL || WL.released){ WL = await navigator.wakeLock.request('screen'); WL.addEventListener('release', () => { S.wlTxt = 'रुका — app फिर खोलें'; }) } S.wlTxt = 'चालू — screen बंद नहीं होगी' }
+  catch(e){ S.wlTxt = 'अभी नहीं चला — page पर एक बार tap करें' }
 }
 function toast(m){ const t = $('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toast.h); toast.h = setTimeout(() => { t.style.display = 'none' }, 3200) }
 function dlg(title, html, okTxt = 'OK', noTxt = 'Cancel'){
@@ -86,7 +104,7 @@ async function poll(){
       if(S.seen[key] === sg.at) return;
       S.seen[key] = sg.at; saveSeen();
       if(S.cfg.autoPaper) addPaper(sym, sg, true);
-      if(now - sg.next < sendWindowMs(tf)){ beep(sg.dir === 'BUY' ? 990 : 660, 0.2); setTimeout(() => beep(sg.dir === 'BUY' ? 1320 : 520, 0.2), 260) }
+      if(now - sg.next < sendWindowMs(tf)) alertSig(sym, sg);   /* 1.0.4: 3 beep + bada flash */
     });
     resolvePaper(now);
   }catch(e){ S.err = e.message }
@@ -216,7 +234,8 @@ function liveTab(){
   return `<div class="wrap">
 <div class="card"><div class="bar"><div class="seg">${[1, 5].map(t => `<button data-act="tf" data-v="${t}" class="${S.cfg.tf === t ? 'on' : ''}">${t} MIN</button>`).join('')}</div>
 <div class="cdbox"><b class="mono" id="cd">${cdTxt()}</b><small>candle बंद होने में</small></div></div>
-<div class="tg" style="margin-top:8px"><span>📝 Auto Paper<small>हर signal अपने आप paper में (asli paisa nahi)</small></span><button data-act="auto" class="${S.cfg.autoPaper ? 'on' : ''}">${S.cfg.autoPaper ? 'ON' : 'OFF'}</button></div></div>
+<div class="tg" style="margin-top:8px"><span>📝 Auto Paper<small>हर signal अपने आप paper में (asli paisa nahi)</small></span><button data-act="auto" class="${S.cfg.autoPaper ? 'on' : ''}">${S.cfg.autoPaper ? 'ON' : 'OFF'}</button></div>
+<div class="tg" style="margin-top:8px"><span>☀️ Screen ON<small>${esc(S.wlTxt || 'ON = जब तक ये page खुला है, screen अपने आप बंद नहीं होगी')}</small></span><button data-act="screen" class="${S.cfg.screenOn ? 'on' : ''}">${S.cfg.screenOn ? 'ON' : 'OFF'}</button></div></div>
 ${S.feed && !S.feed.ok ? `<div class="warn">⚠ ${esc(S.err || 'Data Feed band')} — VPS पर "SamuSignal Data Feed" EA चालू करें।</div>` : ''}
 ${on.length ? on.map(pairCard).join('') : `<div class="empty">कोई pair ON नहीं — नीचे <b>Pairs</b> में जाकर ON करें</div>`}
 <div class="note">Signal सिर्फ़ <b>बंद candle</b> पर बनता है। MT5 button: 1m में 20 sec, 5m में 60 sec तक। App खुला रहना चाहिए (screen on)।</div>
@@ -257,7 +276,8 @@ function setTab(){
   return `<div class="wrap"><div class="card"><h3>Setting</h3>
 ${tg('auto', S.cfg.autoPaper, '📝 Auto Paper', 'हर BUY / SELL signal अपने आप paper में')}
 ${tg('confirm', S.cfg.confirm, '🚀 MT5 से पहले पूछो', 'OFF = एक tap में सीधा भेजो (तेज़)')}
-${tg('sound', S.cfg.sound, '🔔 आवाज़ + vibrate', 'नया signal आने पर')}</div>
+${tg('sound', S.cfg.sound, '🔔 आवाज़ + vibrate', 'नया signal आने पर (3 beep + बड़ा BUY / SELL flash)')}
+${tg('screen', S.cfg.screenOn, '☀️ Screen ON', 'ON = screen अपने आप बंद नहीं होगी')}</div>
 <div class="card"><h3>Strategy 5 — नियम</h3><div class="note">
 • Signal: बंद candle मज़बूत (body ≥ पिछली 10 की average × ${DEF.bodyMult}, body ≥ candle का ${DEF.bodyPct * 100}%) + EMA ${DEF.fast} / ${DEF.slow} की दिशा + close EMA ${DEF.fast} के उस पार + RSI ${DEF.rsiLen} (BUY ${DEF.buyRsi[0]}–${DEF.buyRsi[1]}, SELL ${DEF.sellRsi[0]}–${DEF.sellRsi[1]})।<br>
 • Trade (EA PERSONAL FX v7.6): TP +$${DEF.tp.toFixed(2)} · SL -$${DEF.sl.toFixed(2)} (0.01 lot पर) · candle बंद होते ही जो भी P/L · lot = EA का S5_Lot (0.01)।<br>
@@ -277,7 +297,8 @@ function render(){
 function repaint(){ $('main').innerHTML = tabHtml(); render() }
 
 /* ---------- actions ---------- */
-document.addEventListener('click', e => { audio(); const b = e.target.closest('[data-act]'); if(b && !b.disabled) act(b.dataset.act, b.dataset.v) });
+document.addEventListener('click', e => { audio(); if(S.cfg.screenOn && (!WL || WL.released)) wakeSet().then(render);   /* 1.0.4: tap par Screen ON phir se */
+  const b = e.target.closest('[data-act]'); if(b && !b.disabled) act(b.dataset.act, b.dataset.v) });
 document.addEventListener('input', e => { if(e.target.id === 'srch'){ S.q = e.target.value; const pos = e.target.selectionStart; $('main').innerHTML = pairsTab(); const i = $('srch'); i.focus(); try{ i.setSelectionRange(pos, pos) }catch(x){} } });
 function act(a, v){
   if(a === 'tab'){ S.tab = v; S.q = ''; repaint(); if(v === 'rec') refreshReal(true); return }
@@ -285,6 +306,8 @@ function act(a, v){
   if(a === 'auto'){ S.cfg.autoPaper = !S.cfg.autoPaper; saveCfg(); repaint(); toast(S.cfg.autoPaper ? '📝 Auto Paper ON' : 'Auto Paper OFF'); return }
   if(a === 'confirm'){ S.cfg.confirm = !S.cfg.confirm; saveCfg(); repaint(); return }
   if(a === 'sound'){ S.cfg.sound = !S.cfg.sound; saveCfg(); repaint(); if(S.cfg.sound) beep(); return }
+  if(a === 'screen'){ S.cfg.screenOn = !S.cfg.screenOn; saveCfg(); wakeSet().then(repaint); toast(S.cfg.screenOn ? '☀️ Screen ON — अपने आप बंद नहीं होगी' : 'Screen ON बंद'); return }
+  if(a === 'flashoff'){ $('flash').className = ''; return }
   if(a === 'pair'){
     const on = S.cfg.pairs;
     if(on.includes(v)) S.cfg.pairs = on.filter(p => p !== v);
@@ -311,8 +334,7 @@ function boot(){
   render(); poll(); refreshReal();
   setInterval(tick, 1000);
   setInterval(refreshReal, 10000);
-  const wake = () => { try{ if('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(() => {}) }catch(e){} };   /* screen on rahe */
-  document.addEventListener('visibilitychange', () => { if(!document.hidden){ wake(); poll() } });
-  wake();
+  document.addEventListener('visibilitychange', () => { if(!document.hidden){ wakeSet().then(render); poll() } });   /* 1.0.4: Screen ON toggle */
+  wakeSet().then(render);
 }
 boot();

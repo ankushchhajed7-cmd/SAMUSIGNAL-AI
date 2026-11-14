@@ -148,6 +148,11 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.21.4 — Candle page: signal par 3 beep + bada BUY / SELL flash + Screen ON toggle (14 Nov)
+- User: signal aaye to beep + bade lafzon me BUY / SELL flash; page par "screen on" option.
+- `alertSig()`: 3 beep (BUY oonche, SELL neeche, gain 0.6) + vibrate + poori screen hara / laal flash (dir 150px, pair, candle samay) 8 sec, tap = band (#flash data-act flashoff). Sirf taaza signal par (sendWindow ke andar), pehle jaisa.
+- `cfg.screenOn` (default ON): Live card + Setting me ☀️ toggle; Wake Lock `wakeSet()` — OFF par release, visibility / tap par phir se. Status line toggle ke neeche. Candle 1.0.4, app 1.21.4.
+
 ## v1.21.3 — Candle / News ka ← back app band karta tha (14 Nov)
 - User: Candle page ka ← dabane par app band ho jaata tha. Pehle `href="./"` (nayi navigation, directory URL). Ab `goHome()`: referrer same-origin + history.length>1 → `history.back()`, warna `location.replace(index.html)`. news.html me bhi wahi. Candle 1.0.3, News 1.4.1, app 1.21.3.
 
