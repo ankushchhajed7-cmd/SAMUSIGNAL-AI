@@ -148,6 +148,10 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.20.5 — Home ke saare button rangeen (14 Nov)
+- User: "Scan jaise golden button, waise hi saare button — har ek ka rang alag".
+- Scan sunehra (wahi), Council gulabi, Flow neela, News chaandi, Refresh hara, Data baingani; sab chamakdaar gradient + gehre bold akshar + halki glow. Data ke LIVE / OFF pill ko gehra background (padhne layak). Refresh icon gehra (#062014).
+
 ## v1.20.4 — Home ka Scan button highlight (13 Nov)
 - User: "start me jo scan wala option hai use zyada highlight karo" → Final 1+3.
 - `#sxBtn` sunehra gradient + gehre bold akshar + halki glow (baaki 5 button waise hi). Auto scan ON ho to kone me hara "AUTO" badge (`#sxAutoB`, `autoBadge()` — renderScan + toggle par).

@@ -33,6 +33,15 @@ header.top{display:flex;align-items:center;gap:12px;padding:calc(14px + env(safe
 /* v1.20.4: Scan sabse alag — sunehra dabba + halki chamak; Auto scan ON = kone me hara AUTO */
 .hTools #sxBtn{position:relative;background:linear-gradient(135deg,#f7e08a,#c9971f 45%,#fff3c4 62%,#e8c35a);color:#1a1408;font-weight:800;box-shadow:0 0 10px rgba(232,195,90,0.55),inset 0 0 0 1px rgba(255,246,207,0.6)}
 .hTools #sxBtn:active{filter:brightness(0.92)}
+/* v1.20.5: saare button Scan jaise chamakdaar dabbe — har ek ka alag rang (Scan sunehra) */
+.hTools #cBtn,.hTools #flowBtn,.hTools #newsBtn,.hTools #refBtn,.hTools .hLive{font-weight:800}
+.hTools #cBtn{background:linear-gradient(135deg,#ffd6e0,#e0607f 45%,#ffe8ee 62%,#f0899f);color:#2a0a12;box-shadow:0 0 10px rgba(240,137,159,0.45),inset 0 0 0 1px rgba(255,232,238,0.6)}
+.hTools #flowBtn{background:linear-gradient(135deg,#d2efff,#3d9fe0 45%,#e8f7ff 62%,#7cc4f0);color:#061a2a;box-shadow:0 0 10px rgba(124,196,240,0.45),inset 0 0 0 1px rgba(232,247,255,0.6)}
+.hTools #newsBtn{background:linear-gradient(135deg,#f4f4f4,#9aa3ad 45%,#ffffff 62%,#c7cdd4);color:#15181c;box-shadow:0 0 10px rgba(199,205,212,0.4),inset 0 0 0 1px rgba(255,255,255,0.6)}
+.hTools #refBtn{background:linear-gradient(135deg,#cbf7e0,#2fbf7a 45%,#eafff3 62%,#6fdca6);color:#062014;box-shadow:0 0 10px rgba(111,220,166,0.45),inset 0 0 0 1px rgba(234,255,243,0.6)}
+.hTools .hLive{background:linear-gradient(135deg,#e8ddff,#8b5cf6 45%,#f4eeff 62%,#b69cf7);color:#1a0d33;box-shadow:0 0 10px rgba(182,156,247,0.45),inset 0 0 0 1px rgba(244,238,255,0.6)}
+.hTools .hLive .live{background:rgba(10,11,14,0.88)}
+.hTools #cBtn:active,.hTools #flowBtn:active,.hTools #newsBtn:active,.hTools #refBtn:active{filter:brightness(0.92)}
 .sxAutoB{position:absolute;top:-6px;right:-4px;display:none;padding:1px 4px;border-radius:6px;background:#2fe08a;color:#062014;font-size:7.5px;font-weight:900;letter-spacing:.3px;line-height:11px;box-shadow:0 0 6px rgba(47,224,138,0.8)}
 .sxAutoB.on{display:block}
 .hTools .ti{height:22px;display:flex;align-items:center;font-size:18px}
