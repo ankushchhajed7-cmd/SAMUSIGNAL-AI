@@ -148,6 +148,11 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.21.1 — Candle page: "nayi candle nahi aayi" chetavni (14 Nov)
+- User: 4 min se screen same (BTCUSD, Shanivar). Wajah: **Data Feed v1.0** nayi candle sirf pehle pair (EURUSD) se pehchanta tha; weekend pe EURUSD band -> BTC ki band candles sirf har 5 min (ResendMin) me jaati thi.
+- Fix VPS par: `Samusignal/vps-ea/SamuSignal Data Feed v1.01.mq5` (kisi bhi pair ki nayi candle -> turant bhejo). Chart par v1.0 hata kar v1.01 lagana hai.
+- App: pair card par "⚠ नई candle नहीं आई — आख़िरी बंद candle HH:MM" jab feed ki aakhri band candle 1 candle + 20 sec se purani ho. Candle page 1.0.1, app 1.21.1.
+
 ## v1.21.0 — 🕯️ CANDLE page (Strategy 5) + Paper (14 Nov, branch feature-candle-v1.21.0)
 - User: agli 1 / 5 min candle ka BUY / SELL, sirf ON kiye pair par, MT5 button se trade (TP $0.25), paper ka option bhi. PERSONAL FX me Strategy 4 waise hi chale, sirf Candle page ke trade Strategy 5 par.
 - Naya alag page `candle.html` + `src/candle.js` (UI) + `src/candlerules.js` (pure logic) + `tests/candle.test.mjs` (9 test). Home par 🕯️ **Candle** button (naarangi; hTools 6 -> 7 column). Baaki app nahi chhua.

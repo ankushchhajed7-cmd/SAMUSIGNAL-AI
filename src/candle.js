@@ -9,7 +9,7 @@ import {SPECS, PAIRS, fmt, pipUsd} from './symbols.js';
 import {accounts, orderKey} from './bridge.js';
 import {DEF, signal, closedBars, paperResolve, stats, sendWindowMs} from './candlerules.js';
 
-export const CANDLE_VERSION = '1.0.0';
+export const CANDLE_VERSION = '1.0.1';
 const MAX_ON = 6;
 const $ = id => document.getElementById(id);
 const esc = s => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -187,14 +187,17 @@ function pairCard(sym){
   const sp = SPECS[sym], L = S.live[sp.n], sg = S.sig[sym], now = Date.now(), k = kOf(sym), spr = spreadOf(sym);
   const head = `<div class="hd"><b>${esc(sp.n)}</b><span class="mono">${L && L.b > 0 ? fmt(sym, L.b) : '—'}${spr > 0 ? ` · spread $${(spr * k).toFixed(2)}` : ''}</span></div>`;
   if(!sg) return `<div class="pc">${head}<div class="no">Candles आ रही हैं…</div></div>`;
+  /* v1.0.1: feed se nayi band candle nahi aa rahi? (Data Feed v1.0 weekend pe sirf 5 min me bhejta tha) */
+  const late = sg.at && now - sg.next > tfMs(sg.tf) + 20000;
+  const lateTxt = late ? `<div class="warn" style="margin-top:10px">⚠ नई candle नहीं आई — आख़िरी बंद candle <b>${hm(sg.at)}</b>। VPS पर <b>Data Feed v1.01</b> लगाएँ, या ये pair का market बंद है।</div>` : '';
   if(sg.dir === 'NO'){
-    return `<div class="pc">${head}<div class="no">⏸ <b>No Trade</b> — ${esc(sg.why)}${sg.at ? `<div class="kv"><span>candle <b>${hm(sg.at)}</b></span>${isFinite(sg.rsi) ? `<span>RSI <b>${sg.rsi.toFixed(0)}</b></span>` : ''}${isFinite(sg.e9) ? `<span>EMA9 ${sg.e9 > sg.e21 ? '>' : '<'} 21</span>` : ''}</div>` : ''}</div></div>`;
+    return `<div class="pc">${head}${lateTxt}<div class="no">⏸ <b>No Trade</b> — ${esc(sg.why)}${sg.at ? `<div class="kv"><span>candle <b>${hm(sg.at)}</b></span>${isFinite(sg.rsi) ? `<span>RSI <b>${sg.rsi.toFixed(0)}</b></span>` : ''}${isFinite(sg.e9) ? `<span>EMA9 ${sg.e9 > sg.e21 ? '>' : '<'} 21</span>` : ''}</div>` : ''}</div></div>`;
   }
   const left = sg.next + sendWindowMs(sg.tf) - now, live = left > 0, candleLeft = sg.next + tfMs(sg.tf) - now;
   const sent = S.real.find(r => r.sym === sym && r.next === sg.next), inPaper = S.paper.find(p => p.sym === sym && p.next === sg.next && p.tf === sg.tf);
   const tpPx = k > 0 ? DEF.tp / k : 0, slPx = k > 0 ? DEF.sl / k : 0;
   const stTxt = sent ? (ST_TXT[sent.status] || [sent.status, ''])[0] + (sent.res ? ' · ' + sent.res + ' ' + (isFinite(sent.pl) ? usd(+sent.pl) : '') : '') : '';
-  return `<div class="pc">${head}
+  return `<div class="pc">${head}${lateTxt}
 <div class="sig ${sg.dir}${live ? '' : ' OLD'}">
   <span class="vt" data-left="${sg.next + sendWindowMs(sg.tf)}">${live ? '⏱ ' + Math.ceil(left / 1000) + 's' : candleLeft > 0 ? 'MT5 का समय गया' : 'candle पूरी'}</span>
   <div class="dir">${sg.dir}</div>
