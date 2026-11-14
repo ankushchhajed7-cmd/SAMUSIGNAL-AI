@@ -6,7 +6,7 @@ import {keys, quotes, series, feedStatus, LS, fbUrl} from './data.js';
 import {fetchBrief, judge, ledger, councilLedger, JUDGE_MIN} from './newsbrief.js';
 import {PAIRS, rules, evaluate, grade, summary, polarity, tradeable, DEF_TGT, usdOf, tpPrice, scanTp, takeSummary} from './newsrules.js';
 
-export const NEWS_VERSION = '1.4.0';
+export const NEWS_VERSION = '1.4.1';
 const FF = 'https://nfs.faireconomy.media/ff_calendar_thisweek.json';
 const MIN = 60000;
 const $ = s => document.querySelector(s);
