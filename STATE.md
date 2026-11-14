@@ -148,6 +148,17 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.21.0 — 🕯️ CANDLE page (Strategy 5) + Paper (14 Nov, branch feature-candle-v1.21.0)
+- User: agli 1 / 5 min candle ka BUY / SELL, sirf ON kiye pair par, MT5 button se trade (TP $0.25), paper ka option bhi. PERSONAL FX me Strategy 4 waise hi chale, sirf Candle page ke trade Strategy 5 par.
+- Naya alag page `candle.html` + `src/candle.js` (UI) + `src/candlerules.js` (pure logic) + `tests/candle.test.mjs` (9 test). Home par 🕯️ **Candle** button (naarangi; hTools 6 -> 7 column). Baaki app nahi chhua.
+- Data: sirf VPS ka **SamuSignal Data Feed** (Firebase `/feed/bars/1min|5min/<PAIR>` + `/feed/live`), 0 TwelveData credit. Poll: candle khulne ke pehle 25 sec me har 2 sec, baaki har 8 sec. App khula + screen on (wakeLock) chahiye.
+- Signal (aakhri BAND candle): body >= pichhli 10 ki average x 1.2 aur >= candle range ka 50%; BUY = hari + EMA9 > EMA21 + close > EMA9 + RSI14 50–70; SELL ulta (RSI 30–50). Warna "No Trade — wajah".
+- 🚀 MT5: 1m me candle khulne ke 20 sec, 5m me 60 sec tak. Order `/personalfx/orders/<key>` = {type BUYMARKET / SELLMARKET, **strat: 'CANDLE', tf: 1|5**, at, acct}. Account: online PERSONAL FX; kai hon to main app ka chuna hua (`sai_acct`), warna DEMO. Confirm sheet (Setting me OFF = ek tap). Ek signal ek hi baar.
+- EA (PERSONAL FX **v7.6**, Samusignal repo) is order ko Strategy 5 pe chalata hai: TP +$0.25 / SL -$1.50 (0.01 lot), candle band hote hi band, lot S5_Lot 0.01; nateeja wapas `orders/<key>` {status CLOSED, res TP / SL / CANDLE CLOSE, pl}. App Record tab me dikhta hai.
+- 📝 Paper: har signal par button + **Auto Paper** switch. Wahi niyam, entry = trade wali candle ka open (BUY + spread), band candle ke OHLC se; ek candle me TP aur SL dono = SL maana. Real aur Paper ka Aaj / Kul hisaab alag (trades, win %, W/L, net $).
+- localStorage: `sai_candle_cfg`, `sai_candle_paper`, `sai_candle_real`, `sai_candle_seen`. Page version 1.0.0; app 1.20.6 -> **1.21.0** (app.js, sw.js, package.json; sw SHELL me candle files).
+- Baaki / idea: kuch din ke paper record ke baad niyam (bodyMult, RSI zone) parakhna; app band ho tab bhi signal ke liye VPS par chalne wala version (jaise News Pusher).
+
 ## v1.20.6 — Chart dabbe me (14 Nov)
 - User: "chart bhi ek square box me daal dena". #hChart (Home) + #rChart (Signal) — margin 18px, sunehri patli kinari, 16px gol kone, halka background + shadow, fadeb chhupa (time axis dikhe). hCard / rCard ab chart ke neeche (pehle −56 / −48 px upar chadhte the).
 
