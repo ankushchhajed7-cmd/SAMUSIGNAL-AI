@@ -148,6 +148,12 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.22.0 — Candle 1.1.0: app band ho tab bhi (VPS) (14 Nov)
+- User: Candle signal app band hone par bhi + paper + push → A + push.
+- `saveCfg` → `cfgSync()` PUT `/candle/cfg` {pairs, tf, autoPaper, at} (800 ms debounce; boot par bhi). `refreshVps()` har 20 sec: `/candle/vps` heartbeat + `/candle/paper` (aakhri 300). `vpsAlive()` = heartbeat < 150 sec.
+- VPS chalu ho to phone khud auto paper NAHI jodta (dohra na ho); manual 📝 Paper phone me hi. Chip "🖥 VPS चालू / बंद". Record: "🖥 Paper — VPS (app बंद हो तब भी)" Aaj / Kul + VPS paper list; phone ka paper alag ("इस phone का", sirf ho to). Live note me VPS ka haal.
+- VPS: Samusignal `vps-scanner` v1.01 (signal + paper), push: AI AUTO EA v1.12. Candle 1.1.0, app 1.22.0. Playwright mock se jaancha.
+
 ## v1.21.4 — Candle page: signal par 3 beep + bada BUY / SELL flash + Screen ON toggle (14 Nov)
 - User: signal aaye to beep + bade lafzon me BUY / SELL flash; page par "screen on" option.
 - `alertSig()`: 3 beep (BUY oonche, SELL neeche, gain 0.6) + vibrate + poori screen hara / laal flash (dir 150px, pair, candle samay) 8 sec, tap = band (#flash data-act flashoff). Sirf taaza signal par (sendWindow ke andar), pehle jaisa.
