@@ -103,7 +103,11 @@ nav.bot button.on{background:var(--metal);color:#1a1408;border-color:transparent
 <body>
 <div id="app">
   <header class="top">
-    <a class="back" href="./" title="SAMUSIGNAL AI">←</a>
+    <a class="back" href="index.html" title="SAMUSIGNAL AI" onclick="return goHome(event)">←</a>
+    <script>/* back: app ke andar pichhle page par (nayi navigation nahi) — warna kuch phone / APK me app band ho jaata tha */
+    function goHome(e){ try{ var r = document.referrer ? new URL(document.referrer) : null;
+      if(r && r.origin === location.origin && history.length > 1){ e.preventDefault(); history.back(); return false } }catch(x){}
+      e.preventDefault(); location.replace(new URL("index.html", location.href).href); return false }</script>
     <div class="tt"><div class="h1 mt">CANDLE</div><div class="lbl">अगली candle का BUY / SELL · Strategy 5</div></div>
     <span class="lbl" id="ver"></span>
   </header>

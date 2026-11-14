@@ -148,6 +148,9 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.21.3 — Candle / News ka ← back app band karta tha (14 Nov)
+- User: Candle page ka ← dabane par app band ho jaata tha. Pehle `href="./"` (nayi navigation, directory URL). Ab `goHome()`: referrer same-origin + history.length>1 → `history.back()`, warna `location.replace(index.html)`. news.html me bhi wahi. Candle 1.0.3, News 1.4.1, app 1.21.3.
+
 ## v1.21.2 — Candle page: No Trade hara, wajah peeli (14 Nov)
 - User: "No Trade dark green me, aage ka result (EMA wagairah) thoda dark peela". `.no b.nt` #16a34a bold; `.why` + `.no .kv` #d4a72c. Candle page 1.0.2, app 1.21.2.
 
