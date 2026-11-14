@@ -148,6 +148,9 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.21.2 — Candle page: No Trade hara, wajah peeli (14 Nov)
+- User: "No Trade dark green me, aage ka result (EMA wagairah) thoda dark peela". `.no b.nt` #16a34a bold; `.why` + `.no .kv` #d4a72c. Candle page 1.0.2, app 1.21.2.
+
 ## v1.21.1 — Candle page: "nayi candle nahi aayi" chetavni (14 Nov)
 - User: 4 min se screen same (BTCUSD, Shanivar). Wajah: **Data Feed v1.0** nayi candle sirf pehle pair (EURUSD) se pehchanta tha; weekend pe EURUSD band -> BTC ki band candles sirf har 5 min (ResendMin) me jaati thi.
 - Fix VPS par: `Samusignal/vps-ea/SamuSignal Data Feed v1.01.mq5` (kisi bhi pair ki nayi candle -> turant bhejo). Chart par v1.0 hata kar v1.01 lagana hai.
