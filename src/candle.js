@@ -3,13 +3,16 @@
    🚀 MT5: Firebase /personalfx/orders/<key> {strat:'CANDLE', tf} -> PERSONAL FX v7.6 is trade ko HAMESHA Strategy 5 pe chalata hai
            (TP +$0.25 / SL -$1.50 / candle band hote hi band), baaki trades upar wali Strategy (jaise 4) pe.
    📝 Paper: wahi niyam, band candles ke OHLC se (asli paisa nahi). Real aur Paper ka hisaab alag.
-   localStorage: "sai_candle_*" (alag). Baaki app ko chhoota nahi. */
+   localStorage: "sai_candle_*" (alag). Baaki app ko chhoota nahi.
+   1.1.0: APP BAND HO TAB BHI — settings (ON pair / tf / Auto Paper) Firebase /candle/cfg me; VPS scanner v1.01 har candle
+   par wahi code chala kar /candle/sig + /candle/paper likhta hai, AI AUTO EA v1.12 phone push. VPS chalu ho to phone khud
+   auto paper nahi jodta (dohra na ho); Record tab me "Paper — VPS" alag. */
 import {keys, LS, fbUrl, feedStatus} from './data.js';
 import {SPECS, PAIRS, fmt, pipUsd} from './symbols.js';
 import {accounts, orderKey} from './bridge.js';
 import {DEF, signal, closedBars, paperResolve, stats, sendWindowMs} from './candlerules.js';
 
-export const CANDLE_VERSION = '1.0.4';
+export const CANDLE_VERSION = '1.1.0';
 const MAX_ON = 6;
 const $ = id => document.getElementById(id);
 const esc = s => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -25,9 +28,23 @@ const S = {
   paper: LS.get('candle_paper', []),
   real: LS.get('candle_real', []),
   seen: LS.get('candle_seen', {}),
-  bars: {}, live: {}, sig: {}, feed: null, err: '', busy: false, lastPoll: 0, sending: false
+  bars: {}, live: {}, sig: {}, feed: null, err: '', busy: false, lastPoll: 0, sending: false,
+  vps: null, vpsPaper: []   /* 1.1.0 */
 };
-const saveCfg = () => LS.set('candle_cfg', S.cfg);
+const saveCfg = () => { LS.set('candle_cfg', S.cfg); cfgSync() };
+/* 1.1.0: VPS ko batao kaunse pair / tf / Auto Paper (app band ho tab bhi wahi chale) */
+function cfgSync(){
+  clearTimeout(cfgSync.h);
+  cfgSync.h = setTimeout(() => { try{ fetch(fbUrl(keys(), 'candle/cfg'), {method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({pairs: S.cfg.pairs.filter(p => SPECS[p]), tf: S.cfg.tf, autoPaper: !!S.cfg.autoPaper, at: Date.now()})}).catch(() => {}) }catch(e){} }, 800);
+}
+const vpsAlive = () => !!(S.vps && S.vps.t && Date.now() - S.vps.t * 1000 < 150000);
+async function refreshVps(){
+  const s = keys();
+  try{ const r = await fetch(fbUrl(s, 'candle/vps'), {cache: 'no-store'}); S.vps = r.ok ? await r.json() : null }catch(e){}
+  try{ const u = fbUrl(s, 'candle/paper'), r = await fetch(u + (u.includes('?') ? '&' : '?') + 'orderBy=%22%24key%22&limitToLast=300', {cache: 'no-store'});
+    if(r.ok){ const j = (await r.json()) || {}; S.vpsPaper = Object.values(j).filter(p => p && p.sym).sort((a, b) => b.next - a.next) } }catch(e){}
+}
 const savePaper = () => { S.paper = S.paper.slice(0, 300); LS.set('candle_paper', S.paper) };
 const saveReal = () => { S.real = S.real.slice(0, 300); LS.set('candle_real', S.real) };
 const saveSeen = () => { const k = Object.keys(S.seen); if(k.length > 80) k.slice(0, k.length - 80).forEach(x => delete S.seen[x]); LS.set('candle_seen', S.seen) };
@@ -103,7 +120,7 @@ async function poll(){
       const key = sym + '|' + tf;
       if(S.seen[key] === sg.at) return;
       S.seen[key] = sg.at; saveSeen();
-      if(S.cfg.autoPaper) addPaper(sym, sg, true);
+      if(S.cfg.autoPaper && !vpsAlive()) addPaper(sym, sg, true);   /* 1.1.0: VPS chalu = paper VPS jodta hai */
       if(now - sg.next < sendWindowMs(tf)) alertSig(sym, sg);   /* 1.0.4: 3 beep + bada flash */
     });
     resolvePaper(now);
@@ -198,6 +215,7 @@ function chips(){
   const feed = !f ? '<span class="pill">Data …</span>' : f.ok ? '<span class="pill ok">● MT5 Data Feed</span>' : `<span class="pill bad">● ${esc(S.err || 'Data Feed band')}</span>`;
   const open = S.real.filter(r => r.status === 'PLACED').length, pend = S.paper.filter(p => !p.done).length;
   return feed + `<span class="pill warn">TP +$${DEF.tp.toFixed(2)} · SL -$${DEF.sl.toFixed(2)}</span>` + (S.cfg.autoPaper ? '<span class="pill ok">📝 Auto Paper</span>' : '')
+    + (S.vps ? (vpsAlive() ? '<span class="pill ok">🖥 VPS चालू</span>' : '<span class="pill bad">🖥 VPS बंद</span>') : '')
     + (open ? `<span class="pill ok">🚀 ${open} चालू</span>` : '') + (pend ? `<span class="pill">📝 ${pend} चल रहे</span>` : '') + `<span class="pill">${hm(now)} IST</span>`;
 }
 function cdTxt(){ const tf = S.cfg.tf, ms = tfMs(tf) - (Date.now() % tfMs(tf)); const s = Math.ceil(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
@@ -238,7 +256,7 @@ function liveTab(){
 <div class="tg" style="margin-top:8px"><span>☀️ Screen ON<small>${esc(S.wlTxt || 'ON = जब तक ये page खुला है, screen अपने आप बंद नहीं होगी')}</small></span><button data-act="screen" class="${S.cfg.screenOn ? 'on' : ''}">${S.cfg.screenOn ? 'ON' : 'OFF'}</button></div></div>
 ${S.feed && !S.feed.ok ? `<div class="warn">⚠ ${esc(S.err || 'Data Feed band')} — VPS पर "SamuSignal Data Feed" EA चालू करें।</div>` : ''}
 ${on.length ? on.map(pairCard).join('') : `<div class="empty">कोई pair ON नहीं — नीचे <b>Pairs</b> में जाकर ON करें</div>`}
-<div class="note">Signal सिर्फ़ <b>बंद candle</b> पर बनता है। MT5 button: 1m में 20 sec, 5m में 60 sec तक। App खुला रहना चाहिए (screen on)।</div>
+<div class="note">Signal सिर्फ़ <b>बंद candle</b> पर बनता है। MT5 button: 1m में 20 sec, 5m में 60 sec तक।<br>🖥 <b>App बंद हो तब भी:</b> VPS (scanner v1.01) इन्हीं ON pair पर signal देता है, Auto Paper ON हो तो paper जोड़ता है, और AI AUTO EA (v1.12) phone पर push भेजता है। ${S.vps ? (vpsAlive() ? '✅ VPS चालू' : '⚠ VPS से 2 min से ख़बर नहीं') : '⚠ VPS से अभी कोई ख़बर नहीं (scanner v1.01 चाहिए)'}</div>
 </div>`;
 }
 function pairsTab(){
@@ -259,15 +277,18 @@ function statBlock(title, list){
 function recTab(){
   const realDone = S.real.filter(r => r.status === 'CLOSED' && isFinite(r.pl)).map(r => ({at: r.at, pl: +r.pl}));
   const paperDone = S.paper.filter(p => p.done && isFinite(p.pl));
+  const vpsDone = S.vpsPaper.filter(p => p.done && isFinite(p.pl) && p.pl !== null);   /* 1.1.0 */
   const rRow = r => `<div class="hrow"><div><b class="${r.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[r.sym] ? SPECS[r.sym].n : r.sym)} ${r.dir}</b> · ${r.tf}m · ${hm(r.next)}${r.acct ? ` · ${r.real ? 'REAL' : 'DEMO'} ${esc(r.acct)}` : ''}<small>${esc((ST_TXT[r.status] || [r.status])[0])}${r.res ? ' · ' + esc(r.res) : ''}${r.msg && r.status !== 'CLOSED' ? ' · ' + esc(String(r.msg).slice(0, 80)) : ''}</small></div><div class="r ${isFinite(r.pl) ? (+r.pl > 0 ? 'up' : +r.pl < 0 ? 'dn' : '') : 'gd'}">${isFinite(r.pl) && r.pl !== undefined ? usd(+r.pl) : OPEN_ST.includes(r.status) ? '…' : '—'}</div></div>`;
   const pRow = p => `<div class="hrow"><div><b class="${p.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[p.sym] ? SPECS[p.sym].n : p.sym)} ${p.dir}</b> · ${p.tf}m · ${hm(p.next)}${p.auto ? ' · auto' : ''}<small>${p.done ? esc(p.res) : 'चल रहा है'}${p.entry ? ' · entry ' + fmt(p.sym, p.entry) : ''}</small></div><div class="r ${p.done && isFinite(p.pl) ? (p.pl > 0 ? 'up' : p.pl < 0 ? 'dn' : '') : 'gd'}">${p.done && isFinite(p.pl) ? usd(p.pl) : '…'}</div></div>`;
   return `<div class="wrap">
 ${statBlock('🚀 Real (MT5 · EA का नतीजा)', realDone)}
-${statBlock('📝 Paper (candle OHLC से)', paperDone)}
+${statBlock('🖥 Paper — VPS (app बंद हो तब भी)', vpsDone)}
+${S.paper.length ? statBlock('📝 Paper — इस phone का', paperDone) : ''}
 <div class="note">Break-even के लिए चाहिए: TP $0.25 / SL $1.50 → सिर्फ़ TP-SL हो तो ~86% win; candle close पर छोटे loss से कम। Win % हरा = 86%+, सुनहरा = 60–85%।</div>
 <div class="card"><h3>🚀 Real trades</h3>${S.real.length ? S.real.slice(0, 40).map(rRow).join('') : '<div class="empty">अभी कोई real trade नहीं</div>'}
 <button class="btn ghost" data-act="refreal" style="width:100%;margin-top:10px">↻ EA से नतीजा लाओ</button></div>
-<div class="card"><h3>📝 Paper trades</h3>${S.paper.length ? S.paper.slice(0, 60).map(pRow).join('') : '<div class="empty">अभी कोई paper trade नहीं — signal पर 📝 Paper दबाएँ या Auto Paper ON करें</div>'}
+<div class="card"><h3>🖥 VPS paper trades</h3>${S.vpsPaper.length ? S.vpsPaper.slice(0, 60).map(pRow).join('') : `<div class="empty">${vpsAlive() ? 'VPS चालू है — अगले signal का इंतज़ार (Auto Paper ON होना चाहिए)' : 'VPS से अभी कोई paper नहीं — VPS पर scanner v1.01 चाहिए'}</div>`}</div>
+<div class="card"><h3>📝 इस phone के paper trades</h3>${S.paper.length ? S.paper.slice(0, 60).map(pRow).join('') : '<div class="empty">अभी कोई paper trade नहीं — signal पर 📝 Paper दबाएँ या Auto Paper ON करें</div>'}
 ${S.paper.length ? '<button class="btn ghost" data-act="clrpaper" style="width:100%;margin-top:10px">🗑 Paper record साफ़ करें</button>' : ''}</div>
 </div>`;
 }
@@ -301,7 +322,7 @@ document.addEventListener('click', e => { audio(); if(S.cfg.screenOn && (!WL || 
   const b = e.target.closest('[data-act]'); if(b && !b.disabled) act(b.dataset.act, b.dataset.v) });
 document.addEventListener('input', e => { if(e.target.id === 'srch'){ S.q = e.target.value; const pos = e.target.selectionStart; $('main').innerHTML = pairsTab(); const i = $('srch'); i.focus(); try{ i.setSelectionRange(pos, pos) }catch(x){} } });
 function act(a, v){
-  if(a === 'tab'){ S.tab = v; S.q = ''; repaint(); if(v === 'rec') refreshReal(true); return }
+  if(a === 'tab'){ S.tab = v; S.q = ''; repaint(); if(v === 'rec'){ refreshReal(true); refreshVps().then(() => { if(S.tab === 'rec') repaint() }) } return }
   if(a === 'tf'){ S.cfg.tf = +v === 5 ? 5 : 1; saveCfg(); S.sig = {}; repaint(); poll(); return }
   if(a === 'auto'){ S.cfg.autoPaper = !S.cfg.autoPaper; saveCfg(); repaint(); toast(S.cfg.autoPaper ? '📝 Auto Paper ON' : 'Auto Paper OFF'); return }
   if(a === 'confirm'){ S.cfg.confirm = !S.cfg.confirm; saveCfg(); repaint(); return }
@@ -331,9 +352,10 @@ function tick(){
 }
 function boot(){
   $('ver').textContent = 'v' + CANDLE_VERSION;
-  render(); poll(); refreshReal();
+  render(); poll(); refreshReal(); cfgSync(); refreshVps().then(render);   /* 1.1.0: VPS ko settings + VPS ka haal */
   setInterval(tick, 1000);
   setInterval(refreshReal, 10000);
+  setInterval(() => { if(!document.hidden) refreshVps().then(() => { if(S.tab !== 'pairs') render() }) }, 20000);
   document.addEventListener('visibilitychange', () => { if(!document.hidden){ wakeSet().then(render); poll() } });   /* 1.0.4: Screen ON toggle */
   wakeSet().then(render);
 }
