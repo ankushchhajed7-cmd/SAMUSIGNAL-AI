@@ -64,6 +64,16 @@ header.top .tt{flex:1;min-width:0}
 .btn[disabled]{opacity:.45}
 .no{margin-top:10px;border-radius:14px;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px dashed rgba(255,255,255,0.14);font-size:13px;color:var(--mu);line-height:1.5}
 .no b{color:var(--tx)}
+/* 1.0.4: naye signal ka poori screen flash */
+#flash{display:none;position:fixed;inset:0;z-index:60;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;color:#fff;cursor:pointer}
+#flash.on{display:flex;animation:fl .6s ease-in-out infinite alternate}
+#flash.BUY{background:radial-gradient(circle at 50% 45%,rgba(31,207,122,0.97),rgba(6,75,43,0.97))}
+#flash.SELL{background:radial-gradient(circle at 50% 45%,rgba(255,74,88,0.97),rgba(107,13,25,0.97))}
+#flash .fdir{font-size:min(30vw,150px);font-weight:900;letter-spacing:4px;line-height:1;text-shadow:0 6px 30px rgba(0,0,0,0.45)}
+#flash .fsym{font-size:34px;font-weight:900;letter-spacing:2px}
+#flash .fln{font-size:15px;font-weight:700;opacity:.95;padding:0 20px}
+#flash .fx{margin-top:18px;font-size:12px;opacity:.75}
+@keyframes fl{from{filter:brightness(1)}to{filter:brightness(1.35)}}
 /* 1.0.2: No Trade = gehra hara bold; wajah + candle / RSI / EMA = gehra peela */
 .no b.nt{color:#16a34a;font-weight:800}
 .no .why{color:#d4a72c;font-weight:600}
@@ -116,6 +126,7 @@ nav.bot button.on{background:var(--metal);color:#1a1408;border-color:transparent
 </div>
 <nav class="bot"><div class="in" id="nav"></div></nav>
 <div id="toast"></div>
+<div id="flash" data-act="flashoff"></div>
 <div id="dlg"><div class="box"><div id="dlgT"></div><div id="dlgB"></div><div class="bt"><button class="btn ghost" id="dlgNo">Cancel</button><button class="btn gold" id="dlgOk">OK</button></div></div></div>
 <script type="module" src="src/candle.js"></script>
 </body>
