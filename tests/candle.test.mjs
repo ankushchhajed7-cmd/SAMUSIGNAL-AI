@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ema, rsi, signal, closedBars, paperResolve, stats, DEF, sendWindowMs} from '../src/candlerules.js';
+import {ema, rsi, signal, closedBars, paperResolve, stats, DEF, sendWindowMs, dynTp} from '../src/candlerules.js';
+
+test('1.2.0 dynTp: body ka 50%, $0.10 - $1.00', () => {
+  assert.equal(dynTp({body: 0.0006}, 1000), 0.30);      /* GBPUSD 6 pip -> $0.30 */
+  assert.equal(dynTp({body: 0.0002}, 1000), 0.10);      /* chhoti candle -> kam se kam $0.10 */
+  assert.equal(dynTp({body: 300}, 0.01), 1.00);         /* BTC $300 -> zyada se zyada $1.00 */
+  assert.equal(dynTp({body: 80}, 0.01), 0.40);          /* BTC $80 -> $0.40 */
+  assert.equal(dynTp({}, 1000), DEF.tp);                /* body nahi -> purana $0.25 */
+});
 
 const M = 60000, T0 = Date.UTC(2026, 10, 14, 10, 0);
 /* chhote-chhote candles (body 0.2) ek disha me, phir aakhri candle jaisi chahiye */

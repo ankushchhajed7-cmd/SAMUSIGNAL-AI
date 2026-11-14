@@ -10,9 +10,9 @@
 import {keys, LS, fbUrl, feedStatus} from './data.js';
 import {SPECS, PAIRS, fmt, pipUsd} from './symbols.js';
 import {accounts, orderKey} from './bridge.js';
-import {DEF, signal, closedBars, paperResolve, stats, sendWindowMs} from './candlerules.js';
+import {DEF, signal, closedBars, paperResolve, stats, sendWindowMs, dynTp} from './candlerules.js';
 
-export const CANDLE_VERSION = '1.1.0';
+export const CANDLE_VERSION = '1.2.0';
 const MAX_ON = 6;
 const $ = id => document.getElementById(id);
 const esc = s => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -133,7 +133,7 @@ function addPaper(sym, sg, auto){
   if(S.paper.some(p => p.sym === sym && p.tf === sg.tf && p.next === sg.next)){ if(!auto) toast('ये signal पहले से paper में है'); return }
   const k = kOf(sym);
   S.paper.unshift({id: 'P' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), sym, dir: sg.dir, tf: sg.tf, next: sg.next, at: Date.now(),
-    spread: spreadOf(sym), k, tp: DEF.tp, sl: DEF.sl, lot: DEF.lot, maxCandles: DEF.maxCandles, auto: !!auto, done: false});
+    spread: spreadOf(sym), k, tp: dynTp(sg, k), sl: DEF.sl,   /* 1.2.0: TP candle ke hisaab se */ lot: DEF.lot, maxCandles: DEF.maxCandles, auto: !!auto, done: false});
   savePaper();
   if(!auto) toast('📝 Paper में जुड़ गया — candle बंद होते ही नतीजा');
 }
@@ -214,7 +214,7 @@ function chips(){
   const f = S.feed, now = Date.now();
   const feed = !f ? '<span class="pill">Data …</span>' : f.ok ? '<span class="pill ok">● MT5 Data Feed</span>' : `<span class="pill bad">● ${esc(S.err || 'Data Feed band')}</span>`;
   const open = S.real.filter(r => r.status === 'PLACED').length, pend = S.paper.filter(p => !p.done).length;
-  return feed + `<span class="pill warn">TP +$${DEF.tp.toFixed(2)} · SL -$${DEF.sl.toFixed(2)}</span>` + (S.cfg.autoPaper ? '<span class="pill ok">📝 Auto Paper</span>' : '')
+  return feed + `<span class="pill warn">Paper TP: candle 50% ($${DEF.tpMin.toFixed(2)}–${DEF.tpMax.toFixed(2)}) · Real TP $${DEF.tp.toFixed(2)} · SL -$${DEF.sl.toFixed(2)}</span>` + (S.cfg.autoPaper ? '<span class="pill ok">📝 Auto Paper</span>' : '')
     + (S.vps ? (vpsAlive() ? '<span class="pill ok">🖥 VPS चालू</span>' : '<span class="pill bad">🖥 VPS बंद</span>') : '')
     + (open ? `<span class="pill ok">🚀 ${open} चालू</span>` : '') + (pend ? `<span class="pill">📝 ${pend} चल रहे</span>` : '') + `<span class="pill">${hm(now)} IST</span>`;
 }
@@ -231,14 +231,14 @@ function pairCard(sym){
   }
   const left = sg.next + sendWindowMs(sg.tf) - now, live = left > 0, candleLeft = sg.next + tfMs(sg.tf) - now;
   const sent = S.real.find(r => r.sym === sym && r.next === sg.next), inPaper = S.paper.find(p => p.sym === sym && p.next === sg.next && p.tf === sg.tf);
-  const tpPx = k > 0 ? DEF.tp / k : 0, slPx = k > 0 ? DEF.sl / k : 0;
+  const pTp = dynTp(sg, k), tpPx = k > 0 ? DEF.tp / k : 0, slPx = k > 0 ? DEF.sl / k : 0;   /* 1.2.0 */
   const stTxt = sent ? (ST_TXT[sent.status] || [sent.status, ''])[0] + (sent.res ? ' · ' + sent.res + ' ' + (isFinite(sent.pl) ? usd(+sent.pl) : '') : '') : '';
   return `<div class="pc">${head}${lateTxt}
 <div class="sig ${sg.dir}${live ? '' : ' OLD'}">
   <span class="vt" data-left="${sg.next + sendWindowMs(sg.tf)}">${live ? '⏱ ' + Math.ceil(left / 1000) + 's' : candleLeft > 0 ? 'MT5 का समय गया' : 'candle पूरी'}</span>
   <div class="dir">${sg.dir}</div>
   <div class="ln">${hm(sg.next)} की ${sg.tf}m candle के लिए · ${esc(sg.why)}</div>
-  <div class="ln" style="opacity:.85">TP ≈ ${tpPx ? (+tpPx).toFixed(sp.d) : '—'} दूर · SL ≈ ${slPx ? (+slPx).toFixed(sp.d) : '—'} दूर (0.01 lot)</div>
+  <div class="ln" style="opacity:.85">📝 Paper TP <b>$${pTp.toFixed(2)}</b> (candle का 50%) · 🚀 Real TP $${DEF.tp.toFixed(2)} ≈ ${tpPx ? (+tpPx).toFixed(sp.d) : '—'} दूर · SL ≈ ${slPx ? (+slPx).toFixed(sp.d) : '—'} दूर (0.01 lot)</div>
   ${sent ? `<div class="ln"><b>🚀 MT5: ${esc(stTxt)}</b>${sent.msg ? `<br><span style="opacity:.85">${esc(sent.msg)}</span>` : ''}</div>` : ''}
   ${inPaper ? `<div class="ln"><b>📝 Paper: ${inPaper.done ? esc(inPaper.res) + ' ' + (isFinite(inPaper.pl) ? usd(inPaper.pl) : '') : 'चल रहा है'}</b></div>` : ''}
   <div class="acts">
@@ -279,7 +279,7 @@ function recTab(){
   const paperDone = S.paper.filter(p => p.done && isFinite(p.pl));
   const vpsDone = S.vpsPaper.filter(p => p.done && isFinite(p.pl) && p.pl !== null);   /* 1.1.0 */
   const rRow = r => `<div class="hrow"><div><b class="${r.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[r.sym] ? SPECS[r.sym].n : r.sym)} ${r.dir}</b> · ${r.tf}m · ${hm(r.next)}${r.acct ? ` · ${r.real ? 'REAL' : 'DEMO'} ${esc(r.acct)}` : ''}<small>${esc((ST_TXT[r.status] || [r.status])[0])}${r.res ? ' · ' + esc(r.res) : ''}${r.msg && r.status !== 'CLOSED' ? ' · ' + esc(String(r.msg).slice(0, 80)) : ''}</small></div><div class="r ${isFinite(r.pl) ? (+r.pl > 0 ? 'up' : +r.pl < 0 ? 'dn' : '') : 'gd'}">${isFinite(r.pl) && r.pl !== undefined ? usd(+r.pl) : OPEN_ST.includes(r.status) ? '…' : '—'}</div></div>`;
-  const pRow = p => `<div class="hrow"><div><b class="${p.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[p.sym] ? SPECS[p.sym].n : p.sym)} ${p.dir}</b> · ${p.tf}m · ${hm(p.next)}${p.auto ? ' · auto' : ''}<small>${p.done ? esc(p.res) : 'चल रहा है'}${p.entry ? ' · entry ' + fmt(p.sym, p.entry) : ''}</small></div><div class="r ${p.done && isFinite(p.pl) ? (p.pl > 0 ? 'up' : p.pl < 0 ? 'dn' : '') : 'gd'}">${p.done && isFinite(p.pl) ? usd(p.pl) : '…'}</div></div>`;
+  const pRow = p => `<div class="hrow"><div><b class="${p.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[p.sym] ? SPECS[p.sym].n : p.sym)} ${p.dir}</b> · ${p.tf}m · ${hm(p.next)}${p.auto ? ' · auto' : ''}<small>${p.done ? esc(p.res) : 'चल रहा है'}${p.entry ? ' · entry ' + fmt(p.sym, p.entry) : ''}${isFinite(p.tp) ? ' · TP $' + (+p.tp).toFixed(2) : ''}</small></div><div class="r ${p.done && isFinite(p.pl) ? (p.pl > 0 ? 'up' : p.pl < 0 ? 'dn' : '') : 'gd'}">${p.done && isFinite(p.pl) ? usd(p.pl) : '…'}</div></div>`;
   return `<div class="wrap">
 ${statBlock('🚀 Real (MT5 · EA का नतीजा)', realDone)}
 ${statBlock('🖥 Paper — VPS (app बंद हो तब भी)', vpsDone)}
@@ -301,6 +301,7 @@ ${tg('sound', S.cfg.sound, '🔔 आवाज़ + vibrate', 'नया signal �
 ${tg('screen', S.cfg.screenOn, '☀️ Screen ON', 'ON = screen अपने आप बंद नहीं होगी')}</div>
 <div class="card"><h3>Strategy 5 — नियम</h3><div class="note">
 • Signal: बंद candle मज़बूत (body ≥ पिछली 10 की average × ${DEF.bodyMult}, body ≥ candle का ${DEF.bodyPct * 100}%) + EMA ${DEF.fast} / ${DEF.slow} की दिशा + close EMA ${DEF.fast} के उस पार + RSI ${DEF.rsiLen} (BUY ${DEF.buyRsi[0]}–${DEF.buyRsi[1]}, SELL ${DEF.sellRsi[0]}–${DEF.sellRsi[1]})।<br>
+• Paper TP (1.2.0): signal candle की body का ${DEF.tpBodyPct * 100}% — कम से कम $${DEF.tpMin.toFixed(2)}, ज़्यादा से ज़्यादा $${DEF.tpMax.toFixed(2)} (0.01 lot)। SL वही।<br>
 • Trade (EA PERSONAL FX v7.6): TP +$${DEF.tp.toFixed(2)} · SL -$${DEF.sl.toFixed(2)} (0.01 lot पर) · candle बंद होते ही जो भी P/L · lot = EA का S5_Lot (0.01)।<br>
 • बाकी सारे trades EA की ऊपर वाली Strategy (जैसे 4) पर ही चलते हैं।<br>
 • Paper: वही नियम; entry = trade वाली candle का open (+ spread BUY पर)। एक ही candle में TP और SL दोनों छुए तो SL माना जाता है।<br>

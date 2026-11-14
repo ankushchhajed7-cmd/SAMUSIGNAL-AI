@@ -8,8 +8,17 @@ export const DEF = {
   bodyPct: 0.5,     /* body >= candle ki poori lambai (high-low) ka 50% (lambi poonch nahi) */
   fast: 9, slow: 21, rsiLen: 14,
   buyRsi: [50, 70], sellRsi: [30, 50],
-  tp: 0.25, sl: 1.5, lot: 0.01, maxCandles: 1
+  tp: 0.25, sl: 1.5, lot: 0.01, maxCandles: 1,
+  /* 1.2.0 (user Final): PAPER ka TP candle ke hisaab se = signal candle ki body ka 50%, $0.10 se $1.00 (0.01 lot par).
+     Asli EA (PERSONAL FX v7.6 Strategy 5) abhi bhi fixed $0.25. */
+  tpBodyPct: 0.5, tpMin: 0.10, tpMax: 1.00
 };
+/* paper TP ($, 0.01 lot): signal candle body (price) x k ($ per 1.0 price, 0.01 lot) x 50%, seema ke andar */
+export function dynTp(sg, k, cfg = DEF){
+  const c = Object.assign({}, DEF, cfg);
+  const v = (sg && sg.body > 0 && k > 0) ? sg.body * k * c.tpBodyPct : c.tp;
+  return Math.round(Math.min(c.tpMax, Math.max(c.tpMin, v)) * 100) / 100;
+}
 
 export function ema(vals, n){
   const out = []; if(vals.length < n) return out;
