@@ -56,6 +56,9 @@ header.top{display:flex;align-items:center;gap:12px;padding:calc(14px + env(safe
 .tf{flex:1;text-align:center;font-size:12px;font-weight:700;padding:8px 0;border-radius:10px;color:var(--mu);background:rgba(255,255,255,0.04);border:1px solid rgba(232,195,90,0.16)}
 .tf.on{color:#1a1408;border-color:transparent;background:var(--metal)}
 .chartbox{position:relative;height:300px;margin-top:6px}
+/* v1.20.6: chart ek gol-kone wale dabbe me (sunehri patli kinari) — card ab chart ke neeche, upar nahi chadhta */
+#hChart,#rChart{margin:8px 18px 0;border:1px solid rgba(232,195,90,0.38);border-radius:16px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.01));box-shadow:0 6px 22px rgba(0,0,0,0.45),inset 0 0 0 1px rgba(255,255,255,0.03)}
+#hChart .fadeb,#rChart .fadeb{display:none}
 .chartbox .fadeb{position:absolute;left:0;right:0;bottom:0;height:70px;background:linear-gradient(180deg,rgba(7,8,11,0),#07080b);pointer-events:none;z-index:3}
 .chartbox .msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--mu);font-size:13px;text-align:center;padding:30px;z-index:2}
 .gb{padding:1px;border-radius:20px;background:var(--metal);box-shadow:0 14px 40px rgba(0,0,0,0.55),0 0 26px rgba(232,195,90,0.16)}
@@ -164,7 +167,7 @@ nav.bar .fab b.fsr{position:absolute;width:1px;height:1px;overflow:hidden;clip:r
 <div style="text-align:right"><div style="font-size:26px;font-weight:800" class="mono" id="hPx">—</div><div style="font-size:12px;font-weight:700" id="hChg"></div></div></section>
 <div class="tfs" id="tfs"></div>
 <div class="chartbox" id="hChart"><div class="msg" id="hMsg">Loading…</div><div class="fadeb"></div></div>
-<div id="hCard" style="position:relative;margin:-56px 18px 0;z-index:4"></div>
+<div id="hCard" style="position:relative;margin:10px 18px 0;z-index:4"></div>
 <div class="tiles"><div class="tile" style="display:flex;align-items:center;gap:10px"><span id="hGauge"></span><div><div class="lbl">Sentiment</div><div style="font-weight:800;font-size:15px;color:var(--up);white-space:nowrap" id="hBuy">BUY —</div><div style="font-size:11px;font-weight:700;color:var(--dn2)" id="hSell">SELL —</div></div></div>
 <div class="tile"><div class="lbl">Market</div><div style="font-size:14px;font-weight:800;margin-top:4px" id="hReg">—</div><div style="font-size:11px;color:var(--mu);margin-top:3px" id="hReg2">15m + 1H</div></div></div>
 <div class="note" style="text-align:center;padding:14px 18px 0" id="hSrc"></div>
@@ -225,7 +228,7 @@ nav.bar .fab b.fsr{position:absolute;width:1px;height:1px;overflow:hidden;clip:r
 <div style="display:flex;justify-content:space-between;align-items:baseline;padding:10px 18px 0"><div style="font-size:13px;color:var(--mu)" id="rMeta"></div><div style="font-size:12px;font-weight:700;color:var(--gold)" id="rLeft"></div></div>
 <div id="rPrev"></div>
 <div class="chartbox" id="rChart" style="height:250px"><div class="fadeb"></div></div>
-<div id="rCard" style="position:relative;margin:-48px 18px 0;z-index:4"></div>
+<div id="rCard" style="position:relative;margin:10px 18px 0;z-index:4"></div>
 <div id="rAi"></div>
 <div id="rCouncil"></div>
 <div class="card" style="margin:12px 18px 0;padding:12px 14px"><div class="lbl">Why this signal</div><div id="rWhy" style="display:flex;flex-direction:column;gap:6px;margin-top:8px;font-size:13px"></div></div>
