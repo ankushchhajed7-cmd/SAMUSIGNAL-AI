@@ -9,7 +9,7 @@ import {SPECS, PAIRS, fmt, pipUsd} from './symbols.js';
 import {accounts, orderKey} from './bridge.js';
 import {DEF, signal, closedBars, paperResolve, stats, sendWindowMs} from './candlerules.js';
 
-export const CANDLE_VERSION = '1.0.1';
+export const CANDLE_VERSION = '1.0.2';
 const MAX_ON = 6;
 const $ = id => document.getElementById(id);
 const esc = s => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -191,7 +191,7 @@ function pairCard(sym){
   const late = sg.at && now - sg.next > tfMs(sg.tf) + 20000;
   const lateTxt = late ? `<div class="warn" style="margin-top:10px">⚠ नई candle नहीं आई — आख़िरी बंद candle <b>${hm(sg.at)}</b>। VPS पर <b>Data Feed v1.01</b> लगाएँ, या ये pair का market बंद है।</div>` : '';
   if(sg.dir === 'NO'){
-    return `<div class="pc">${head}${lateTxt}<div class="no">⏸ <b>No Trade</b> — ${esc(sg.why)}${sg.at ? `<div class="kv"><span>candle <b>${hm(sg.at)}</b></span>${isFinite(sg.rsi) ? `<span>RSI <b>${sg.rsi.toFixed(0)}</b></span>` : ''}${isFinite(sg.e9) ? `<span>EMA9 ${sg.e9 > sg.e21 ? '>' : '<'} 21</span>` : ''}</div>` : ''}</div></div>`;
+    return `<div class="pc">${head}${lateTxt}<div class="no">⏸ <b class="nt">No Trade</b> <span class="why">— ${esc(sg.why)}</span>${sg.at ? `<div class="kv"><span>candle <b>${hm(sg.at)}</b></span>${isFinite(sg.rsi) ? `<span>RSI <b>${sg.rsi.toFixed(0)}</b></span>` : ''}${isFinite(sg.e9) ? `<span>EMA9 ${sg.e9 > sg.e21 ? '>' : '<'} 21</span>` : ''}</div>` : ''}</div></div>`;
   }
   const left = sg.next + sendWindowMs(sg.tf) - now, live = left > 0, candleLeft = sg.next + tfMs(sg.tf) - now;
   const sent = S.real.find(r => r.sym === sym && r.next === sg.next), inPaper = S.paper.find(p => p.sym === sym && p.next === sg.next && p.tf === sg.tf);
