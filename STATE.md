@@ -148,6 +148,11 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.23.0 — Candle 1.2.0: paper TP candle ke hisaab se (14 Nov)
+- User: "TP 0.25 fix hai, SL zyada hai — TP candle ke hisaab se kam / zyada" → "Seedha Final" (paper me).
+- `candlerules.dynTp(sg, k)`: signal candle body (price) × k × 50%, seema $0.10–$1.00 (0.01 lot); body na ho to $0.25. Phone paper (`addPaper`) + VPS scanner v1.02 dono isi se `tp` likhte hain (`paperResolve` p.tp pehle se use karta hai). Asli EA (PERSONAL FX v7.6 S5) abhi bhi $0.25.
+- UI: chip "Paper TP: candle 50% ($0.10–1.00) · Real TP $0.25 · SL"; signal card "📝 Paper TP $x"; paper row me TP $; Setting niyam. Test +1 (62). Candle 1.2.0, app 1.23.0.
+
 ## v1.22.0 — Candle 1.1.0: app band ho tab bhi (VPS) (14 Nov)
 - User: Candle signal app band hone par bhi + paper + push → A + push.
 - `saveCfg` → `cfgSync()` PUT `/candle/cfg` {pairs, tf, autoPaper, at} (800 ms debounce; boot par bhi). `refreshVps()` har 20 sec: `/candle/vps` heartbeat + `/candle/paper` (aakhri 300). `vpsAlive()` = heartbeat < 150 sec.
