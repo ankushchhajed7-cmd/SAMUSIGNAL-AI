@@ -140,6 +140,32 @@ export function paperResolve(p, bars, now = Date.now()){
   return {done: false, entry};
 }
 const round2 = v => Math.round(v * 100) / 100;
+
+/* 1.6.0 (user "Naap Final"): 4 PUSHTI — sirf likhi jaati hain (paper ka niyam / signal nahi badalta).
+   bars = band candles (signal wali aakhri), htf = badi timeframe ki band candles (1 MIN -> 5 MIN, 5 MIN -> 15 MIN).
+   1 = badi TF ka trend saath (EMA 9 vs 21) · 2 = close candle ke sire par (BUY upar 25%, SELL neeche 25%)
+   3 = thaki nahi (body <= 3x average aur close EMA 21 se <= 4x average body door) · 4 = pichhli candle bhi usi rang ki.
+   Data kam ho to us pushti ka null. */
+export const CONFIRMS = [
+  {id: '1', name: 'बड़ी TF का trend साथ'},
+  {id: '2', name: 'Close candle के सिरे पर'},
+  {id: '3', name: 'थकी हुई candle नहीं'},
+  {id: '4', name: 'दो candle एक रंग'}
+];
+export function confirms(sg, bars, htf){
+  const out = {1: null, 2: null, 3: null, 4: null};
+  if(!sg || (sg.dir !== 'BUY' && sg.dir !== 'SELL') || !bars || bars.length < 2) return out;
+  const buy = sg.dir === 'BUY', last = bars[bars.length - 1], prev = bars[bars.length - 2];
+  if(htf && htf.length >= DEF.slow + 2){
+    const cl = htf.map(b => b.c), e9 = ema(cl, DEF.fast).pop(), e21 = ema(cl, DEF.slow).pop();
+    if(isFinite(e9) && isFinite(e21)) out[1] = buy ? e9 > e21 : e9 < e21;
+  }
+  const rng = last.h - last.l;
+  if(rng > 0) out[2] = buy ? (last.c - last.l) / rng >= 0.75 : (last.h - last.c) / rng >= 0.75;
+  if(sg.avg > 0 && isFinite(sg.e21)) out[3] = sg.body <= 3 * sg.avg && Math.abs(last.c - sg.e21) <= 4 * sg.avg;
+  out[4] = buy ? prev.c > prev.o : prev.c < prev.o;
+  return out;
+}
 /* 1.3.0: ek paper trade ke 4 nateeje. p.sl = fixed SL, p.slDyn = candle wala SL. Lautata {done, entry, v: {A: {res, pl}, ...}} */
 export function paperVariants(p, bars, now = Date.now()){
   const v = {}; let entry, done = true;
