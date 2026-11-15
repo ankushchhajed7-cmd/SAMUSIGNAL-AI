@@ -10,9 +10,9 @@
 import {keys, LS, fbUrl, feedStatus} from './data.js';
 import {SPECS, PAIRS, fmt, pipUsd} from './symbols.js';
 import {accounts, orderKey} from './bridge.js';
-import {DEF, signal, closedBars, stats, sendWindowMs, dynTp, dynSl, VARIANTS} from './candlerules.js';
+import {DEF, signal, closedBars, stats, sendWindowMs, dynTp} from './candlerules.js';
 
-export const CANDLE_VERSION = '1.4.0';
+export const CANDLE_VERSION = '1.5.0';
 const MAX_ON = 6;
 const $ = id => document.getElementById(id);
 const esc = s => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -192,7 +192,7 @@ function chips(){
   const f = S.feed, now = Date.now();
   const feed = !f ? '<span class="pill">Data …</span>' : f.ok ? '<span class="pill ok">● MT5 Data Feed</span>' : `<span class="pill bad">● ${esc(S.err || 'Data Feed band')}</span>`;
   const open = S.real.filter(r => r.status === 'PLACED').length, pend = S.vpsPaper.filter(p => !p.done).length;
-  return feed + `<span class="pill warn">📝 TP candle 50%</span><span class="pill warn">🚀 TP $${DEF.tp.toFixed(2)} · SL $${DEF.sl.toFixed(2)}</span>` + (S.cfg.autoPaper ? '<span class="pill ok">🖥 VPS Paper</span>' : '')
+  return feed + `<span class="pill warn">📝 TP candle 50% · SL $${DEF.paperSl}</span><span class="pill warn">🚀 TP $${DEF.tp.toFixed(2)} · SL $${DEF.sl.toFixed(2)}</span>` + (S.cfg.autoPaper ? '<span class="pill ok">🖥 VPS Paper</span>' : '')
     + (S.vps ? (vpsAlive() ? '<span class="pill ok">🖥 VPS चालू</span>' : '<span class="pill bad">🖥 VPS बंद</span>') : '')
     + (open ? `<span class="pill ok">🚀 ${open} चालू</span>` : '') + (pend ? `<span class="pill">📝 ${pend} चल रहे</span>` : '') + `<span class="pill">${hm(now)} IST</span>`;
 }
@@ -209,14 +209,14 @@ function pairCard(sym){
   }
   const left = sg.next + sendWindowMs(sg.tf) - now, live = left > 0, candleLeft = sg.next + tfMs(sg.tf) - now;
   const sent = S.real.find(r => r.sym === sym && r.next === sg.next), inPaper = S.vpsPaper.find(p => p.sym === sym && p.next === sg.next && +p.tf === sg.tf);   /* 1.3.0: VPS paper */
-  const pTp = dynTp(sg, k), pSl = dynSl(sg, k), tpPx = k > 0 ? DEF.tp / k : 0, slPx = k > 0 ? DEF.sl / k : 0;   /* 1.2.0 */
+  const pTp = dynTp(sg, k), tpPx = k > 0 ? DEF.tp / k : 0, slPx = k > 0 ? DEF.sl / k : 0;   /* 1.2.0 */
   const stTxt = sent ? (ST_TXT[sent.status] || [sent.status, ''])[0] + (sent.res ? ' · ' + sent.res + ' ' + (isFinite(sent.pl) ? usd(+sent.pl) : '') : '') : '';
   return `<div class="pc">${head}${lateTxt}
 <div class="sig ${sg.dir}${live ? '' : ' OLD'}">
   <span class="vt" data-left="${sg.next + sendWindowMs(sg.tf)}">${live ? '⏱ ' + Math.ceil(left / 1000) + 's' : candleLeft > 0 ? 'MT5 का समय गया' : 'candle पूरी'}</span>
   <div class="dir">${sg.dir}</div>
   <div class="ln">${hm(sg.next)} की ${sg.tf}m candle के लिए · ${esc(sg.why)}</div>
-  <div class="ln" style="opacity:.85">🖥 Paper TP <b>$${pTp.toFixed(2)}</b> · candle SL $${pSl.toFixed(2)} · 🚀 Real TP $${DEF.tp.toFixed(2)} ≈ ${tpPx ? (+tpPx).toFixed(sp.d) : '—'} दूर · SL ≈ ${slPx ? (+slPx).toFixed(sp.d) : '—'} दूर (0.01 lot)</div>
+  <div class="ln" style="opacity:.85">🖥 Paper TP <b>$${pTp.toFixed(2)}</b> · SL $${DEF.paperSl} · 🚀 Real TP $${DEF.tp.toFixed(2)} ≈ ${tpPx ? (+tpPx).toFixed(sp.d) : '—'} दूर · SL ≈ ${slPx ? (+slPx).toFixed(sp.d) : '—'} दूर (0.01 lot)</div>
   ${sent ? `<div class="ln"><b>🚀 MT5: ${esc(stTxt)}</b>${sent.msg ? `<br><span style="opacity:.85">${esc(sent.msg)}</span>` : ''}</div>` : ''}
   ${inPaper ? `<div class="ln"><b>🖥 VPS Paper: ${inPaper.done ? esc(inPaper.res) + ' ' + (isFinite(inPaper.pl) && inPaper.pl !== null ? usd(inPaper.pl) : '') : 'चल रहा है'}</b></div>` : ''}
   <div class="acts">
@@ -252,33 +252,16 @@ function statBlock(title, list){
   return `<div class="card"><h3>${title}</h3><div class="lbl">आज</div>${tiles(td)}<div class="lbl" style="margin-top:10px">कुल</div>${tiles(all)}</div>`;
 }
 /* 1.3.0: SL ki tulna — VPS paper ke har trade ke 4 nateeje (p.v.A..D), sirf naye trade (jinme v hai) */
-/* 1.4.0: 1 MIN aur 5 MIN alag-alag */
-function slCompare(tf){
-  const list = S.vpsPaper.filter(p => p.done && p.v && +p.tf === tf), today = dayKey(Date.now());
-  const row = x => {
-    const all = stats(list.filter(p => p.v[x.id]).map(p => ({at: p.at, pl: +p.v[x.id].pl})));
-    const td = stats(list.filter(p => p.v[x.id] && dayKey(p.at) === today).map(p => ({at: p.at, pl: +p.v[x.id].pl})));
-    const c = s => `<td><b class="${s.net > 0 ? 'up' : s.net < 0 ? 'dn' : ''}">${s.n ? usd(s.net) : '—'}</b><small>${s.n ? s.n + ' · ' + s.wr + '%' : ''}</small></td>`;
-    return {x, all, html: `<tr><td><b>${x.id}</b> ${esc(x.name)}</td>${c(td)}${c(all)}</tr>`};
-  };
-  const rows = VARIANTS.map(row), best = list.length ? rows.slice().sort((a, b) => b.all.net - a.all.net)[0] : null;
-  return `<div class="card"><h3>⚖️ SL की तुलना — ${tf} MIN</h3>
-${list.length ? `<table class="cmp"><tr><th>तरीका</th><th>आज</th><th>कुल</th></tr>${rows.map(r => r.html).join('')}</table>
-<div class="note" style="margin-top:8px">B = SL candle की body जितना ($${DEF.slMin.toFixed(2)}–$${DEF.slMax.toFixed(2)}) · C = भाव TP की तरफ़ ${DEF.beAt * 100}% चले तो SL entry पर · D = दोनों।${best ? ` अभी सबसे अच्छा: <b>${best.x.id}</b>।` : ''} 30–50 trade के बाद फ़ैसला।</div>`
-  : `<div class="empty">${tf} MIN के नए VPS paper trade आते ही यहाँ 4 तरीकों का हिसाब दिखेगा (VPS scanner v1.04)</div>`}</div>`;
-}
 function recTab(){
   const realDone = S.real.filter(r => r.status === 'CLOSED' && isFinite(r.pl)).map(r => ({at: r.at, pl: +r.pl}));
   const vpsDone = S.vpsPaper.filter(p => p.done && isFinite(p.pl) && p.pl !== null);   /* 1.1.0 */
   const rRow = r => `<div class="hrow"><div><b class="${r.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[r.sym] ? SPECS[r.sym].n : r.sym)} ${r.dir}</b> · ${r.tf}m · ${hm(r.next)}${r.acct ? ` · ${r.real ? 'REAL' : 'DEMO'} ${esc(r.acct)}` : ''}<small>${esc((ST_TXT[r.status] || [r.status])[0])}${r.res ? ' · ' + esc(r.res) : ''}${r.msg && r.status !== 'CLOSED' ? ' · ' + esc(String(r.msg).slice(0, 80)) : ''}</small></div><div class="r ${isFinite(r.pl) ? (+r.pl > 0 ? 'up' : +r.pl < 0 ? 'dn' : '') : 'gd'}">${isFinite(r.pl) && r.pl !== undefined ? usd(+r.pl) : OPEN_ST.includes(r.status) ? '…' : '—'}</div></div>`;
-  const pRow = p => `<div class="hrow"><div><b class="${p.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[p.sym] ? SPECS[p.sym].n : p.sym)} ${p.dir}</b> · ${p.tf}m · ${hm(p.next)}${p.auto ? ' · auto' : ''}<small>${p.done ? esc(p.res) : 'चल रहा है'}${p.entry ? ' · entry ' + fmt(p.sym, p.entry) : ''}${isFinite(p.tp) ? ' · TP $' + (+p.tp).toFixed(2) : ''}${isFinite(p.slDyn) ? ' · cSL $' + (+p.slDyn).toFixed(2) : ''}${p.v ? '<br>' + ['B', 'C', 'D'].map(id => p.v[id] ? id + ' ' + (p.v[id].pl >= 0 ? '+' : '') + (+p.v[id].pl).toFixed(2) : '').filter(Boolean).join(' · ') : ''}</small></div><div class="r ${p.done && isFinite(p.pl) ? (p.pl > 0 ? 'up' : p.pl < 0 ? 'dn' : '') : 'gd'}">${p.done && isFinite(p.pl) ? usd(p.pl) : '…'}</div></div>`;
+  const pRow = p => `<div class="hrow"><div><b class="${p.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[p.sym] ? SPECS[p.sym].n : p.sym)} ${p.dir}</b> · ${p.tf}m · ${hm(p.next)}${p.auto ? ' · auto' : ''}<small>${p.done ? esc(p.res) + (p.n > 1 ? ' · ' + p.n + ' candle' : '') : 'चल रहा है'}${p.entry ? ' · entry ' + fmt(p.sym, p.entry) : ''}${isFinite(p.tp) ? ' · TP $' + (+p.tp).toFixed(2) : ''}${isFinite(p.slDyn) ? ' · cSL $' + (+p.slDyn).toFixed(2) : ''}${p.v ? '<br>' + ['B', 'C', 'D'].map(id => p.v[id] ? id + ' ' + (p.v[id].pl >= 0 ? '+' : '') + (+p.v[id].pl).toFixed(2) : '').filter(Boolean).join(' · ') : ''}</small></div><div class="r ${p.done && isFinite(p.pl) ? (p.pl > 0 ? 'up' : p.pl < 0 ? 'dn' : '') : 'gd'}">${p.done && isFinite(p.pl) ? usd(p.pl) : '…'}</div></div>`;
   return `<div class="wrap">
 ${statBlock('🚀 Real (MT5 · EA का नतीजा)', realDone)}
 ${statBlock('🖥 VPS Paper — 1 MIN', vpsDone.filter(p => +p.tf !== 5))}
-${slCompare(1)}
 ${statBlock('🖥 VPS Paper — 5 MIN', vpsDone.filter(p => +p.tf === 5))}
-${slCompare(5)}
-<div class="note">Break-even के लिए चाहिए: TP $0.25 / SL $1.50 → सिर्फ़ TP-SL हो तो ~86% win; candle close पर छोटे loss से कम। Win % हरा = 86%+, सुनहरा = 60–85%।</div>
+<div class="note">🖥 VPS Paper (1.5.0): TP = signal candle की body का 50% ($0.10–$1.00) · SL $${DEF.paperSl} · trade SL तक चलता है — पहली candle पर TP या close फ़ायदे में = book; दूसरी candle से +$${DEF.bookUsd.toFixed(2)} छूते ही या किसी candle का close फ़ायदे में = <b>PROFIT BOOK</b>। एक pair पर एक समय में एक ही paper trade। 🚀 Real (EA): TP $${DEF.tp.toFixed(2)} · SL $${DEF.sl.toFixed(2)}।</div>
 <div class="card"><h3>🚀 Real trades</h3>${S.real.length ? S.real.slice(0, 40).map(rRow).join('') : '<div class="empty">अभी कोई real trade नहीं</div>'}
 <button class="btn ghost" data-act="refreal" style="width:100%;margin-top:10px">↻ EA से नतीजा लाओ</button></div>
 <div class="card"><h3>🖥 VPS paper trades</h3>${S.vpsPaper.length ? S.vpsPaper.slice(0, 60).map(pRow).join('') : `<div class="empty">${vpsAlive() ? 'VPS चालू है — अगले signal का इंतज़ार (VPS Paper ON होना चाहिए)' : 'VPS से अभी कोई paper नहीं — VPS पर scanner v1.04 चाहिए'}</div>`}
@@ -294,7 +277,7 @@ ${tg('sound', S.cfg.sound, '🔔 आवाज़ + vibrate', 'नया signal �
 ${tg('screen', S.cfg.screenOn, '☀️ Screen ON', 'ON = screen अपने आप बंद नहीं होगी')}</div>
 <div class="card"><h3>Strategy 5 — नियम</h3><div class="note">
 • Signal: बंद candle मज़बूत (body ≥ पिछली 10 की average × ${DEF.bodyMult}, body ≥ candle का ${DEF.bodyPct * 100}%) + EMA ${DEF.fast} / ${DEF.slow} की दिशा + close EMA ${DEF.fast} के उस पार + RSI ${DEF.rsiLen} (BUY ${DEF.buyRsi[0]}–${DEF.buyRsi[1]}, SELL ${DEF.sellRsi[0]}–${DEF.sellRsi[1]})।<br>
-• Paper TP (1.2.0): signal candle की body का ${DEF.tpBodyPct * 100}% — कम से कम $${DEF.tpMin.toFixed(2)}, ज़्यादा से ज़्यादा $${DEF.tpMax.toFixed(2)} (0.01 lot)। SL वही।<br>
+• Paper TP: signal candle की body का ${DEF.tpBodyPct * 100}% — कम से कम $${DEF.tpMin.toFixed(2)}, ज़्यादा से ज़्यादा $${DEF.tpMax.toFixed(2)} (0.01 lot)। Paper SL $${DEF.paperSl}। Trade SL तक चलता है, दूसरी candle से +$${DEF.bookUsd.toFixed(2)} या किसी candle का close फ़ायदे में = PROFIT BOOK। एक pair (+ MIN) पर एक ही paper trade (1.5.0)।<br>
 • Trade (EA PERSONAL FX v7.6): TP +$${DEF.tp.toFixed(2)} · SL -$${DEF.sl.toFixed(2)} (0.01 lot पर) · candle बंद होते ही जो भी P/L · lot = EA का S5_Lot (0.01)।<br>
 • बाकी सारे trades EA की ऊपर वाली Strategy (जैसे 4) पर ही चलते हैं।<br>
 • Paper: वही नियम; entry = trade वाली candle का open (+ spread BUY पर)। एक ही candle में TP और SL दोनों छुए तो SL माना जाता है।<br>
