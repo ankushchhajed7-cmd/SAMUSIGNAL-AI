@@ -10,9 +10,9 @@
 import {keys, LS, fbUrl, feedStatus} from './data.js';
 import {SPECS, PAIRS, fmt, pipUsd} from './symbols.js';
 import {accounts, orderKey} from './bridge.js';
-import {DEF, signal, closedBars, stats, sendWindowMs, dynTp} from './candlerules.js';
+import {DEF, signal, closedBars, stats, sendWindowMs, dynTp, CONFIRMS} from './candlerules.js';
 
-export const CANDLE_VERSION = '1.5.0';
+export const CANDLE_VERSION = '1.6.0';
 const MAX_ON = 6;
 const $ = id => document.getElementById(id);
 const esc = s => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -252,15 +252,30 @@ function statBlock(title, list){
   return `<div class="card"><h3>${title}</h3><div class="lbl">आज</div>${tiles(td)}<div class="lbl" style="margin-top:10px">कुल</div>${tiles(all)}</div>`;
 }
 /* 1.3.0: SL ki tulna — VPS paper ke har trade ke 4 nateeje (p.v.A..D), sirf naye trade (jinme v hai) */
+/* 1.6.0: 4 pushti ka naap — "agar ye pushti lagi hoti to" (paper niyam wahi; sirf jin trade par cf likha hai) */
+function cfTable(tf){
+  const list = S.vpsPaper.filter(p => p.done && p.cf && +p.tf === tf && isFinite(p.pl) && p.pl !== null), today = dayKey(Date.now());
+  const big = tf === 5 ? '15' : '5';
+  const rowsDef = [['सारे trade', []]].concat(CONFIRMS.map(c => [c.id + ' · ' + (c.id === '1' ? big + ' MIN का trend साथ' : c.name), [c.id]]), [['1 + 2', ['1', '2']], ['चारों', ['1', '2', '3', '4']]]);
+  const cell = arr => { const s = stats(arr); return `<td><b class="${s.net > 0 ? 'up' : s.net < 0 ? 'dn' : ''}">${s.n ? usd(s.net) : '—'}</b><small>${s.n ? s.n + ' · ' + s.wr + '%' : ''}</small></td>` };
+  const rows = rowsDef.map(([name, ids]) => { const sub = list.filter(p => ids.every(id => p.cf[id] === true)).map(p => ({at: p.at, pl: +p.pl}));
+    return `<tr><td>${esc(name)}</td>${cell(sub.filter(x => dayKey(x.at) === today))}${cell(sub)}</tr>` }).join('');
+  return `<div class="card"><h3>🔍 पुष्टि का नाप — ${tf} MIN</h3>
+${list.length ? `<table class="cmp"><tr><th>अगर सिर्फ़ ये trade लेते</th><th>आज</th><th>कुल</th></tr>${rows}</table>
+<div class="note" style="margin-top:8px">हर line = सिर्फ़ वो trade जिनमें वो पुष्टि पास थी (signal / paper नियम नहीं बदला)। 1 = बड़ी TF (${big} MIN) का EMA 9/21 trend साथ · 2 = close candle के ऊपर / नीचे 25% में · 3 = candle average के 3 गुना से बड़ी नहीं और EMA 21 से ज़्यादा दूर नहीं · 4 = पिछली candle भी उसी रंग की।</div>`
+  : `<div class="empty">${tf} MIN के नए paper trade आते ही यहाँ पुष्टि का हिसाब (VPS scanner v1.06)</div>`}</div>`;
+}
 function recTab(){
   const realDone = S.real.filter(r => r.status === 'CLOSED' && isFinite(r.pl)).map(r => ({at: r.at, pl: +r.pl}));
   const vpsDone = S.vpsPaper.filter(p => p.done && isFinite(p.pl) && p.pl !== null);   /* 1.1.0 */
   const rRow = r => `<div class="hrow"><div><b class="${r.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[r.sym] ? SPECS[r.sym].n : r.sym)} ${r.dir}</b> · ${r.tf}m · ${hm(r.next)}${r.acct ? ` · ${r.real ? 'REAL' : 'DEMO'} ${esc(r.acct)}` : ''}<small>${esc((ST_TXT[r.status] || [r.status])[0])}${r.res ? ' · ' + esc(r.res) : ''}${r.msg && r.status !== 'CLOSED' ? ' · ' + esc(String(r.msg).slice(0, 80)) : ''}</small></div><div class="r ${isFinite(r.pl) ? (+r.pl > 0 ? 'up' : +r.pl < 0 ? 'dn' : '') : 'gd'}">${isFinite(r.pl) && r.pl !== undefined ? usd(+r.pl) : OPEN_ST.includes(r.status) ? '…' : '—'}</div></div>`;
-  const pRow = p => `<div class="hrow"><div><b class="${p.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[p.sym] ? SPECS[p.sym].n : p.sym)} ${p.dir}</b> · ${p.tf}m · ${hm(p.next)}${p.auto ? ' · auto' : ''}<small>${p.done ? esc(p.res) + (p.n > 1 ? ' · ' + p.n + ' candle' : '') : 'चल रहा है'}${p.entry ? ' · entry ' + fmt(p.sym, p.entry) : ''}${isFinite(p.tp) ? ' · TP $' + (+p.tp).toFixed(2) : ''}${isFinite(p.slDyn) ? ' · cSL $' + (+p.slDyn).toFixed(2) : ''}${p.v ? '<br>' + ['B', 'C', 'D'].map(id => p.v[id] ? id + ' ' + (p.v[id].pl >= 0 ? '+' : '') + (+p.v[id].pl).toFixed(2) : '').filter(Boolean).join(' · ') : ''}</small></div><div class="r ${p.done && isFinite(p.pl) ? (p.pl > 0 ? 'up' : p.pl < 0 ? 'dn' : '') : 'gd'}">${p.done && isFinite(p.pl) ? usd(p.pl) : '…'}</div></div>`;
+  const pRow = p => `<div class="hrow"><div><b class="${p.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[p.sym] ? SPECS[p.sym].n : p.sym)} ${p.dir}</b> · ${p.tf}m · ${hm(p.next)}${p.auto ? ' · auto' : ''}<small>${p.done ? esc(p.res) + (p.n > 1 ? ' · ' + p.n + ' candle' : '') : 'चल रहा है'}${p.cf ? ' · पुष्टि ' + ['1', '2', '3', '4'].map(id => p.cf[id] === true ? id : p.cf[id] === false ? '✗' : '·').join('') : ''}${p.entry ? ' · entry ' + fmt(p.sym, p.entry) : ''}${isFinite(p.tp) ? ' · TP $' + (+p.tp).toFixed(2) : ''}${isFinite(p.slDyn) ? ' · cSL $' + (+p.slDyn).toFixed(2) : ''}${p.v ? '<br>' + ['B', 'C', 'D'].map(id => p.v[id] ? id + ' ' + (p.v[id].pl >= 0 ? '+' : '') + (+p.v[id].pl).toFixed(2) : '').filter(Boolean).join(' · ') : ''}</small></div><div class="r ${p.done && isFinite(p.pl) ? (p.pl > 0 ? 'up' : p.pl < 0 ? 'dn' : '') : 'gd'}">${p.done && isFinite(p.pl) ? usd(p.pl) : '…'}</div></div>`;
   return `<div class="wrap">
 ${statBlock('🚀 Real (MT5 · EA का नतीजा)', realDone)}
 ${statBlock('🖥 VPS Paper — 1 MIN', vpsDone.filter(p => +p.tf !== 5))}
+${cfTable(1)}
 ${statBlock('🖥 VPS Paper — 5 MIN', vpsDone.filter(p => +p.tf === 5))}
+${cfTable(5)}
 <div class="note">🖥 VPS Paper (1.5.0): TP = signal candle की body का 50% ($0.10–$1.00) · SL $${DEF.paperSl} · trade SL तक चलता है — पहली candle पर TP या close फ़ायदे में = book; दूसरी candle से +$${DEF.bookUsd.toFixed(2)} छूते ही या किसी candle का close फ़ायदे में = <b>PROFIT BOOK</b>। एक pair पर एक समय में एक ही paper trade। 🚀 Real (EA): TP $${DEF.tp.toFixed(2)} · SL $${DEF.sl.toFixed(2)}।</div>
 <div class="card"><h3>🚀 Real trades</h3>${S.real.length ? S.real.slice(0, 40).map(rRow).join('') : '<div class="empty">अभी कोई real trade नहीं</div>'}
 <button class="btn ghost" data-act="refreal" style="width:100%;margin-top:10px">↻ EA से नतीजा लाओ</button></div>

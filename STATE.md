@@ -148,6 +148,11 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.27.0 — Candle 1.6.0: 4 pushti ka naap (sirf paper record) (15 Nov)
+- User: "पुष्टि के चारों तरीके का रिकॉर्ड फाइनल — सिर्फ पेपर रीडिंग में" (signal / paper niyam nahi badalna).
+- `candlerules.confirms(sg, bars, htf)` → {1 badi TF (1m→5m, 5m→15m) EMA 9/21 saath, 2 close range ke sire 25% me, 3 body ≤ 3× avg aur close EMA21 se ≤ 4× avg, 4 pichhli candle usi rang} (true / false / null). `CONFIRMS` naam. Test +1 (66).
+- Scanner v1.06 har naye paper par `cf` likhta hai (15min bars bhi). App Record: "🔍 पुष्टि का नाप — 1 MIN / 5 MIN" table (saare / 1 / 2 / 3 / 4 / 1+2 / charon — aaj / kul $, trade, win %); paper line me "पुष्टि 12✗4". Candle 1.6.0, app 1.27.0.
+
 ## v1.26.0 — Candle 1.5.0: paper SL $10 + TP candle + HOLD (profit dikhte hi book), ek pair ek trade (15 Nov)
 - User Final: "SL $10, TP candle ke hisaab se, sirf yahi ek jaanch, baaki kuch nahi; purana data delete". Phir: SL se pehle jahan bhi profit dikhe (koi bhi candle) book; pehle trade ka nateeja aane tak doosra nahi.
 - `candlerules`: `paperSl` 10, `bookUsd` 0.05, `holdMaxMin` 200; `paperResolve` `p.hold`: candle 1 = TP / SL / close fayde me → book, warna chalta rahe; candle 2+ = +$0.05 chhoote (PROFIT BOOK $0.05) ya close fayde me (us close ka profit) ya TP / SL; aakhri candle = TIME. Test +1 (65).

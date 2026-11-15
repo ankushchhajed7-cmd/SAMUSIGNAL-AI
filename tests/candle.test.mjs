@@ -1,6 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ema, rsi, signal, closedBars, paperResolve, stats, DEF, sendWindowMs, dynTp, dynSl, paperVariants} from '../src/candlerules.js';
+import {ema, rsi, signal, closedBars, paperResolve, stats, DEF, sendWindowMs, dynTp, dynSl, paperVariants, confirms} from '../src/candlerules.js';
+
+test('1.6.0 confirms: 4 pushti', () => {
+  const M_ = 60000, t = Date.UTC(2026, 10, 15, 10, 0);
+  const up = n => Array.from({length: n}, (_, i) => ({t: t + i * M_, o: 100 + i * 0.1, h: 100.2 + i * 0.1, l: 99.9 + i * 0.1, c: 100.1 + i * 0.1}));
+  const bars = [{t, o: 100, h: 100.3, l: 99.9, c: 100.2}, {t: t + M_, o: 100.2, h: 100.62, l: 100.15, c: 100.6}];
+  const sg = {dir: 'BUY', body: 0.4, avg: 0.2, e21: 100.1};
+  const c = confirms(sg, bars, up(30));
+  assert.deepEqual(c, {1: true, 2: true, 3: true, 4: true});
+  /* SELL usi upar wale trend me: 1 = false, pichhli hari: 4 = false */
+  const c2 = confirms({dir: 'SELL', body: 0.4, avg: 0.2, e21: 100.1}, [bars[0], {t: t + M_, o: 100.6, h: 100.62, l: 100.15, c: 100.2}], up(30));
+  assert.equal(c2[1], false); assert.equal(c2[4], false); assert.equal(c2[2], true);
+  /* thaki: body 1.0 > 3 x 0.2 */
+  assert.equal(confirms({dir: 'BUY', body: 1.0, avg: 0.2, e21: 100.1}, bars, null)[3], false);
+  assert.equal(confirms({dir: 'BUY', body: 0.4, avg: 0.2, e21: 100.1}, bars, null)[1], null);   /* badi TF data nahi */
+});
 
 test('1.5.0 hold: SL $10 tak, profit dikhte hi book', () => {
   const M_ = 60000, t = Date.UTC(2026, 10, 15, 10, 0);
