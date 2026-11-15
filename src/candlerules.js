@@ -153,6 +153,44 @@ export const CONFIRMS = [
   {id: '3', name: 'थकी हुई candle नहीं'},
   {id: '4', name: 'दो candle एक रंग'}
 ];
+/* 1.8.0 (user "Mausam Final"): BAZAAR KA MAUSAM — G (saaf) / Y (dhyan) / R (tez). Sirf naap (trade niyam nahi badla).
+   b1 = 1 min band candles (~250), b1h = 1 ghante ki candles (~250), news = [{t (sec), cur, imp}], spreadRatio = abhi ka spread / aam spread.
+   R: High news 60 min pehle-baad · raftaar (pichhli 10 candle ki range / pichhli 60 ki) >= 1.5 · pichhle 15 min me 3 guna badi candle · spread 2 guna.
+   Y: raftaar >= 1.25 · London / New York khulne ke 15 min aas-paas, rollover · lambi shaanti (Bollinger patla, dhamaka sambhav) · is ghante aksar tezi. */
+export const WX = {fast: 10, slow: 60, red: 1.5, yel: 1.25, spikeLook: 15, spikeMult: 3, bb: 20, bbAvg: 120, squeeze: 0.5, hourMult: 1.5, newsMin: 60, sessMin: 15, spreadMult: 2};
+const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
+export function weather({b1 = [], b1h = [], now = Date.now(), news = [], sym = '', spreadRatio = 0} = {}){
+  const red = [], yel = [], W = WX;
+  const curs = String(sym).split('/');
+  for(const n of news || []){
+    if(!n || n.imp !== 'High' || !(curs.includes(n.cur) || (n.cur === 'USD' && curs.includes('BTC')))) continue;
+    const dt = n.t * 1000 - now;
+    if(dt <= W.newsMin * 60000 && dt >= -W.newsMin * 60000){ red.push('news ' + n.cur + ' ' + new Date(n.t * 1000 + 19800000).toISOString().slice(11, 16)); break }
+  }
+  const um = Math.floor(now / 60000) % 1440;                      /* UTC minute of day (IST = +330) */
+  const near = (m, w) => Math.min(Math.abs(um - m), 1440 - Math.abs(um - m)) <= w;
+  if(near(8 * 60, W.sessMin)) yel.push('London खुला');
+  if(near(13 * 60, W.sessMin) || near(14 * 60 + 30, W.sessMin)) yel.push('New York खुला');
+  if(um >= 21 * 60 && um < 23 * 60 + 30) yel.push('rollover');
+  const rng = b1.map(b => b.h - b.l);
+  if(rng.length >= W.slow + W.fast){
+    const slow = avg(rng.slice(-W.slow)), fast = avg(rng.slice(-W.fast)), r = slow > 0 ? fast / slow : 0;
+    if(r >= W.red) red.push('रफ़्तार ×' + r.toFixed(1)); else if(r >= W.yel) yel.push('रफ़्तार ×' + r.toFixed(1));
+    if(slow > 0 && rng.slice(-W.spikeLook).some(x => x > W.spikeMult * slow)) red.push('अचानक बड़ी candle');
+  }
+  if(b1.length >= W.bb + W.bbAvg){
+    const cl = b1.map(b => b.c), width = i => { const s = cl.slice(i - W.bb + 1, i + 1), m = avg(s); return Math.sqrt(avg(s.map(x => (x - m) * (x - m)))) };
+    const now_ = width(cl.length - 1), past = []; for(let i = cl.length - W.bbAvg; i < cl.length; i++) past.push(width(i));
+    const pa = avg(past); if(pa > 0 && now_ < W.squeeze * pa) yel.push('लंबी शांति (धमाका संभव)');
+  }
+  if(b1h.length >= 48){
+    const hr = Math.floor(um / 60), same = b1h.filter(b => new Date(b.t).getUTCHours() === hr).map(b => b.h - b.l), all = avg(b1h.map(b => b.h - b.l));
+    if(same.length >= 2 && all > 0 && avg(same) >= W.hourMult * all) yel.push('इस घंटे अक्सर तेज़ी');
+  }
+  if(spreadRatio >= W.spreadMult) red.push('spread चौड़ा');
+  return {c: red.length ? 'R' : yel.length ? 'Y' : 'G', why: red.concat(yel)};
+}
+
 export function confirms(sg, bars, htf){
   const out = {1: null, 2: null, 3: null, 4: null};
   if(!sg || (sg.dir !== 'BUY' && sg.dir !== 'SELL') || !bars || bars.length < 2) return out;

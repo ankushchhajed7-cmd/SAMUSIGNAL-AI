@@ -12,7 +12,7 @@ import {SPECS, PAIRS, fmt, pipUsd} from './symbols.js';
 import {accounts, orderKey} from './bridge.js';
 import {DEF, signal, closedBars, stats, sendWindowMs, dynTp, CONFIRMS} from './candlerules.js';
 
-export const CANDLE_VERSION = '1.7.0';
+export const CANDLE_VERSION = '1.8.0';
 const MAX_ON = 6;
 const $ = id => document.getElementById(id);
 const esc = s => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -29,7 +29,7 @@ const S = {
   real: LS.get('candle_real', []),
   seen: LS.get('candle_seen', {}),
   bars: {}, live: {}, sig: {}, feed: null, err: '', busy: false, lastPoll: 0, sending: false,
-  vps: null, vpsPaper: []   /* 1.1.0 */
+  vps: null, vpsPaper: [], wx: {}   /* 1.1.0; 1.8.0 mausam */
 };
 const saveCfg = () => { LS.set('candle_cfg', S.cfg); cfgSync() };
 /* 1.1.0: VPS ko batao kaunse pair / tf / Auto Paper (app band ho tab bhi wahi chale) */
@@ -42,6 +42,7 @@ const vpsAlive = () => !!(S.vps && S.vps.t && Date.now() - S.vps.t * 1000 < 1500
 async function refreshVps(){
   const s = keys();
   try{ const r = await fetch(fbUrl(s, 'candle/vps'), {cache: 'no-store'}); S.vps = r.ok ? await r.json() : null }catch(e){}
+  try{ const r = await fetch(fbUrl(s, 'candle/wx'), {cache: 'no-store'}); if(r.ok) S.wx = (await r.json()) || {} }catch(e){}   /* 1.8.0 */
   try{ const u = fbUrl(s, 'candle/paper'), r = await fetch(u + (u.includes('?') ? '&' : '?') + 'orderBy=%22%24key%22&limitToLast=600', {cache: 'no-store'});
     if(r.ok){ const j = (await r.json()) || {}; S.vpsPaper = Object.values(j).filter(p => p && p.sym).sort((a, b) => b.next - a.next) } }catch(e){}
 }
@@ -199,7 +200,9 @@ function chips(){
 function cdTxt(){ const tf = S.cfg.tf, ms = tfMs(tf) - (Date.now() % tfMs(tf)); const s = Math.ceil(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
 function pairCard(sym){
   const sp = SPECS[sym], L = S.live[sp.n], sg = S.sig[sym], now = Date.now(), k = kOf(sym), spr = spreadOf(sym);
-  const head = `<div class="hd"><b>${esc(sp.n)}</b><span class="mono">${L && L.b > 0 ? fmt(sym, L.b) : '—'}${spr > 0 ? ` · spread $${(spr * k).toFixed(2)}` : ''}</span></div>`;
+  const w = S.wx[sp.n], wOk = w && w.t && Date.now() - w.t * 1000 < 180000;   /* 1.8.0: bazaar ka mausam (VPS, har minute) */
+  const wxTxt = wOk ? `<div class="wx ${w.c}">${WXI[w.c] || ''} ${w.c === 'G' ? 'साफ़' : w.c === 'Y' ? 'ध्यान' : 'तेज़'}${w.why && w.why.length ? ' — ' + esc([].concat(w.why).join(' · ')) : ''}</div>` : '';
+  const head = `<div class="hd"><b>${esc(sp.n)}</b><span class="mono">${L && L.b > 0 ? fmt(sym, L.b) : '—'}${spr > 0 ? ` · spread $${(spr * k).toFixed(2)}` : ''}</span></div>${wxTxt}`;
   if(!sg) return `<div class="pc">${head}<div class="no">Candles आ रही हैं…</div></div>`;
   /* v1.0.1: feed se nayi band candle nahi aa rahi? (Data Feed v1.0 weekend pe sirf 5 min me bhejta tha) */
   const late = sg.at && now - sg.next > tfMs(sg.tf) + 20000;
@@ -233,7 +236,7 @@ function liveTab(){
 <div class="tg" style="margin-top:8px"><span>☀️ Screen ON<small>${esc(S.wlTxt || 'ON = जब तक ये page खुला है, screen अपने आप बंद नहीं होगी')}</small></span><button data-act="screen" class="${S.cfg.screenOn ? 'on' : ''}">${S.cfg.screenOn ? 'ON' : 'OFF'}</button></div></div>
 ${S.feed && !S.feed.ok ? `<div class="warn">⚠ ${esc(S.err || 'Data Feed band')} — VPS पर "SamuSignal Data Feed" EA चालू करें।</div>` : ''}
 ${on.length ? on.map(pairCard).join('') : `<div class="empty">कोई pair ON नहीं — नीचे <b>Pairs</b> में जाकर ON करें</div>`}
-<div class="note">Signal सिर्फ़ <b>बंद candle</b> पर बनता है। MT5 button: 1m में 20 sec, 5m में 60 sec तक।<br>🖥 <b>App बंद हो तब भी:</b> VPS (scanner v1.04) इन्हीं ON pair पर <b>1 MIN और 5 MIN दोनों</b> का paper जोड़ता है (VPS Paper ON हो तो), और ऊपर चुने हुए MIN का signal AI AUTO EA (v1.12) से phone पर push। ${S.vps ? (vpsAlive() ? '✅ VPS चालू' : '⚠ VPS से 2 min से ख़बर नहीं') : '⚠ VPS से अभी कोई ख़बर नहीं (scanner v1.01 चाहिए)'}</div>
+<div class="note">Signal सिर्फ़ <b>बंद candle</b> पर बनता है। MT5 button: 1m में 20 sec, 5m में 60 sec तक।<br>🖥 <b>App बंद हो तब भी:</b> VPS scanner इन्हीं ON pair पर <b>1 MIN और 5 MIN दोनों</b> का paper जोड़ता है (VPS Paper ON हो तो), और ऊपर चुने हुए MIN का signal AI AUTO EA (v1.12) से phone पर push। ${S.vps ? (vpsAlive() ? '✅ VPS चालू' : '⚠ VPS से 2 min से ख़बर नहीं') : '⚠ VPS से अभी कोई ख़बर नहीं (scanner v1.01 चाहिए)'}</div>
 </div>`;
 }
 function pairsTab(){
@@ -254,6 +257,19 @@ function statBlock(title, list){
 /* 1.3.0: SL ki tulna — VPS paper ke har trade ke 4 nateeje (p.v.A..D), sirf naye trade (jinme v hai) */
 /* 1.6.0: 4 pushti ka naap — "agar ye pushti lagi hoti to" (paper niyam wahi; sirf jin trade par cf likha hai) */
 /* 1.7.0: sabse gehra ghata (MAE) — book hone se pehle trade kitna neeche gaya; SL $10 ka asli khatra */
+const WXI = {G: '🟢', Y: '🟡', R: '🔴'};
+/* 1.8.0: mausam ka naap — trade lete waqt mausam G / Y / R tha to nateeja kya raha */
+function wxTable(tf){
+  const list = S.vpsPaper.filter(p => p.done && p.wx && p.wx.c && +p.tf === tf && isFinite(p.pl) && p.pl !== null);
+  if(!list.length) return `<div class="card"><h3>🌦 मौसम का नाप — ${tf} MIN</h3><div class="empty">नए paper trade आते ही यहाँ 🟢 / 🟡 / 🔴 का हिसाब (VPS scanner v1.08)</div></div>`;
+  const rows = [['G', 'साफ़'], ['Y', 'ध्यान'], ['R', 'तेज़']].map(([c, nm]) => {
+    const sub = list.filter(p => p.wx.c === c), s = stats(sub.map(p => ({at: p.at, pl: +p.pl}))), ms = sub.filter(p => isFinite(p.mae) && p.mae !== null).map(p => +p.mae);
+    const worst = ms.length ? Math.min(...ms) : null, av = ms.length ? ms.reduce((a, b) => a + b, 0) / ms.length : null;
+    return `<tr><td>${WXI[c]} ${nm}</td><td><b class="${s.net > 0 ? 'up' : s.net < 0 ? 'dn' : ''}">${s.n ? usd(s.net) : '—'}</b><small>${s.n ? s.n + ' · ' + s.wr + '%' : ''}</small></td><td><b class="${worst !== null && worst < 0 ? 'dn' : ''}">${worst !== null ? usd(worst) : '—'}</b><small>${av !== null ? 'औसत ' + usd(av) : ''}</small></td></tr>`;
+  }).join('');
+  return `<div class="card"><h3>🌦 मौसम का नाप — ${tf} MIN</h3><table class="cmp"><tr><th>trade लेते समय</th><th>नतीजा (कुल)</th><th>सबसे गहरा</th></tr>${rows}</table>
+<div class="note" style="margin-top:8px">🔴 तेज़ = High news (60 min पहले-बाद), रफ़्तार 1.5 गुना, अचानक बड़ी candle, spread चौड़ा · 🟡 ध्यान = रफ़्तार 1.25 गुना, London / New York खुलना, rollover, लंबी शांति, इस घंटे अक्सर तेज़ी · 🟢 साफ़ = इनमें से कुछ नहीं। अगर 🔴 में गहरा घाटा ज़्यादा दिखे तो EA में "सिर्फ़ 🟢 में trade" लगाएँगे।</div></div>`;
+}
 function maeCard(tf){
   const list = S.vpsPaper.filter(p => p.done && +p.tf === tf && isFinite(p.mae) && p.mae !== null);
   if(!list.length) return '';
@@ -281,14 +297,16 @@ function recTab(){
   const realDone = S.real.filter(r => r.status === 'CLOSED' && isFinite(r.pl)).map(r => ({at: r.at, pl: +r.pl}));
   const vpsDone = S.vpsPaper.filter(p => p.done && isFinite(p.pl) && p.pl !== null);   /* 1.1.0 */
   const rRow = r => `<div class="hrow"><div><b class="${r.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[r.sym] ? SPECS[r.sym].n : r.sym)} ${r.dir}</b> · ${r.tf}m · ${hm(r.next)}${r.acct ? ` · ${r.real ? 'REAL' : 'DEMO'} ${esc(r.acct)}` : ''}<small>${esc((ST_TXT[r.status] || [r.status])[0])}${r.res ? ' · ' + esc(r.res) : ''}${r.msg && r.status !== 'CLOSED' ? ' · ' + esc(String(r.msg).slice(0, 80)) : ''}</small></div><div class="r ${isFinite(r.pl) ? (+r.pl > 0 ? 'up' : +r.pl < 0 ? 'dn' : '') : 'gd'}">${isFinite(r.pl) && r.pl !== undefined ? usd(+r.pl) : OPEN_ST.includes(r.status) ? '…' : '—'}</div></div>`;
-  const pRow = p => `<div class="hrow"><div><b class="${p.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[p.sym] ? SPECS[p.sym].n : p.sym)} ${p.dir}</b> · ${p.tf}m · ${hm(p.next)}${p.auto ? ' · auto' : ''}<small>${p.done ? esc(p.res) + (p.n > 1 ? ' · ' + p.n + ' candle' : '') + (isFinite(p.mae) && p.mae !== null ? ' · गहरा ' + usd(+p.mae) : '') : 'चल रहा है'}${p.cf ? ' · पुष्टि ' + ['1', '2', '3', '4'].map(id => p.cf[id] === true ? id : p.cf[id] === false ? '✗' : '·').join('') : ''}${p.entry ? ' · entry ' + fmt(p.sym, p.entry) : ''}${isFinite(p.tp) ? ' · TP $' + (+p.tp).toFixed(2) : ''}${isFinite(p.slDyn) ? ' · cSL $' + (+p.slDyn).toFixed(2) : ''}${p.v ? '<br>' + ['B', 'C', 'D'].map(id => p.v[id] ? id + ' ' + (p.v[id].pl >= 0 ? '+' : '') + (+p.v[id].pl).toFixed(2) : '').filter(Boolean).join(' · ') : ''}</small></div><div class="r ${p.done && isFinite(p.pl) ? (p.pl > 0 ? 'up' : p.pl < 0 ? 'dn' : '') : 'gd'}">${p.done && isFinite(p.pl) ? usd(p.pl) : '…'}</div></div>`;
+  const pRow = p => `<div class="hrow"><div><b class="${p.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[p.sym] ? SPECS[p.sym].n : p.sym)} ${p.dir}</b> · ${p.tf}m · ${hm(p.next)}${p.auto ? ' · auto' : ''}<small>${p.done ? esc(p.res) + (p.n > 1 ? ' · ' + p.n + ' candle' : '') + (isFinite(p.mae) && p.mae !== null ? ' · गहरा ' + usd(+p.mae) : '') : 'चल रहा है'}${p.wx && p.wx.c ? ' · ' + (WXI[p.wx.c] || '') : ''}${p.cf ? ' · पुष्टि ' + ['1', '2', '3', '4'].map(id => p.cf[id] === true ? id : p.cf[id] === false ? '✗' : '·').join('') : ''}${p.entry ? ' · entry ' + fmt(p.sym, p.entry) : ''}${isFinite(p.tp) ? ' · TP $' + (+p.tp).toFixed(2) : ''}${isFinite(p.slDyn) ? ' · cSL $' + (+p.slDyn).toFixed(2) : ''}${p.v ? '<br>' + ['B', 'C', 'D'].map(id => p.v[id] ? id + ' ' + (p.v[id].pl >= 0 ? '+' : '') + (+p.v[id].pl).toFixed(2) : '').filter(Boolean).join(' · ') : ''}</small></div><div class="r ${p.done && isFinite(p.pl) ? (p.pl > 0 ? 'up' : p.pl < 0 ? 'dn' : '') : 'gd'}">${p.done && isFinite(p.pl) ? usd(p.pl) : '…'}</div></div>`;
   return `<div class="wrap">
 ${statBlock('🚀 Real (MT5 · EA का नतीजा)', realDone)}
 ${statBlock('🖥 VPS Paper — 1 MIN', vpsDone.filter(p => +p.tf !== 5))}
 ${maeCard(1)}
+${wxTable(1)}
 ${cfTable(1)}
 ${statBlock('🖥 VPS Paper — 5 MIN', vpsDone.filter(p => +p.tf === 5))}
 ${maeCard(5)}
+${wxTable(5)}
 ${cfTable(5)}
 <div class="note">🖥 VPS Paper (1.5.0): TP = signal candle की body का 50% ($0.10–$1.00) · SL $${DEF.paperSl} · trade SL तक चलता है — पहली candle पर TP या close फ़ायदे में = book; दूसरी candle से +$${DEF.bookUsd.toFixed(2)} छूते ही या किसी candle का close फ़ायदे में = <b>PROFIT BOOK</b>। एक pair पर एक समय में एक ही paper trade। 🚀 Real (EA): TP $${DEF.tp.toFixed(2)} · SL $${DEF.sl.toFixed(2)}।</div>
 <div class="card"><h3>🚀 Real trades</h3>${S.real.length ? S.real.slice(0, 40).map(rRow).join('') : '<div class="empty">अभी कोई real trade नहीं</div>'}
