@@ -12,7 +12,7 @@ import {SPECS, PAIRS, fmt, pipUsd} from './symbols.js';
 import {accounts, orderKey} from './bridge.js';
 import {DEF, signal, closedBars, stats, sendWindowMs, dynTp, dynSl, VARIANTS} from './candlerules.js';
 
-export const CANDLE_VERSION = '1.3.0';
+export const CANDLE_VERSION = '1.4.0';
 const MAX_ON = 6;
 const $ = id => document.getElementById(id);
 const esc = s => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -42,7 +42,7 @@ const vpsAlive = () => !!(S.vps && S.vps.t && Date.now() - S.vps.t * 1000 < 1500
 async function refreshVps(){
   const s = keys();
   try{ const r = await fetch(fbUrl(s, 'candle/vps'), {cache: 'no-store'}); S.vps = r.ok ? await r.json() : null }catch(e){}
-  try{ const u = fbUrl(s, 'candle/paper'), r = await fetch(u + (u.includes('?') ? '&' : '?') + 'orderBy=%22%24key%22&limitToLast=300', {cache: 'no-store'});
+  try{ const u = fbUrl(s, 'candle/paper'), r = await fetch(u + (u.includes('?') ? '&' : '?') + 'orderBy=%22%24key%22&limitToLast=600', {cache: 'no-store'});
     if(r.ok){ const j = (await r.json()) || {}; S.vpsPaper = Object.values(j).filter(p => p && p.sym).sort((a, b) => b.next - a.next) } }catch(e){}
 }
 const saveReal = () => { S.real = S.real.slice(0, 300); LS.set('candle_real', S.real) };
@@ -233,7 +233,7 @@ function liveTab(){
 <div class="tg" style="margin-top:8px"><span>☀️ Screen ON<small>${esc(S.wlTxt || 'ON = जब तक ये page खुला है, screen अपने आप बंद नहीं होगी')}</small></span><button data-act="screen" class="${S.cfg.screenOn ? 'on' : ''}">${S.cfg.screenOn ? 'ON' : 'OFF'}</button></div></div>
 ${S.feed && !S.feed.ok ? `<div class="warn">⚠ ${esc(S.err || 'Data Feed band')} — VPS पर "SamuSignal Data Feed" EA चालू करें।</div>` : ''}
 ${on.length ? on.map(pairCard).join('') : `<div class="empty">कोई pair ON नहीं — नीचे <b>Pairs</b> में जाकर ON करें</div>`}
-<div class="note">Signal सिर्फ़ <b>बंद candle</b> पर बनता है। MT5 button: 1m में 20 sec, 5m में 60 sec तक।<br>🖥 <b>App बंद हो तब भी:</b> VPS (scanner v1.01) इन्हीं ON pair पर signal देता है, Auto Paper ON हो तो paper जोड़ता है, और AI AUTO EA (v1.12) phone पर push भेजता है। ${S.vps ? (vpsAlive() ? '✅ VPS चालू' : '⚠ VPS से 2 min से ख़बर नहीं') : '⚠ VPS से अभी कोई ख़बर नहीं (scanner v1.01 चाहिए)'}</div>
+<div class="note">Signal सिर्फ़ <b>बंद candle</b> पर बनता है। MT5 button: 1m में 20 sec, 5m में 60 sec तक।<br>🖥 <b>App बंद हो तब भी:</b> VPS (scanner v1.04) इन्हीं ON pair पर <b>1 MIN और 5 MIN दोनों</b> का paper जोड़ता है (VPS Paper ON हो तो), और ऊपर चुने हुए MIN का signal AI AUTO EA (v1.12) से phone पर push। ${S.vps ? (vpsAlive() ? '✅ VPS चालू' : '⚠ VPS से 2 min से ख़बर नहीं') : '⚠ VPS से अभी कोई ख़बर नहीं (scanner v1.01 चाहिए)'}</div>
 </div>`;
 }
 function pairsTab(){
@@ -252,8 +252,9 @@ function statBlock(title, list){
   return `<div class="card"><h3>${title}</h3><div class="lbl">आज</div>${tiles(td)}<div class="lbl" style="margin-top:10px">कुल</div>${tiles(all)}</div>`;
 }
 /* 1.3.0: SL ki tulna — VPS paper ke har trade ke 4 nateeje (p.v.A..D), sirf naye trade (jinme v hai) */
-function slCompare(){
-  const list = S.vpsPaper.filter(p => p.done && p.v), today = dayKey(Date.now());
+/* 1.4.0: 1 MIN aur 5 MIN alag-alag */
+function slCompare(tf){
+  const list = S.vpsPaper.filter(p => p.done && p.v && +p.tf === tf), today = dayKey(Date.now());
   const row = x => {
     const all = stats(list.filter(p => p.v[x.id]).map(p => ({at: p.at, pl: +p.v[x.id].pl})));
     const td = stats(list.filter(p => p.v[x.id] && dayKey(p.at) === today).map(p => ({at: p.at, pl: +p.v[x.id].pl})));
@@ -261,10 +262,10 @@ function slCompare(){
     return {x, all, html: `<tr><td><b>${x.id}</b> ${esc(x.name)}</td>${c(td)}${c(all)}</tr>`};
   };
   const rows = VARIANTS.map(row), best = list.length ? rows.slice().sort((a, b) => b.all.net - a.all.net)[0] : null;
-  return `<div class="card"><h3>⚖️ SL की तुलना (VPS paper)</h3>
+  return `<div class="card"><h3>⚖️ SL की तुलना — ${tf} MIN</h3>
 ${list.length ? `<table class="cmp"><tr><th>तरीका</th><th>आज</th><th>कुल</th></tr>${rows.map(r => r.html).join('')}</table>
 <div class="note" style="margin-top:8px">B = SL candle की body जितना ($${DEF.slMin.toFixed(2)}–$${DEF.slMax.toFixed(2)}) · C = भाव TP की तरफ़ ${DEF.beAt * 100}% चले तो SL entry पर · D = दोनों।${best ? ` अभी सबसे अच्छा: <b>${best.x.id}</b>।` : ''} 30–50 trade के बाद फ़ैसला।</div>`
-  : '<div class="empty">नए VPS paper trade आते ही यहाँ 4 तरीकों का हिसाब दिखेगा (VPS scanner v1.03 चाहिए)</div>'}</div>`;
+  : `<div class="empty">${tf} MIN के नए VPS paper trade आते ही यहाँ 4 तरीकों का हिसाब दिखेगा (VPS scanner v1.04)</div>`}</div>`;
 }
 function recTab(){
   const realDone = S.real.filter(r => r.status === 'CLOSED' && isFinite(r.pl)).map(r => ({at: r.at, pl: +r.pl}));
@@ -273,12 +274,15 @@ function recTab(){
   const pRow = p => `<div class="hrow"><div><b class="${p.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[p.sym] ? SPECS[p.sym].n : p.sym)} ${p.dir}</b> · ${p.tf}m · ${hm(p.next)}${p.auto ? ' · auto' : ''}<small>${p.done ? esc(p.res) : 'चल रहा है'}${p.entry ? ' · entry ' + fmt(p.sym, p.entry) : ''}${isFinite(p.tp) ? ' · TP $' + (+p.tp).toFixed(2) : ''}${isFinite(p.slDyn) ? ' · cSL $' + (+p.slDyn).toFixed(2) : ''}${p.v ? '<br>' + ['B', 'C', 'D'].map(id => p.v[id] ? id + ' ' + (p.v[id].pl >= 0 ? '+' : '') + (+p.v[id].pl).toFixed(2) : '').filter(Boolean).join(' · ') : ''}</small></div><div class="r ${p.done && isFinite(p.pl) ? (p.pl > 0 ? 'up' : p.pl < 0 ? 'dn' : '') : 'gd'}">${p.done && isFinite(p.pl) ? usd(p.pl) : '…'}</div></div>`;
   return `<div class="wrap">
 ${statBlock('🚀 Real (MT5 · EA का नतीजा)', realDone)}
-${statBlock('🖥 Paper — VPS (app बंद हो तब भी)', vpsDone)}
-${slCompare()}
+${statBlock('🖥 VPS Paper — 1 MIN', vpsDone.filter(p => +p.tf !== 5))}
+${slCompare(1)}
+${statBlock('🖥 VPS Paper — 5 MIN', vpsDone.filter(p => +p.tf === 5))}
+${slCompare(5)}
 <div class="note">Break-even के लिए चाहिए: TP $0.25 / SL $1.50 → सिर्फ़ TP-SL हो तो ~86% win; candle close पर छोटे loss से कम। Win % हरा = 86%+, सुनहरा = 60–85%।</div>
 <div class="card"><h3>🚀 Real trades</h3>${S.real.length ? S.real.slice(0, 40).map(rRow).join('') : '<div class="empty">अभी कोई real trade नहीं</div>'}
 <button class="btn ghost" data-act="refreal" style="width:100%;margin-top:10px">↻ EA से नतीजा लाओ</button></div>
-<div class="card"><h3>🖥 VPS paper trades</h3>${S.vpsPaper.length ? S.vpsPaper.slice(0, 60).map(pRow).join('') : `<div class="empty">${vpsAlive() ? 'VPS चालू है — अगले signal का इंतज़ार (VPS Paper ON होना चाहिए)' : 'VPS से अभी कोई paper नहीं — VPS पर scanner v1.01 चाहिए'}</div>`}</div>
+<div class="card"><h3>🖥 VPS paper trades</h3>${S.vpsPaper.length ? S.vpsPaper.slice(0, 60).map(pRow).join('') : `<div class="empty">${vpsAlive() ? 'VPS चालू है — अगले signal का इंतज़ार (VPS Paper ON होना चाहिए)' : 'VPS से अभी कोई paper नहीं — VPS पर scanner v1.04 चाहिए'}</div>`}
+${S.vpsPaper.length ? '<button class="btn ghost" data-act="clrvps" style="width:100%;margin-top:10px">🗑 VPS paper record साफ़ करें (नया शुरू)</button>' : ''}</div>
 </div>`;
 }
 function setTab(){
@@ -327,6 +331,14 @@ function act(a, v){
   }
   if(a === 'mt5') return onMt5(v);
   if(a === 'refreal'){ refreshReal(true).then(() => toast('↻ ताज़ा किया')); return }
+  if(a === 'clrvps'){   /* 1.4.0: user — purana VPS paper hatao, aaj se naya */
+    dlg('VPS paper record साफ़ करें?', '<div class="note">VPS के <b>सारे paper trade</b> (1 MIN + 5 MIN, चारों SL तरीके) हमेशा के लिए हट जाएँगे। Real trade नहीं हटेंगे। इसके बाद से नया हिसाब।</div>', 'हटाओ', 'Cancel').then(async ok => {
+      if(!ok) return;
+      try{ const r = await fetch(fbUrl(keys(), 'candle/paper'), {method: 'DELETE'}); if(!r.ok) throw new Error('HTTP ' + r.status);
+        S.vpsPaper = []; repaint(); toast('🗑 VPS paper साफ़ — अब से नया हिसाब') }catch(e){ dlg('नहीं हटा', esc(e.message), 'OK', '') }
+    });
+    return;
+  }
 }
 
 /* ---------- loop ---------- */

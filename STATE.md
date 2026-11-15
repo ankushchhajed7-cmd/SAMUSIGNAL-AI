@@ -148,6 +148,11 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.25.0 — Candle 1.4.0: 1 MIN + 5 MIN dono ka VPS paper, purana record saaf karne ka button (15 Nov)
+- User: purana VPS paper hata kar aaj se naya; 5 MIN ka data bhi.
+- Record: "🖥 VPS Paper — 1 MIN" + "⚖️ SL की तुलना — 1 MIN", phir wahi 5 MIN ke liye (`slCompare(tf)`). VPS paper list ke neeche "🗑 VPS paper record साफ़ करें (नया शुरू)" → confirm → DELETE `/candle/paper` (Playwright se jaancha). App 600 tak padhta hai.
+- VPS scanner v1.04: paper 1 + 5 MIN dono par; push (`/candle/sig`) sirf app me chune tf ka. Candle 1.4.0, app 1.25.0.
+
 ## v1.24.0 — Candle 1.3.0: SL ki tulna (4 tareeke) + phone paper hataya (15 Nov)
 - User: BTC 1m VPS paper 54 trade 52% −$4.14 → "SL modify" → "Tulna Final" + phone wala paper hatao + dono naye niyam Final.
 - `candlerules`: `dynSl(sg, k)` = body ka 100%, $0.20–$1.50; `paperResolve` me `p.be` (bhaav TP ki taraf `beAt` 60% chale to SL entry par; ek candle me 60% chhua aur close ulta = 'BE' $0; SL pehle maana); `VARIANTS` A (abhi, SL $1.50) / B (candle SL) / C (break-even) / D (B+C); `paperVariants(p, bars)`. Test +2 (64).
