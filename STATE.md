@@ -148,6 +148,12 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.26.0 — Candle 1.5.0: paper SL $10 + TP candle + HOLD (profit dikhte hi book), ek pair ek trade (15 Nov)
+- User Final: "SL $10, TP candle ke hisaab se, sirf yahi ek jaanch, baaki kuch nahi; purana data delete". Phir: SL se pehle jahan bhi profit dikhe (koi bhi candle) book; pehle trade ka nateeja aane tak doosra nahi.
+- `candlerules`: `paperSl` 10, `bookUsd` 0.05, `holdMaxMin` 200; `paperResolve` `p.hold`: candle 1 = TP / SL / close fayde me → book, warna chalta rahe; candle 2+ = +$0.05 chhoote (PROFIT BOOK $0.05) ya close fayde me (us close ka profit) ya TP / SL; aakhri candle = TIME. Test +1 (65).
+- 4-tareeke tulna UI se hataya (`slCompare` nahi); chip "📝 TP candle 50% · SL $10"; record line me "N candle"; note / Setting me niyam.
+- Scanner v1.05: pehli baar `/candle/paper` ek baar DELETE (`ST.cdl.reset105`); paper {sl 10, hold, maxCandles 1m 200 / 5m 72}; `X.open` (sym|tf) — chalu trade ho to naya paper nahi; 7 ghante = DATA NAHI. Candle 1.5.0, app 1.26.0.
+
 ## v1.25.0 — Candle 1.4.0: 1 MIN + 5 MIN dono ka VPS paper, purana record saaf karne ka button (15 Nov)
 - User: purana VPS paper hata kar aaj se naya; 5 MIN ka data bhi.
 - Record: "🖥 VPS Paper — 1 MIN" + "⚖️ SL की तुलना — 1 MIN", phir wahi 5 MIN ke liye (`slCompare(tf)`). VPS paper list ke neeche "🗑 VPS paper record साफ़ करें (नया शुरू)" → confirm → DELETE `/candle/paper` (Playwright se jaancha). App 600 tak padhta hai.

@@ -14,7 +14,12 @@ export const DEF = {
   tpBodyPct: 0.5, tpMin: 0.10, tpMax: 1.00,
   /* 1.3.0 (user 'Tulna Final'): SL ki tulna — (1) SL candle ke hisaab se = body ka 100%, $0.20–$1.50;
      (2) BREAK-EVEN: bhaav TP ki taraf 60% chale to SL entry par (fir ulta aaye to $0). */
-  slBodyPct: 1.0, slMin: 0.20, slMax: 1.50, beAt: 0.6
+  slBodyPct: 1.0, slMin: 0.20, slMax: 1.50, beAt: 0.6,
+  /* 1.5.0 (user Final): PAPER ka SL $10 (0.01 lot) + TP candle ke hisaab se — sirf yahi ek jaanch. Asli EA wahi $0.25 / $1.50. */
+  paperSl: 10,
+  /* 1.5.0 (user): HOLD — trade SL $10 tak chalta hai (candle close par band nahi). Pehli candle: TP ya close fayde me = book.
+     Dusri candle se: +$0.05 chhoote hi ya kisi candle ka close fayde me ho to wahi profit BOOK. Ek pair (+ tf) par ek hi trade. */
+  bookUsd: 0.05, holdMaxMin: 200
 };
 /* paper SL ($, 0.01 lot) candle ke hisaab se */
 export function dynSl(sg, k, cfg = DEF){
@@ -122,6 +127,13 @@ export function paperResolve(p, bars, now = Date.now()){
     if(p.be && fav >= beDist){
       if(closePl < 0) return {done: true, entry, res: 'BE', pl: 0, exitT: b.t};
       armed = true;
+    }
+    if(p.hold){                                                       /* 1.5.0: SL tak ruko, profit dikhte hi book */
+      const bookUsd = (p.book === undefined ? DEF.bookUsd : p.book) * scale;
+      if(i >= 1 && fav * k >= bookUsd) return {done: true, entry, res: 'PROFIT BOOK', pl: round2(bookUsd), exitT: b.t, n: i + 1};
+      if(closePl > 0.004) return {done: true, entry, res: 'PROFIT BOOK', pl: round2(closePl), exitT: b.t + tfMs, n: i + 1};
+      if(i === maxC - 1) return {done: true, entry, res: 'TIME', pl: round2(closePl), exitT: b.t + tfMs, n: i + 1};
+      continue;
     }
     if(i === maxC - 1) return {done: true, entry, res: 'CANDLE CLOSE', pl: round2(closePl), exitT: b.t + tfMs};
   }

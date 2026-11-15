@@ -2,6 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ema, rsi, signal, closedBars, paperResolve, stats, DEF, sendWindowMs, dynTp, dynSl, paperVariants} from '../src/candlerules.js';
 
+test('1.5.0 hold: SL $10 tak, profit dikhte hi book', () => {
+  const M_ = 60000, t = Date.UTC(2026, 10, 15, 10, 0);
+  const p = {dir: 'BUY', next: t, tf: 1, spread: 0, k: 1, tp: 0.5, sl: 10, lot: 0.01, maxCandles: 200, hold: true};
+  /* candle 1 ghaate me band (99.7), candle 2 me high 99.9 (+$0 se kam) close 99.8, candle 3 me high 100.06 -> +$0.05 book */
+  const bars = [{t, o: 100, h: 100.1, l: 99.6, c: 99.7}, {t: t + M_, o: 99.7, h: 99.9, l: 99.5, c: 99.8}, {t: t + 2 * M_, o: 99.8, h: 100.06, l: 99.7, c: 99.9}];
+  assert.equal(paperResolve(p, bars.slice(0, 1), t + M_ + 1).done, false);          /* pehli candle ghaate me -> chalta rahe */
+  const r = paperResolve(p, bars, t + 3 * M_ + 1);
+  assert.equal(r.res, 'PROFIT BOOK'); assert.equal(r.pl, 0.05); assert.equal(r.n, 3);
+  /* pehli candle close fayde me -> wahi book */
+  const r1 = paperResolve(p, [{t, o: 100, h: 100.3, l: 99.9, c: 100.2}], t + M_ + 1);
+  assert.equal(r1.res, 'PROFIT BOOK'); assert.equal(r1.pl, 0.2);
+  /* TP chhua */
+  assert.equal(paperResolve(p, [{t, o: 100, h: 100.6, l: 99.9, c: 100.2}], t + M_ + 1).res, 'TP');
+  /* SL $10 */
+  assert.equal(paperResolve(p, [{t, o: 100, h: 100.1, l: 89.9, c: 90}], t + M_ + 1).res, 'SL');
+});
+
 test('1.3.0 dynSl: body ka 100%, $0.20 - $1.50', () => {
   assert.equal(dynSl({body: 0.0006}, 1000), 0.60);
   assert.equal(dynSl({body: 0.0001}, 1000), 0.20);
