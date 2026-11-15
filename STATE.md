@@ -148,6 +148,11 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.28.0 — Candle 1.7.0: "sabse gehra ghata" (MAE) (15 Nov)
+- User Final: har paper ka sabse gehra ghata note ho (SL $10 ka asli khatra).
+- `paperResolve` har return me `mae` ($, har candle ka sabse bura bhaav — kram pakka nahi to ghaate wala; SL = −SL). Test me +1 assert.
+- Scanner v1.07 `p.mae` likhta hai. Record: "📉 सबसे गहरा घाटा — 1 / 5 MIN" (sabse gehra + pair / samay, average, −$1 / −$3 / −$5 se neeche kitne); paper line me "गहरा −$x". Candle 1.7.0, app 1.28.0.
+
 ## v1.27.0 — Candle 1.6.0: 4 pushti ka naap (sirf paper record) (15 Nov)
 - User: "पुष्टि के चारों तरीके का रिकॉर्ड फाइनल — सिर्फ पेपर रीडिंग में" (signal / paper niyam nahi badalna).
 - `candlerules.confirms(sg, bars, htf)` → {1 badi TF (1m→5m, 5m→15m) EMA 9/21 saath, 2 close range ke sire 25% me, 3 body ≤ 3× avg aur close EMA21 se ≤ 4× avg, 4 pichhli candle usi rang} (true / false / null). `CONFIRMS` naam. Test +1 (66).
