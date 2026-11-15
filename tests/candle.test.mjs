@@ -1,6 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ema, rsi, signal, closedBars, paperResolve, stats, DEF, sendWindowMs, dynTp} from '../src/candlerules.js';
+import {ema, rsi, signal, closedBars, paperResolve, stats, DEF, sendWindowMs, dynTp, dynSl, paperVariants} from '../src/candlerules.js';
+
+test('1.3.0 dynSl: body ka 100%, $0.20 - $1.50', () => {
+  assert.equal(dynSl({body: 0.0006}, 1000), 0.60);
+  assert.equal(dynSl({body: 0.0001}, 1000), 0.20);
+  assert.equal(dynSl({body: 500}, 0.01), 1.50);
+  assert.equal(dynSl({}, 1000), DEF.sl);
+});
+
+test('1.3.0 break-even + 4 tareeke', () => {
+  const M_ = 60000, t = Date.UTC(2026, 10, 15, 10, 0), end = t + M_ + 1;
+  const p = {dir: 'BUY', next: t, tf: 1, spread: 0, k: 1, tp: 0.5, sl: 1.5, slDyn: 0.3, lot: 0.01, maxCandles: 1};
+  /* entry 100, 60% of TP = +0.30 chhua (high 100.35), close 99.9 -> BE 0; SL 1.5 nahi; candle SL 0.3 -> low 99.6 nahi chhua (99.75) */
+  const b1 = [{t, o: 100, h: 100.35, l: 99.75, c: 99.9}];
+  const r = paperVariants(p, b1, end);
+  assert.equal(r.done, true);
+  assert.deepEqual(r.v.A, {res: 'CANDLE CLOSE', pl: -0.1});
+  assert.deepEqual(r.v.B, {res: 'CANDLE CLOSE', pl: -0.1});
+  assert.deepEqual(r.v.C, {res: 'BE', pl: 0});
+  assert.deepEqual(r.v.D, {res: 'BE', pl: 0});
+  /* low 99.6 -> candle SL (0.3) lagta hai, fixed nahi */
+  const r2 = paperVariants(p, [{t, o: 100, h: 100.1, l: 99.6, c: 99.8}], end);
+  assert.deepEqual(r2.v.A, {res: 'CANDLE CLOSE', pl: -0.2});
+  assert.deepEqual(r2.v.B, {res: 'SL', pl: -0.3});
+  /* 60% chhua aur close fayde me -> BE nahi, candle close */
+  const r3 = paperVariants(p, [{t, o: 100, h: 100.4, l: 99.9, c: 100.2}], end);
+  assert.deepEqual(r3.v.C, {res: 'CANDLE CLOSE', pl: 0.2});
+});
 
 test('1.2.0 dynTp: body ka 50%, $0.10 - $1.00', () => {
   assert.equal(dynTp({body: 0.0006}, 1000), 0.30);      /* GBPUSD 6 pip -> $0.30 */

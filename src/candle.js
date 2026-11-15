@@ -10,9 +10,9 @@
 import {keys, LS, fbUrl, feedStatus} from './data.js';
 import {SPECS, PAIRS, fmt, pipUsd} from './symbols.js';
 import {accounts, orderKey} from './bridge.js';
-import {DEF, signal, closedBars, paperResolve, stats, sendWindowMs, dynTp} from './candlerules.js';
+import {DEF, signal, closedBars, stats, sendWindowMs, dynTp, dynSl, VARIANTS} from './candlerules.js';
 
-export const CANDLE_VERSION = '1.2.1';
+export const CANDLE_VERSION = '1.3.0';
 const MAX_ON = 6;
 const $ = id => document.getElementById(id);
 const esc = s => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -45,7 +45,6 @@ async function refreshVps(){
   try{ const u = fbUrl(s, 'candle/paper'), r = await fetch(u + (u.includes('?') ? '&' : '?') + 'orderBy=%22%24key%22&limitToLast=300', {cache: 'no-store'});
     if(r.ok){ const j = (await r.json()) || {}; S.vpsPaper = Object.values(j).filter(p => p && p.sym).sort((a, b) => b.next - a.next) } }catch(e){}
 }
-const savePaper = () => { S.paper = S.paper.slice(0, 300); LS.set('candle_paper', S.paper) };
 const saveReal = () => { S.real = S.real.slice(0, 300); LS.set('candle_real', S.real) };
 const saveSeen = () => { const k = Object.keys(S.seen); if(k.length > 80) k.slice(0, k.length - 80).forEach(x => delete S.seen[x]); LS.set('candle_seen', S.seen) };
 const tfName = tf => (tf === 5 ? '5min' : '1min');
@@ -107,7 +106,6 @@ async function poll(){
     try{ const r = await fetch(fbUrl(s, 'feed/live'), {cache: 'no-store'}); if(r.ok) S.live = (await r.json()) || {} }catch(e){}
     const need = new Map();
     S.cfg.pairs.forEach(p => { if(SPECS[p]) need.set(p + '|' + S.cfg.tf, [p, S.cfg.tf]) });
-    S.paper.filter(p => !p.done && SPECS[p.sym]).forEach(p => need.set(p.sym + '|' + p.tf, [p.sym, p.tf]));
     await Promise.all([...need.values()].map(async ([sym, tf]) => {
       try{ S.bars[sym + '|' + tf] = await fetchBars(s, sym, tf) }catch(e){ S.bars[sym + '|' + tf] = S.bars[sym + '|' + tf] || [] }
     }));
@@ -120,34 +118,14 @@ async function poll(){
       const key = sym + '|' + tf;
       if(S.seen[key] === sg.at) return;
       S.seen[key] = sg.at; saveSeen();
-      if(S.cfg.autoPaper && !vpsAlive()) addPaper(sym, sg, true);   /* 1.1.0: VPS chalu = paper VPS jodta hai */
       if(now - sg.next < sendWindowMs(tf)) alertSig(sym, sg);   /* 1.0.4: 3 beep + bada flash */
     });
-    resolvePaper(now);
   }catch(e){ S.err = e.message }
   finally{ S.busy = false; render() }
 }
 
 /* ---------- paper ---------- */
-function addPaper(sym, sg, auto){
-  if(S.paper.some(p => p.sym === sym && p.tf === sg.tf && p.next === sg.next)){ if(!auto) toast('ये signal पहले से paper में है'); return }
-  const k = kOf(sym);
-  S.paper.unshift({id: 'P' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), sym, dir: sg.dir, tf: sg.tf, next: sg.next, at: Date.now(),
-    spread: spreadOf(sym), k, tp: dynTp(sg, k), sl: DEF.sl,   /* 1.2.0: TP candle ke hisaab se */ lot: DEF.lot, maxCandles: DEF.maxCandles, auto: !!auto, done: false});
-  savePaper();
-  if(!auto) toast('📝 Paper में जुड़ गया — candle बंद होते ही नतीजा');
-}
-function resolvePaper(now){
-  let ch = false;
-  S.paper.forEach(p => {
-    if(p.done) return;
-    if(now - p.next > 6 * 3600e3){ p.done = true; p.res = 'DATA NAHI'; p.pl = NaN; ch = true; return }
-    const r = paperResolve(p, S.bars[p.sym + '|' + p.tf] || [], now);
-    if(r.entry !== undefined && p.entry !== r.entry){ p.entry = r.entry; ch = true }
-    if(r.done){ Object.assign(p, {done: true, res: r.res, pl: r.pl, exitT: r.exitT}); ch = true }
-  });
-  if(ch) savePaper();
-}
+/* 1.3.0: phone wala paper hata diya (user) — paper sirf VPS par (Firebase /candle/paper) */
 
 /* ---------- 🚀 MT5 ---------- */
 async function onMt5(sym){
@@ -213,8 +191,8 @@ const ST_TXT = {NEW: ['EA का इंतज़ार', 'gd'], PLACED: ['MT5 �
 function chips(){
   const f = S.feed, now = Date.now();
   const feed = !f ? '<span class="pill">Data …</span>' : f.ok ? '<span class="pill ok">● MT5 Data Feed</span>' : `<span class="pill bad">● ${esc(S.err || 'Data Feed band')}</span>`;
-  const open = S.real.filter(r => r.status === 'PLACED').length, pend = S.paper.filter(p => !p.done).length;
-  return feed + `<span class="pill warn">📝 TP candle 50%</span><span class="pill warn">🚀 TP $${DEF.tp.toFixed(2)} · SL $${DEF.sl.toFixed(2)}</span>` + (S.cfg.autoPaper ? '<span class="pill ok">📝 Auto Paper</span>' : '')
+  const open = S.real.filter(r => r.status === 'PLACED').length, pend = S.vpsPaper.filter(p => !p.done).length;
+  return feed + `<span class="pill warn">📝 TP candle 50%</span><span class="pill warn">🚀 TP $${DEF.tp.toFixed(2)} · SL $${DEF.sl.toFixed(2)}</span>` + (S.cfg.autoPaper ? '<span class="pill ok">🖥 VPS Paper</span>' : '')
     + (S.vps ? (vpsAlive() ? '<span class="pill ok">🖥 VPS चालू</span>' : '<span class="pill bad">🖥 VPS बंद</span>') : '')
     + (open ? `<span class="pill ok">🚀 ${open} चालू</span>` : '') + (pend ? `<span class="pill">📝 ${pend} चल रहे</span>` : '') + `<span class="pill">${hm(now)} IST</span>`;
 }
@@ -230,20 +208,19 @@ function pairCard(sym){
     return `<div class="pc">${head}${lateTxt}<div class="no">⏸ <b class="nt">No Trade</b> <span class="why">— ${esc(sg.why)}</span>${sg.at ? `<div class="kv"><span>candle <b>${hm(sg.at)}</b></span>${isFinite(sg.rsi) ? `<span>RSI <b>${sg.rsi.toFixed(0)}</b></span>` : ''}${isFinite(sg.e9) ? `<span>EMA9 ${sg.e9 > sg.e21 ? '>' : '<'} 21</span>` : ''}</div>` : ''}</div></div>`;
   }
   const left = sg.next + sendWindowMs(sg.tf) - now, live = left > 0, candleLeft = sg.next + tfMs(sg.tf) - now;
-  const sent = S.real.find(r => r.sym === sym && r.next === sg.next), inPaper = S.paper.find(p => p.sym === sym && p.next === sg.next && p.tf === sg.tf);
-  const pTp = dynTp(sg, k), tpPx = k > 0 ? DEF.tp / k : 0, slPx = k > 0 ? DEF.sl / k : 0;   /* 1.2.0 */
+  const sent = S.real.find(r => r.sym === sym && r.next === sg.next), inPaper = S.vpsPaper.find(p => p.sym === sym && p.next === sg.next && +p.tf === sg.tf);   /* 1.3.0: VPS paper */
+  const pTp = dynTp(sg, k), pSl = dynSl(sg, k), tpPx = k > 0 ? DEF.tp / k : 0, slPx = k > 0 ? DEF.sl / k : 0;   /* 1.2.0 */
   const stTxt = sent ? (ST_TXT[sent.status] || [sent.status, ''])[0] + (sent.res ? ' · ' + sent.res + ' ' + (isFinite(sent.pl) ? usd(+sent.pl) : '') : '') : '';
   return `<div class="pc">${head}${lateTxt}
 <div class="sig ${sg.dir}${live ? '' : ' OLD'}">
   <span class="vt" data-left="${sg.next + sendWindowMs(sg.tf)}">${live ? '⏱ ' + Math.ceil(left / 1000) + 's' : candleLeft > 0 ? 'MT5 का समय गया' : 'candle पूरी'}</span>
   <div class="dir">${sg.dir}</div>
   <div class="ln">${hm(sg.next)} की ${sg.tf}m candle के लिए · ${esc(sg.why)}</div>
-  <div class="ln" style="opacity:.85">📝 Paper TP <b>$${pTp.toFixed(2)}</b> (candle का 50%) · 🚀 Real TP $${DEF.tp.toFixed(2)} ≈ ${tpPx ? (+tpPx).toFixed(sp.d) : '—'} दूर · SL ≈ ${slPx ? (+slPx).toFixed(sp.d) : '—'} दूर (0.01 lot)</div>
+  <div class="ln" style="opacity:.85">🖥 Paper TP <b>$${pTp.toFixed(2)}</b> · candle SL $${pSl.toFixed(2)} · 🚀 Real TP $${DEF.tp.toFixed(2)} ≈ ${tpPx ? (+tpPx).toFixed(sp.d) : '—'} दूर · SL ≈ ${slPx ? (+slPx).toFixed(sp.d) : '—'} दूर (0.01 lot)</div>
   ${sent ? `<div class="ln"><b>🚀 MT5: ${esc(stTxt)}</b>${sent.msg ? `<br><span style="opacity:.85">${esc(sent.msg)}</span>` : ''}</div>` : ''}
-  ${inPaper ? `<div class="ln"><b>📝 Paper: ${inPaper.done ? esc(inPaper.res) + ' ' + (isFinite(inPaper.pl) ? usd(inPaper.pl) : '') : 'चल रहा है'}</b></div>` : ''}
+  ${inPaper ? `<div class="ln"><b>🖥 VPS Paper: ${inPaper.done ? esc(inPaper.res) + ' ' + (isFinite(inPaper.pl) && inPaper.pl !== null ? usd(inPaper.pl) : '') : 'चल रहा है'}</b></div>` : ''}
   <div class="acts">
     <button class="btn mt5" data-act="mt5" data-v="${esc(sym)}" ${!live || sent ? 'disabled' : ''}>🚀 MT5</button>
-    <button class="btn pp" data-act="paper" data-v="${esc(sym)}" ${inPaper || candleLeft <= 0 ? 'disabled' : ''}>📝 Paper</button>
   </div>
 </div></div>`;
 }
@@ -252,7 +229,7 @@ function liveTab(){
   return `<div class="wrap">
 <div class="card"><div class="bar"><div class="seg">${[1, 5].map(t => `<button data-act="tf" data-v="${t}" class="${S.cfg.tf === t ? 'on' : ''}">${t} MIN</button>`).join('')}</div>
 <div class="cdbox"><b class="mono" id="cd">${cdTxt()}</b><small>candle बंद होने में</small></div></div>
-<div class="tg" style="margin-top:8px"><span>📝 Auto Paper<small>हर signal अपने आप paper में (asli paisa nahi)</small></span><button data-act="auto" class="${S.cfg.autoPaper ? 'on' : ''}">${S.cfg.autoPaper ? 'ON' : 'OFF'}</button></div>
+<div class="tg" style="margin-top:8px"><span>🖥 VPS Paper<small>हर signal VPS पर अपने आप paper में — app बंद हो तब भी (asli paisa nahi)</small></span><button data-act="auto" class="${S.cfg.autoPaper ? 'on' : ''}">${S.cfg.autoPaper ? 'ON' : 'OFF'}</button></div>
 <div class="tg" style="margin-top:8px"><span>☀️ Screen ON<small>${esc(S.wlTxt || 'ON = जब तक ये page खुला है, screen अपने आप बंद नहीं होगी')}</small></span><button data-act="screen" class="${S.cfg.screenOn ? 'on' : ''}">${S.cfg.screenOn ? 'ON' : 'OFF'}</button></div></div>
 ${S.feed && !S.feed.ok ? `<div class="warn">⚠ ${esc(S.err || 'Data Feed band')} — VPS पर "SamuSignal Data Feed" EA चालू करें।</div>` : ''}
 ${on.length ? on.map(pairCard).join('') : `<div class="empty">कोई pair ON नहीं — नीचे <b>Pairs</b> में जाकर ON करें</div>`}
@@ -274,28 +251,40 @@ function statBlock(title, list){
   const tiles = s => `<div class="tiles"><div class="tile">Trades<b>${s.n}</b></div><div class="tile">Win %<b class="${s.n ? (s.wr >= 86 ? 'up' : s.wr >= 60 ? 'gd' : 'dn') : ''}">${s.n ? s.wr + '%' : '—'}</b></div><div class="tile">W / L<b>${s.win} / ${s.loss}</b></div><div class="tile">Net $<b class="${s.net > 0 ? 'up' : s.net < 0 ? 'dn' : ''}">${s.n ? usd(s.net) : '—'}</b></div></div>`;
   return `<div class="card"><h3>${title}</h3><div class="lbl">आज</div>${tiles(td)}<div class="lbl" style="margin-top:10px">कुल</div>${tiles(all)}</div>`;
 }
+/* 1.3.0: SL ki tulna — VPS paper ke har trade ke 4 nateeje (p.v.A..D), sirf naye trade (jinme v hai) */
+function slCompare(){
+  const list = S.vpsPaper.filter(p => p.done && p.v), today = dayKey(Date.now());
+  const row = x => {
+    const all = stats(list.filter(p => p.v[x.id]).map(p => ({at: p.at, pl: +p.v[x.id].pl})));
+    const td = stats(list.filter(p => p.v[x.id] && dayKey(p.at) === today).map(p => ({at: p.at, pl: +p.v[x.id].pl})));
+    const c = s => `<td><b class="${s.net > 0 ? 'up' : s.net < 0 ? 'dn' : ''}">${s.n ? usd(s.net) : '—'}</b><small>${s.n ? s.n + ' · ' + s.wr + '%' : ''}</small></td>`;
+    return {x, all, html: `<tr><td><b>${x.id}</b> ${esc(x.name)}</td>${c(td)}${c(all)}</tr>`};
+  };
+  const rows = VARIANTS.map(row), best = list.length ? rows.slice().sort((a, b) => b.all.net - a.all.net)[0] : null;
+  return `<div class="card"><h3>⚖️ SL की तुलना (VPS paper)</h3>
+${list.length ? `<table class="cmp"><tr><th>तरीका</th><th>आज</th><th>कुल</th></tr>${rows.map(r => r.html).join('')}</table>
+<div class="note" style="margin-top:8px">B = SL candle की body जितना ($${DEF.slMin.toFixed(2)}–$${DEF.slMax.toFixed(2)}) · C = भाव TP की तरफ़ ${DEF.beAt * 100}% चले तो SL entry पर · D = दोनों।${best ? ` अभी सबसे अच्छा: <b>${best.x.id}</b>।` : ''} 30–50 trade के बाद फ़ैसला।</div>`
+  : '<div class="empty">नए VPS paper trade आते ही यहाँ 4 तरीकों का हिसाब दिखेगा (VPS scanner v1.03 चाहिए)</div>'}</div>`;
+}
 function recTab(){
   const realDone = S.real.filter(r => r.status === 'CLOSED' && isFinite(r.pl)).map(r => ({at: r.at, pl: +r.pl}));
-  const paperDone = S.paper.filter(p => p.done && isFinite(p.pl));
   const vpsDone = S.vpsPaper.filter(p => p.done && isFinite(p.pl) && p.pl !== null);   /* 1.1.0 */
   const rRow = r => `<div class="hrow"><div><b class="${r.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[r.sym] ? SPECS[r.sym].n : r.sym)} ${r.dir}</b> · ${r.tf}m · ${hm(r.next)}${r.acct ? ` · ${r.real ? 'REAL' : 'DEMO'} ${esc(r.acct)}` : ''}<small>${esc((ST_TXT[r.status] || [r.status])[0])}${r.res ? ' · ' + esc(r.res) : ''}${r.msg && r.status !== 'CLOSED' ? ' · ' + esc(String(r.msg).slice(0, 80)) : ''}</small></div><div class="r ${isFinite(r.pl) ? (+r.pl > 0 ? 'up' : +r.pl < 0 ? 'dn' : '') : 'gd'}">${isFinite(r.pl) && r.pl !== undefined ? usd(+r.pl) : OPEN_ST.includes(r.status) ? '…' : '—'}</div></div>`;
-  const pRow = p => `<div class="hrow"><div><b class="${p.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[p.sym] ? SPECS[p.sym].n : p.sym)} ${p.dir}</b> · ${p.tf}m · ${hm(p.next)}${p.auto ? ' · auto' : ''}<small>${p.done ? esc(p.res) : 'चल रहा है'}${p.entry ? ' · entry ' + fmt(p.sym, p.entry) : ''}${isFinite(p.tp) ? ' · TP $' + (+p.tp).toFixed(2) : ''}</small></div><div class="r ${p.done && isFinite(p.pl) ? (p.pl > 0 ? 'up' : p.pl < 0 ? 'dn' : '') : 'gd'}">${p.done && isFinite(p.pl) ? usd(p.pl) : '…'}</div></div>`;
+  const pRow = p => `<div class="hrow"><div><b class="${p.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[p.sym] ? SPECS[p.sym].n : p.sym)} ${p.dir}</b> · ${p.tf}m · ${hm(p.next)}${p.auto ? ' · auto' : ''}<small>${p.done ? esc(p.res) : 'चल रहा है'}${p.entry ? ' · entry ' + fmt(p.sym, p.entry) : ''}${isFinite(p.tp) ? ' · TP $' + (+p.tp).toFixed(2) : ''}${isFinite(p.slDyn) ? ' · cSL $' + (+p.slDyn).toFixed(2) : ''}${p.v ? '<br>' + ['B', 'C', 'D'].map(id => p.v[id] ? id + ' ' + (p.v[id].pl >= 0 ? '+' : '') + (+p.v[id].pl).toFixed(2) : '').filter(Boolean).join(' · ') : ''}</small></div><div class="r ${p.done && isFinite(p.pl) ? (p.pl > 0 ? 'up' : p.pl < 0 ? 'dn' : '') : 'gd'}">${p.done && isFinite(p.pl) ? usd(p.pl) : '…'}</div></div>`;
   return `<div class="wrap">
 ${statBlock('🚀 Real (MT5 · EA का नतीजा)', realDone)}
 ${statBlock('🖥 Paper — VPS (app बंद हो तब भी)', vpsDone)}
-${S.paper.length ? statBlock('📝 Paper — इस phone का', paperDone) : ''}
+${slCompare()}
 <div class="note">Break-even के लिए चाहिए: TP $0.25 / SL $1.50 → सिर्फ़ TP-SL हो तो ~86% win; candle close पर छोटे loss से कम। Win % हरा = 86%+, सुनहरा = 60–85%।</div>
 <div class="card"><h3>🚀 Real trades</h3>${S.real.length ? S.real.slice(0, 40).map(rRow).join('') : '<div class="empty">अभी कोई real trade नहीं</div>'}
 <button class="btn ghost" data-act="refreal" style="width:100%;margin-top:10px">↻ EA से नतीजा लाओ</button></div>
-<div class="card"><h3>🖥 VPS paper trades</h3>${S.vpsPaper.length ? S.vpsPaper.slice(0, 60).map(pRow).join('') : `<div class="empty">${vpsAlive() ? 'VPS चालू है — अगले signal का इंतज़ार (Auto Paper ON होना चाहिए)' : 'VPS से अभी कोई paper नहीं — VPS पर scanner v1.01 चाहिए'}</div>`}</div>
-<div class="card"><h3>📝 इस phone के paper trades</h3>${S.paper.length ? S.paper.slice(0, 60).map(pRow).join('') : '<div class="empty">अभी कोई paper trade नहीं — signal पर 📝 Paper दबाएँ या Auto Paper ON करें</div>'}
-${S.paper.length ? '<button class="btn ghost" data-act="clrpaper" style="width:100%;margin-top:10px">🗑 Paper record साफ़ करें</button>' : ''}</div>
+<div class="card"><h3>🖥 VPS paper trades</h3>${S.vpsPaper.length ? S.vpsPaper.slice(0, 60).map(pRow).join('') : `<div class="empty">${vpsAlive() ? 'VPS चालू है — अगले signal का इंतज़ार (VPS Paper ON होना चाहिए)' : 'VPS से अभी कोई paper नहीं — VPS पर scanner v1.01 चाहिए'}</div>`}</div>
 </div>`;
 }
 function setTab(){
   const tg = (act, on, t, sub) => `<div class="tg"><span>${t}<small>${sub}</small></span><button data-act="${act}" class="${on ? 'on' : ''}">${on ? 'ON' : 'OFF'}</button></div>`;
   return `<div class="wrap"><div class="card"><h3>Setting</h3>
-${tg('auto', S.cfg.autoPaper, '📝 Auto Paper', 'हर BUY / SELL signal अपने आप paper में')}
+${tg('auto', S.cfg.autoPaper, '🖥 VPS Paper', 'हर BUY / SELL signal VPS पर अपने आप paper में (4 तरह के SL की तुलना)')}
 ${tg('confirm', S.cfg.confirm, '🚀 MT5 से पहले पूछो', 'OFF = एक tap में सीधा भेजो (तेज़)')}
 ${tg('sound', S.cfg.sound, '🔔 आवाज़ + vibrate', 'नया signal आने पर (3 beep + बड़ा BUY / SELL flash)')}
 ${tg('screen', S.cfg.screenOn, '☀️ Screen ON', 'ON = screen अपने आप बंद नहीं होगी')}</div>
@@ -325,7 +314,7 @@ document.addEventListener('input', e => { if(e.target.id === 'srch'){ S.q = e.ta
 function act(a, v){
   if(a === 'tab'){ S.tab = v; S.q = ''; repaint(); if(v === 'rec'){ refreshReal(true); refreshVps().then(() => { if(S.tab === 'rec') repaint() }) } return }
   if(a === 'tf'){ S.cfg.tf = +v === 5 ? 5 : 1; saveCfg(); S.sig = {}; repaint(); poll(); return }
-  if(a === 'auto'){ S.cfg.autoPaper = !S.cfg.autoPaper; saveCfg(); repaint(); toast(S.cfg.autoPaper ? '📝 Auto Paper ON' : 'Auto Paper OFF'); return }
+  if(a === 'auto'){ S.cfg.autoPaper = !S.cfg.autoPaper; saveCfg(); repaint(); toast(S.cfg.autoPaper ? '🖥 VPS Paper ON' : 'VPS Paper OFF'); return }
   if(a === 'confirm'){ S.cfg.confirm = !S.cfg.confirm; saveCfg(); repaint(); return }
   if(a === 'sound'){ S.cfg.sound = !S.cfg.sound; saveCfg(); repaint(); if(S.cfg.sound) beep(); return }
   if(a === 'screen'){ S.cfg.screenOn = !S.cfg.screenOn; saveCfg(); wakeSet().then(repaint); toast(S.cfg.screenOn ? '☀️ Screen ON — अपने आप बंद नहीं होगी' : 'Screen ON बंद'); return }
@@ -337,9 +326,7 @@ function act(a, v){
     saveCfg(); delete S.sig[v]; $('main').innerHTML = pairsTab(); render(); poll(); return;
   }
   if(a === 'mt5') return onMt5(v);
-  if(a === 'paper'){ const sg = S.sig[v]; if(sg && sg.dir !== 'NO'){ addPaper(v, sg, false); repaint() } return }
   if(a === 'refreal'){ refreshReal(true).then(() => toast('↻ ताज़ा किया')); return }
-  if(a === 'clrpaper'){ dlg('Paper record साफ़ करें?', '<div class="note">सारे paper trade हट जाएँगे (real नहीं)।</div>', 'हटाओ', 'Cancel').then(ok => { if(ok){ S.paper = []; savePaper(); repaint() } }); return }
 }
 
 /* ---------- loop ---------- */

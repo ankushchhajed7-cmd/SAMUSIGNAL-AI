@@ -11,8 +11,24 @@ export const DEF = {
   tp: 0.25, sl: 1.5, lot: 0.01, maxCandles: 1,
   /* 1.2.0 (user Final): PAPER ka TP candle ke hisaab se = signal candle ki body ka 50%, $0.10 se $1.00 (0.01 lot par).
      Asli EA (PERSONAL FX v7.6 Strategy 5) abhi bhi fixed $0.25. */
-  tpBodyPct: 0.5, tpMin: 0.10, tpMax: 1.00
+  tpBodyPct: 0.5, tpMin: 0.10, tpMax: 1.00,
+  /* 1.3.0 (user 'Tulna Final'): SL ki tulna — (1) SL candle ke hisaab se = body ka 100%, $0.20–$1.50;
+     (2) BREAK-EVEN: bhaav TP ki taraf 60% chale to SL entry par (fir ulta aaye to $0). */
+  slBodyPct: 1.0, slMin: 0.20, slMax: 1.50, beAt: 0.6
 };
+/* paper SL ($, 0.01 lot) candle ke hisaab se */
+export function dynSl(sg, k, cfg = DEF){
+  const c = Object.assign({}, DEF, cfg);
+  const v = (sg && sg.body > 0 && k > 0) ? sg.body * k * c.slBodyPct : c.sl;
+  return Math.round(Math.min(c.slMax, Math.max(c.slMin, v)) * 100) / 100;
+}
+/* 4 tareeke (naam, SL kaunsa, break-even) — A = abhi wala */
+export const VARIANTS = [
+  {id: 'A', name: 'अभी वाला (SL $1.50)', dyn: false, be: false},
+  {id: 'B', name: '1 · SL candle के हिसाब से', dyn: true, be: false},
+  {id: 'C', name: '2 · Break-even', dyn: false, be: true},
+  {id: 'D', name: '1+2 दोनों', dyn: true, be: true}
+];
 /* paper TP ($, 0.01 lot): signal candle body (price) x k ($ per 1.0 price, 0.01 lot) x 50%, seema ke andar */
 export function dynTp(sg, k, cfg = DEF){
   const c = Object.assign({}, DEF, cfg);
@@ -79,7 +95,9 @@ export function signal(bars, cfg = DEF){
 /* PAPER trade ka nateeja — EA (Strategy 5) jaise niyam, band candles ke OHLC se (bid bhaav).
    p = {dir, next (trade wali candle ka open ms), tf, spread (price), k ($ per 1.0 price, 0.01 lot pe), tp, sl, lot, maxCandles}
    Entry = trade wali candle ka open (BUY = open + spread, yaani ask).
-   Ek hi candle me TP aur SL dono chhue -> SL maana (pakka pata nahi, isliye ghaate wala). */
+   Ek hi candle me TP aur SL dono chhue -> SL maana (pakka pata nahi, isliye ghaate wala).
+   1.3.0 p.be = true: bhaav TP ki taraf beAt (60%) chal gaya to SL entry par. Ek hi candle me 60% chhua aur close entry ke
+   ulti taraf -> beech me entry se guzra hi hoga -> 'BE' $0 (SL pehle chhua ho to SL, ghaate wala maana). */
 export function paperResolve(p, bars, now = Date.now()){
   const tfMs = (p.tf || 1) * 60000, maxC = Math.max(1, p.maxCandles || 1);
   const scale = (p.lot || 0.01) / 0.01, k = p.k * scale, sp = Math.max(0, +p.spread || 0);
@@ -89,23 +107,38 @@ export function paperResolve(p, bars, now = Date.now()){
   const first = seq[0];
   if(!first || first.t !== p.next) return {done: false, why: 'trade wali candle abhi nahi aayi'};
   const entry = p.dir === 'BUY' ? first.o + sp : first.o;
-  const tpDist = tpUsd / k, slDist = slUsd / k;
+  const tpDist = tpUsd / k, slDist = slUsd / k, beDist = (p.beAt || DEF.beAt) * tpDist;
+  let armed = false;
   for(let i = 0; i < maxC; i++){
     const b = seq[i];
     if(!b || b.t + tfMs > now) return {done: false, entry, why: 'candle chal rahi hai'};
-    let hitTp, hitSl;
-    if(p.dir === 'BUY'){ hitTp = b.h >= entry + tpDist; hitSl = b.l <= entry - slDist }
-    else{ hitTp = b.l + sp <= entry - tpDist; hitSl = b.h + sp >= entry + slDist }
+    let hitTp, hitSl, fav, adv;
+    if(p.dir === 'BUY'){ hitTp = b.h >= entry + tpDist; hitSl = b.l <= entry - slDist; fav = b.h - entry; adv = b.l - entry }
+    else{ hitTp = b.l + sp <= entry - tpDist; hitSl = b.h + sp >= entry + slDist; fav = entry - (b.l + sp); adv = entry - (b.h + sp) }
+    if(armed && adv <= 0) return {done: true, entry, res: 'BE', pl: 0, exitT: b.t};          /* pichhli candle me 60% hua tha */
     if(hitSl) return {done: true, entry, res: hitTp ? 'SL?' : 'SL', pl: -round2(slUsd), exitT: b.t};
     if(hitTp) return {done: true, entry, res: 'TP', pl: round2(tpUsd), exitT: b.t};
-    if(i === maxC - 1){
-      const pl = p.dir === 'BUY' ? (b.c - entry) * k : (entry - (b.c + sp)) * k;
-      return {done: true, entry, res: 'CANDLE CLOSE', pl: round2(pl), exitT: b.t + tfMs};
+    const closePl = p.dir === 'BUY' ? (b.c - entry) * k : (entry - (b.c + sp)) * k;
+    if(p.be && fav >= beDist){
+      if(closePl < 0) return {done: true, entry, res: 'BE', pl: 0, exitT: b.t};
+      armed = true;
     }
+    if(i === maxC - 1) return {done: true, entry, res: 'CANDLE CLOSE', pl: round2(closePl), exitT: b.t + tfMs};
   }
   return {done: false, entry};
 }
 const round2 = v => Math.round(v * 100) / 100;
+/* 1.3.0: ek paper trade ke 4 nateeje. p.sl = fixed SL, p.slDyn = candle wala SL. Lautata {done, entry, v: {A: {res, pl}, ...}} */
+export function paperVariants(p, bars, now = Date.now()){
+  const v = {}; let entry, done = true;
+  for(const x of VARIANTS){
+    const r = paperResolve(Object.assign({}, p, {sl: x.dyn && isFinite(p.slDyn) ? p.slDyn : p.sl, be: x.be}), bars, now);
+    if(r.entry !== undefined) entry = r.entry;
+    if(!r.done){ done = false; continue }
+    v[x.id] = {res: r.res, pl: r.pl};
+  }
+  return {done, entry, v};
+}
 
 /* [{pl}] -> {n, win, loss, flat, net, wr} — sirf poore hue */
 export function stats(list){
