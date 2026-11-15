@@ -148,6 +148,13 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.24.0 — Candle 1.3.0: SL ki tulna (4 tareeke) + phone paper hataya (15 Nov)
+- User: BTC 1m VPS paper 54 trade 52% −$4.14 → "SL modify" → "Tulna Final" + phone wala paper hatao + dono naye niyam Final.
+- `candlerules`: `dynSl(sg, k)` = body ka 100%, $0.20–$1.50; `paperResolve` me `p.be` (bhaav TP ki taraf `beAt` 60% chale to SL entry par; ek candle me 60% chhua aur close ulta = 'BE' $0; SL pehle maana); `VARIANTS` A (abhi, SL $1.50) / B (candle SL) / C (break-even) / D (B+C); `paperVariants(p, bars)`. Test +2 (64).
+- Phone paper poori tarah hataya (addPaper / resolvePaper / 📝 Paper button / phone record). Toggle ab "🖥 VPS Paper" (cfg.autoPaper → VPS). Signal card: "🖥 Paper TP $x · candle SL $y", VPS paper ka nateeja.
+- Record: "⚖️ SL की तुलना (VPS paper)" table A–D (aaj / kul $, trade, win %, sabse achha); VPS paper line me "B · C · D" ke $. Scanner v1.03 `p.v` likhta hai.
+- Candle 1.3.0, app 1.24.0.
+
 ## v1.23.1 — Candle 1.2.1: page side me nahi khisakta, neeche ke button sthir (15 Nov)
 - User video: page daayein-baayein khisak raha tha, Live / Pairs / Record / Setting sirf scroll karne par dikhte the. Wajah: lambi `nowrap` pill ("Paper TP: candle 50% … Real TP … SL") screen se chaudi -> poora page chauda.
 - Fix: html / body / #app `overflow-x:hidden`, pill `max-width:100%` + ellipsis, chip do chhote hisson me ("📝 TP candle 50%", "🚀 TP $0.25 · SL $1.50"), #main neeche 110px jagah (button ke peeche content na chhupe). Pixel 7 par jaancha: scrollWidth = clientWidth, nav har tab me neeche fixed.
