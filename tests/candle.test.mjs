@@ -1,6 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ema, rsi, signal, closedBars, paperResolve, stats, DEF, sendWindowMs, dynTp, dynSl, paperVariants, confirms} from '../src/candlerules.js';
+import {ema, rsi, signal, closedBars, paperResolve, stats, DEF, sendWindowMs, dynTp, dynSl, paperVariants, confirms, weather} from '../src/candlerules.js';
+
+test('1.8.0 weather: mausam', () => {
+  const M_ = 60000, t0 = Date.UTC(2026, 10, 16, 6, 0);            /* 11:30 IST — koi session nahi */
+  const calm = Array.from({length: 200}, (_, i) => ({t: t0 - (200 - i) * M_, o: 100, h: 100.1 + (i % 3) * 0.01, l: 99.9 - (i % 2) * 0.01, c: 100 + (i % 5) * 0.004}));
+  assert.equal(weather({b1: calm, now: t0, sym: 'EUR/USD'}).c, 'G');
+  const fast = calm.slice(0, -10).concat(Array.from({length: 10}, (_, i) => ({t: t0 - (10 - i) * M_, o: 100, h: 100.2, l: 99.8, c: 100})));
+  const w = weather({b1: fast, now: t0, sym: 'EUR/USD'});
+  assert.equal(w.c, 'R'); assert.ok(w.why.some(x => x.includes('रफ़्तार')));
+  assert.equal(weather({b1: calm, now: t0, sym: 'BTC/USD', news: [{t: t0 / 1000 + 1800, cur: 'USD', imp: 'High'}]}).c, 'R');
+  assert.equal(weather({b1: calm, now: t0, sym: 'EUR/JPY', news: [{t: t0 / 1000 + 1800, cur: 'USD', imp: 'High'}]}).c, 'G');
+  assert.equal(weather({b1: calm, now: Date.UTC(2026, 10, 16, 8, 5), sym: 'EUR/USD'}).c, 'Y');   /* London */
+  assert.equal(weather({b1: calm, now: t0, sym: 'EUR/USD', spreadRatio: 2.5}).c, 'R');
+});
 
 test('1.6.0 confirms: 4 pushti', () => {
   const M_ = 60000, t = Date.UTC(2026, 10, 15, 10, 0);

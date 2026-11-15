@@ -148,6 +148,12 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.29.0 — Candle 1.8.0: 🌦 Bazaar ka Mausam (sirf naap) (15 Nov)
+- User "Mausam Final": tezi pehle bhaanpo, saaf halat me hi trade — pehle sirf naap.
+- `candlerules.weather({b1, b1h, now, news, sym, spreadRatio})` → {c G/Y/R, why[]}. R: High news ±60 min (pair ki currency; BTC = USD), raftaar (10/60 candle range) ≥ 1.5, 15 min me 3 guna candle, spread ≥ 2 guna. Y: raftaar ≥ 1.25, London 08:00 / NY 13:00 + 14:30 UTC ±15 min, rollover 21:00–23:30 UTC, Bollinger squeeze (< 50% avg), is ghante (1h itihaas) 1.5 guna. `WX` config. Test +1 (67).
+- App: pair card par mausam patti ("🔴 तेज़ — news USD 19:00 · रफ़्तार ×1.6"), `/candle/wx` har 20 sec; Record "🌦 मौसम का नाप — 1 / 5 MIN" (G / Y / R ka nateeja + sabse gehra / average); paper line me 🟢🟡🔴.
+- Scanner v1.08: har minute `/candle/wx/<NAME>` + paper `wx`; news `/feed/news/cal`, `/feed/bars/1h`; aam spread `ST.cdl.spAvg`. Candle 1.8.0, app 1.29.0.
+
 ## v1.28.0 — Candle 1.7.0: "sabse gehra ghata" (MAE) (15 Nov)
 - User Final: har paper ka sabse gehra ghata note ho (SL $10 ka asli khatra).
 - `paperResolve` har return me `mae` ($, har candle ka sabse bura bhaav — kram pakka nahi to ghaate wala; SL = −SL). Test me +1 assert.
