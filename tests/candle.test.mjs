@@ -25,6 +25,7 @@ test('1.5.0 hold: SL $10 tak, profit dikhte hi book', () => {
   assert.equal(paperResolve(p, bars.slice(0, 1), t + M_ + 1).done, false);          /* pehli candle ghaate me -> chalta rahe */
   const r = paperResolve(p, bars, t + 3 * M_ + 1);
   assert.equal(r.res, 'PROFIT BOOK'); assert.equal(r.pl, 0.05); assert.equal(r.n, 3);
+  assert.equal(r.mae, -0.5);                                          /* sabse neeche 99.5 (candle 2) */
   /* pehli candle close fayde me -> wahi book */
   const r1 = paperResolve(p, [{t, o: 100, h: 100.3, l: 99.9, c: 100.2}], t + M_ + 1);
   assert.equal(r1.res, 'PROFIT BOOK'); assert.equal(r1.pl, 0.2);

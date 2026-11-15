@@ -113,29 +113,30 @@ export function paperResolve(p, bars, now = Date.now()){
   if(!first || first.t !== p.next) return {done: false, why: 'trade wali candle abhi nahi aayi'};
   const entry = p.dir === 'BUY' ? first.o + sp : first.o;
   const tpDist = tpUsd / k, slDist = slUsd / k, beDist = (p.beAt || DEF.beAt) * tpDist;
-  let armed = false;
+  let armed = false, mae = 0;   /* 1.7.0: sabse gehra ghata ($, trade ke dauraan) */
   for(let i = 0; i < maxC; i++){
     const b = seq[i];
     if(!b || b.t + tfMs > now) return {done: false, entry, why: 'candle chal rahi hai'};
     let hitTp, hitSl, fav, adv;
     if(p.dir === 'BUY'){ hitTp = b.h >= entry + tpDist; hitSl = b.l <= entry - slDist; fav = b.h - entry; adv = b.l - entry }
     else{ hitTp = b.l + sp <= entry - tpDist; hitSl = b.h + sp >= entry + slDist; fav = entry - (b.l + sp); adv = entry - (b.h + sp) }
-    if(armed && adv <= 0) return {done: true, entry, res: 'BE', pl: 0, exitT: b.t};          /* pichhli candle me 60% hua tha */
-    if(hitSl) return {done: true, entry, res: hitTp ? 'SL?' : 'SL', pl: -round2(slUsd), exitT: b.t};
-    if(hitTp) return {done: true, entry, res: 'TP', pl: round2(tpUsd), exitT: b.t};
+    mae = Math.min(mae, adv * k);                                    /* is candle ka sabse bura bhaav (pakka kram nahi pata, isliye ghaate wala) */
+    if(armed && adv <= 0) return {done: true, entry, res: 'BE', pl: 0, exitT: b.t, mae: round2(mae)};          /* pichhli candle me 60% hua tha */
+    if(hitSl) return {done: true, entry, res: hitTp ? 'SL?' : 'SL', pl: -round2(slUsd), exitT: b.t, mae: -round2(slUsd)};
+    if(hitTp) return {done: true, entry, res: 'TP', pl: round2(tpUsd), exitT: b.t, mae: round2(mae)};
     const closePl = p.dir === 'BUY' ? (b.c - entry) * k : (entry - (b.c + sp)) * k;
     if(p.be && fav >= beDist){
-      if(closePl < 0) return {done: true, entry, res: 'BE', pl: 0, exitT: b.t};
+      if(closePl < 0) return {done: true, entry, res: 'BE', pl: 0, exitT: b.t, mae: round2(mae)};
       armed = true;
     }
     if(p.hold){                                                       /* 1.5.0: SL tak ruko, profit dikhte hi book */
       const bookUsd = (p.book === undefined ? DEF.bookUsd : p.book) * scale;
-      if(i >= 1 && fav * k >= bookUsd) return {done: true, entry, res: 'PROFIT BOOK', pl: round2(bookUsd), exitT: b.t, n: i + 1};
-      if(closePl > 0.004) return {done: true, entry, res: 'PROFIT BOOK', pl: round2(closePl), exitT: b.t + tfMs, n: i + 1};
-      if(i === maxC - 1) return {done: true, entry, res: 'TIME', pl: round2(closePl), exitT: b.t + tfMs, n: i + 1};
+      if(i >= 1 && fav * k >= bookUsd) return {done: true, entry, res: 'PROFIT BOOK', pl: round2(bookUsd), exitT: b.t, n: i + 1, mae: round2(mae)};
+      if(closePl > 0.004) return {done: true, entry, res: 'PROFIT BOOK', pl: round2(closePl), exitT: b.t + tfMs, n: i + 1, mae: round2(mae)};
+      if(i === maxC - 1) return {done: true, entry, res: 'TIME', pl: round2(closePl), exitT: b.t + tfMs, n: i + 1, mae: round2(mae)};
       continue;
     }
-    if(i === maxC - 1) return {done: true, entry, res: 'CANDLE CLOSE', pl: round2(closePl), exitT: b.t + tfMs};
+    if(i === maxC - 1) return {done: true, entry, res: 'CANDLE CLOSE', pl: round2(closePl), exitT: b.t + tfMs, mae: round2(mae)};
   }
   return {done: false, entry};
 }
