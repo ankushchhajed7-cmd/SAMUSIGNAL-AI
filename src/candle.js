@@ -12,7 +12,7 @@ import {SPECS, PAIRS, fmt, pipUsd} from './symbols.js';
 import {accounts, orderKey} from './bridge.js';
 import {DEF, signal, closedBars, paperResolve, stats, sendWindowMs, dynTp} from './candlerules.js';
 
-export const CANDLE_VERSION = '1.2.0';
+export const CANDLE_VERSION = '1.2.1';
 const MAX_ON = 6;
 const $ = id => document.getElementById(id);
 const esc = s => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -214,7 +214,7 @@ function chips(){
   const f = S.feed, now = Date.now();
   const feed = !f ? '<span class="pill">Data …</span>' : f.ok ? '<span class="pill ok">● MT5 Data Feed</span>' : `<span class="pill bad">● ${esc(S.err || 'Data Feed band')}</span>`;
   const open = S.real.filter(r => r.status === 'PLACED').length, pend = S.paper.filter(p => !p.done).length;
-  return feed + `<span class="pill warn">Paper TP: candle 50% ($${DEF.tpMin.toFixed(2)}–${DEF.tpMax.toFixed(2)}) · Real TP $${DEF.tp.toFixed(2)} · SL -$${DEF.sl.toFixed(2)}</span>` + (S.cfg.autoPaper ? '<span class="pill ok">📝 Auto Paper</span>' : '')
+  return feed + `<span class="pill warn">📝 TP candle 50%</span><span class="pill warn">🚀 TP $${DEF.tp.toFixed(2)} · SL $${DEF.sl.toFixed(2)}</span>` + (S.cfg.autoPaper ? '<span class="pill ok">📝 Auto Paper</span>' : '')
     + (S.vps ? (vpsAlive() ? '<span class="pill ok">🖥 VPS चालू</span>' : '<span class="pill bad">🖥 VPS बंद</span>') : '')
     + (open ? `<span class="pill ok">🚀 ${open} चालू</span>` : '') + (pend ? `<span class="pill">📝 ${pend} चल रहे</span>` : '') + `<span class="pill">${hm(now)} IST</span>`;
 }
