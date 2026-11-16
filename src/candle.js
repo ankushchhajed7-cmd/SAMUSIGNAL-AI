@@ -12,7 +12,7 @@ import {SPECS, PAIRS, fmt, pipUsd} from './symbols.js';
 import {accounts, orderKey} from './bridge.js';
 import {DEF, signal, closedBars, stats, sendWindowMs, dynTp, CONFIRMS, TPV, tpAt} from './candlerules.js';
 
-export const CANDLE_VERSION = '1.12.0';
+export const CANDLE_VERSION = '1.13.0';
 const MAX_ON = 6;
 /* 1.9.0 (user 16 Nov): XAUUSD Candle se hataya — na pair list me, na history me (real / paper / VPS paper) */
 const NO_PAIR = new Set(['XAU/USD']);
@@ -34,7 +34,8 @@ const S = {
   seen: LS.get('candle_seen', {}),
   bars: {}, live: {}, sig: {}, feed: null, err: '', busy: false, lastPoll: 0, sending: false,
   vps: null, vpsPaper: [], wx: {},   /* 1.1.0; 1.8.0 mausam */
-  ea: null, eaTrades: []             /* 1.10.0: SAMUSIGNAL CANDLE EA (demo) */
+  ea: null, eaTrades: [],            /* 1.10.0: SAMUSIGNAL CANDLE EA (demo) */
+  auto: {}, cfgEditAt: 0              /* 1.13.0: EA ne badle me ON kiye pair {NAME: {d, for, t}} */
 };
 const saveCfg = () => { LS.set('candle_cfg', S.cfg); cfgSync() };
 /* 1.9.0: purani XAUUSD settings / history phone se hamesha ke liye saaf */
@@ -49,13 +50,30 @@ const saveCfg = () => { LS.set('candle_cfg', S.cfg); cfgSync() };
 /* 1.1.0: VPS ko batao kaunse pair / tf / Auto Paper (app band ho tab bhi wahi chale) */
 function cfgSync(){
   clearTimeout(cfgSync.h);
-  cfgSync.h = setTimeout(() => { try{ fetch(fbUrl(keys(), 'candle/cfg'), {method: 'PUT', headers: {'Content-Type': 'application/json'},
+  S.cfgEditAt = Date.now();
+  /* 1.13.0: PATCH (PUT nahi) — EA ka /candle/cfg/auto na mite */
+  cfgSync.h = setTimeout(() => { try{ fetch(fbUrl(keys(), 'candle/cfg'), {method: 'PATCH', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({pairs: S.cfg.pairs.filter(p => SPECS[p]), tf: S.cfg.tf, autoPaper: !!S.cfg.autoPaper, at: Date.now()})}).catch(() => {}) }catch(e){} }, 800);
 }
 const vpsAlive = () => !!(S.vps && S.vps.t && Date.now() - S.vps.t * 1000 < 150000);
+/* 1.13.0: Firebase ke pair maano (EA badle ka pair ON / agle din OFF karta hai). Pehli baar (cfg nahi) = phone wali bhejo. */
+async function pullCfg(first){
+  if(!first && Date.now() - S.cfgEditAt < 15000) return false;       /* abhi user ne badla — bhejne do */
+  let j; try{ const r = await fetch(fbUrl(keys(), 'candle/cfg'), {cache: 'no-store'}); if(!r.ok) return false; j = await r.json() }catch(e){ return false }
+  if(!j){ if(first) cfgSync(); return false }
+  S.auto = (j.auto && typeof j.auto === 'object') ? j.auto : {};
+  const remote = (Array.isArray(j.pairs) ? j.pairs : []).filter(p => SPECS[p] && okSym(p));
+  const same = remote.length === S.cfg.pairs.length && remote.every(p => S.cfg.pairs.includes(p));
+  if(same){ if(first && +j.tf !== 1) cfgSync(); return false }
+  const added = remote.filter(p => !S.cfg.pairs.includes(p));
+  S.cfg.pairs = remote; LS.set('candle_cfg', S.cfg);
+  added.forEach(p => { const a = S.auto[SPECS[p].n]; if(a) toast(`🤖 EA ने ${SPECS[p].n} ON किया (${a.for} आज बंद है)`) });
+  return true;
+}
 async function refreshVps(){
   const s = keys();
   try{ const r = await fetch(fbUrl(s, 'candle/vps'), {cache: 'no-store'}); S.vps = r.ok ? await r.json() : null }catch(e){}
+  if(await pullCfg(false)) poll();                                    /* 1.13.0: EA ne pair badla ho to */
   try{ const r = await fetch(fbUrl(s, 'candle/wx'), {cache: 'no-store'}); if(r.ok) S.wx = (await r.json()) || {} }catch(e){}   /* 1.8.0 */
   try{ const u = fbUrl(s, 'candle/paper'), r = await fetch(u + (u.includes('?') ? '&' : '?') + 'orderBy=%22%24key%22&limitToLast=600', {cache: 'no-store'});
     if(r.ok){ const j = (await r.json()) || {}; S.vpsPaper = Object.values(j).filter(p => p && p.sym && okSym(p.sym) && +p.tf !== 5).sort((a, b) => b.next - a.next) } }catch(e){}
@@ -268,8 +286,9 @@ function pairsTab(){
   const q = S.q.trim().toUpperCase().replace(/[^A-Z]/g, '');
   const list = CPAIRS.filter(p => !q || SPECS[p].n.includes(q));
   const on = S.cfg.pairs;
-  const row = p => `<div class="prow"><span>${esc(SPECS[p].n)}<small>${esc(SPECS[p].title)}</small></span><button data-act="pair" data-v="${esc(p)}" class="${on.includes(p) ? 'on' : ''}">${on.includes(p) ? 'ON' : 'OFF'}</button></div>`;
-  return `<div class="wrap"><div class="card"><h3>Pairs (${on.length}/${MAX_ON} ON)</h3><div class="note" style="margin-bottom:8px">सिर्फ़ ON वाले pair पर signal आएगा। (XAUUSD Candle से हटा दिया गया है।)<br>🤖 <b>CANDLE EA (demo) भी सिर्फ़ इन्हीं ON pair पर trade लगाता है</b> — OFF किया तो उस pair पर नया trade नहीं (चालू trade अपने नियम से बंद होगा)।</div>
+  const row = p => { const a = S.auto[SPECS[p].n] && on.includes(p) ? S.auto[SPECS[p].n] : null;
+    return `<div class="prow"><span>${esc(SPECS[p].n)}${a ? ' <b style="color:var(--gold)">🤖 auto</b>' : ''}<small>${a ? esc(a.for || '') + ' आज बंद है, उसकी जगह EA ने ON किया — कल अपने आप OFF' : esc(SPECS[p].title)}</small></span><button data-act="pair" data-v="${esc(p)}" class="${on.includes(p) ? 'on' : ''}">${on.includes(p) ? 'ON' : 'OFF'}</button></div>` };
+  return `<div class="wrap"><div class="card"><h3>Pairs (${on.length}/${MAX_ON} ON)</h3><div class="note" style="margin-bottom:8px">सिर्फ़ ON वाले pair पर signal आएगा। (XAUUSD Candle से हटा दिया गया है।)<br>🤖 <b>CANDLE EA (demo) भी सिर्फ़ इन्हीं ON pair पर trade लगाता है</b> — OFF किया तो उस pair पर नया trade नहीं (चालू trade अपने नियम से बंद होगा)।<br>🔁 किसी pair का trade −$2 से नीचे गया तो वो pair उस दिन बंद, और EA उसकी जगह ऐसा pair ON करेगा जिसकी currency बाकी से न टकराए (phone पर push; अगले दिन अपने आप OFF)।</div>
 <input class="srch" id="srch" placeholder="खोजें: BTC, EUR…" value="${esc(S.q)}">
 ${on.length ? `<div style="margin-top:10px">${on.filter(p => SPECS[p]).map(row).join('')}</div>` : ''}
 <div style="margin-top:10px">${list.filter(p => !on.includes(p)).map(row).join('')}</div></div></div>`;
@@ -428,7 +447,7 @@ function tick(){
 }
 function boot(){
   $('ver').textContent = 'v' + CANDLE_VERSION;
-  render(); poll(); refreshReal(); cfgSync(); refreshVps().then(render);   /* 1.1.0: VPS ko settings + VPS ka haal */
+  render(); poll(); refreshReal(); pullCfg(true).then(ch => { if(ch){ render(); poll() } }); refreshVps().then(render);   /* 1.13.0: pehle Firebase ke pair */
   setInterval(tick, 1000);
   setInterval(refreshReal, 10000);
   setInterval(() => { if(!document.hidden) refreshVps().then(() => { if(S.tab !== 'pairs') render() }) }, 20000);

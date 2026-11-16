@@ -148,6 +148,10 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.34.0 — Candle 1.13.0: EA ka badle ka pair app me (16 Nov)
+- User: CANDLE EA me koi pair floating −$2 se neeche = us din band; uski jagah dusra pair apne aap ON + notification (4 pair chalte rahein). EA v1.03 (Samusignal) `/candle/cfg` `pairs` me badla pair PATCH karta hai + `/candle/cfg/auto/<NAME>` {d, for, t}; agle din hata deta hai.
+- App: `cfgSync` ab PATCH (PUT nahi — `auto` na mite); `pullCfg()` boot par aur har 20 sec Firebase ke pair maanta hai (user ke badlav ke 15 sec tak nahi), naya auto pair aaye to toast; Pairs me "🤖 auto — X आज बंद है, उसकी जगह…"; Pairs note me niyam. Candle 1.13.0, app 1.34.0.
+
 ## v1.33.0 — Candle 1.12.0: 🎯 TP ka naap (sirf paper) (16 Nov)
 - User: "TP candle ka 50% kaise kaam karta hai, positive candle bhi kam close" → sujhaav ① naap → "Final".
 - `candlerules`: `paperResolve` ab har done par `mfe` (trade me sabse zyada fayda $) + `mfe1` (pehli candle me) deta hai; `p.trail` {arm, lock}: +arm par SL +lock pakka, TP door wala tak, arm ke baad book band ('LOCK'). `TPV` 6 tareeke (T30 / T50 abhi / T75 / T100 = body ka %, max $1.00 x pct/50%; TR = 50% par +$0.05 lock → 100%; B25 = book body 25%), `tpAt(body, k, pct)`, `tpVariants(p, bars)`. Test +1 (68).
