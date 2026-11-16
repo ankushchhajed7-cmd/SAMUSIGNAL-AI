@@ -12,7 +12,7 @@ import {SPECS, PAIRS, fmt, pipUsd} from './symbols.js';
 import {accounts, orderKey} from './bridge.js';
 import {DEF, signal, closedBars, stats, sendWindowMs, dynTp, CONFIRMS} from './candlerules.js';
 
-export const CANDLE_VERSION = '1.10.0';
+export const CANDLE_VERSION = '1.11.0';
 const MAX_ON = 6;
 /* 1.9.0 (user 16 Nov): XAUUSD Candle se hataya — na pair list me, na history me (real / paper / VPS paper) */
 const NO_PAIR = new Set(['XAU/USD']);
@@ -39,6 +39,7 @@ const S = {
 const saveCfg = () => { LS.set('candle_cfg', S.cfg); cfgSync() };
 /* 1.9.0: purani XAUUSD settings / history phone se hamesha ke liye saaf */
 (() => {
+  if(S.cfg.tf !== 1){ S.cfg.tf = 1; LS.set('candle_cfg', S.cfg) }   /* 1.11.0 (user): sirf 1 MIN */
   const p0 = S.cfg.pairs.length, r0 = S.real.length, q0 = S.paper.length;
   S.cfg.pairs = S.cfg.pairs.filter(okSym); S.real = S.real.filter(r => okSym(r.sym)); S.paper = S.paper.filter(r => okSym(r.sym));
   if(S.cfg.pairs.length !== p0) LS.set('candle_cfg', S.cfg);
@@ -57,11 +58,11 @@ async function refreshVps(){
   try{ const r = await fetch(fbUrl(s, 'candle/vps'), {cache: 'no-store'}); S.vps = r.ok ? await r.json() : null }catch(e){}
   try{ const r = await fetch(fbUrl(s, 'candle/wx'), {cache: 'no-store'}); if(r.ok) S.wx = (await r.json()) || {} }catch(e){}   /* 1.8.0 */
   try{ const u = fbUrl(s, 'candle/paper'), r = await fetch(u + (u.includes('?') ? '&' : '?') + 'orderBy=%22%24key%22&limitToLast=600', {cache: 'no-store'});
-    if(r.ok){ const j = (await r.json()) || {}; S.vpsPaper = Object.values(j).filter(p => p && p.sym && okSym(p.sym)).sort((a, b) => b.next - a.next) } }catch(e){}
+    if(r.ok){ const j = (await r.json()) || {}; S.vpsPaper = Object.values(j).filter(p => p && p.sym && okSym(p.sym) && +p.tf !== 5).sort((a, b) => b.next - a.next) } }catch(e){}
   /* 1.10.0: CANDLE EA ki haalat + uske trade */
   try{ const r = await fetch(fbUrl(s, 'candle/ea/state'), {cache: 'no-store'}); if(r.ok) S.ea = await r.json() }catch(e){}
   try{ const u = fbUrl(s, 'candle/ea/trades'), r = await fetch(u + (u.includes('?') ? '&' : '?') + 'orderBy=%22%24key%22&limitToLast=300', {cache: 'no-store'});
-    if(r.ok){ const j = (await r.json()) || {}; S.eaTrades = Object.values(j).filter(t => t && t.dir).sort((a, b) => b.next - a.next) } }catch(e){}
+    if(r.ok){ const j = (await r.json()) || {}; S.eaTrades = Object.values(j).filter(t => t && t.dir && +t.tf !== 5).sort((a, b) => b.next - a.next) } }catch(e){}
 }
 /* 1.10.0: EA ek line me — chalu? kitne trade, aaj ka P/L */
 const eaAlive = () => !!(S.ea && S.ea.t && Date.now() - S.ea.t * 1000 < 120000);
@@ -254,13 +255,13 @@ function pairCard(sym){
 function liveTab(){
   const on = S.cfg.pairs.filter(p => SPECS[p]);
   return `<div class="wrap">
-<div class="card"><div class="bar"><div class="seg">${[1, 5].map(t => `<button data-act="tf" data-v="${t}" class="${S.cfg.tf === t ? 'on' : ''}">${t} MIN</button>`).join('')}</div>
+<div class="card"><div class="bar"><div class="seg"><button class="on">1 MIN</button></div>
 <div class="cdbox"><b class="mono" id="cd">${cdTxt()}</b><small>candle बंद होने में</small></div></div>
 <div class="tg" style="margin-top:8px"><span>🖥 VPS Paper<small>हर signal VPS पर अपने आप paper में — app बंद हो तब भी (asli paisa nahi)</small></span><button data-act="auto" class="${S.cfg.autoPaper ? 'on' : ''}">${S.cfg.autoPaper ? 'ON' : 'OFF'}</button></div>
 <div class="tg" style="margin-top:8px"><span>☀️ Screen ON<small>${esc(S.wlTxt || 'ON = जब तक ये page खुला है, screen अपने आप बंद नहीं होगी')}</small></span><button data-act="screen" class="${S.cfg.screenOn ? 'on' : ''}">${S.cfg.screenOn ? 'ON' : 'OFF'}</button></div></div>
 ${S.feed && !S.feed.ok ? `<div class="warn">⚠ ${esc(S.err || 'Data Feed band')} — VPS पर "SamuSignal Data Feed" EA चालू करें।</div>` : ''}
 ${on.length ? on.map(pairCard).join('') : `<div class="empty">कोई pair ON नहीं — नीचे <b>Pairs</b> में जाकर ON करें</div>`}
-<div class="note">Signal सिर्फ़ <b>बंद candle</b> पर बनता है। MT5 button: 1m में 20 sec, 5m में 60 sec तक।<br>🖥 <b>App बंद हो तब भी:</b> VPS scanner इन्हीं ON pair पर <b>1 MIN और 5 MIN दोनों</b> का paper जोड़ता है (VPS Paper ON हो तो), और ऊपर चुने हुए MIN का signal AI AUTO EA (v1.12) से phone पर push। ${S.vps ? (vpsAlive() ? '✅ VPS चालू' : '⚠ VPS से 2 min से ख़बर नहीं') : '⚠ VPS से अभी कोई ख़बर नहीं (scanner v1.01 चाहिए)'}<br>${eaLine()}<br><small>🤖 EA इन्हीं ON pair पर और ऊपर चुने हुए MIN पर असली (demo) order लगाता है — एक साथ ज़्यादा से ज़्यादा 3।</small></div>
+<div class="note">Signal सिर्फ़ <b>बंद candle</b> पर बनता है। MT5 button: candle खुलने के 20 sec तक।<br>🖥 <b>App बंद हो तब भी:</b> VPS scanner इन्हीं ON pair पर <b>1 MIN</b> का paper जोड़ता है (VPS Paper ON हो तो), और signal AI AUTO EA (v1.12) से phone पर push। ${S.vps ? (vpsAlive() ? '✅ VPS चालू' : '⚠ VPS से 2 min से ख़बर नहीं') : '⚠ VPS से अभी कोई ख़बर नहीं (scanner v1.01 चाहिए)'}<br>${eaLine()}<br><small>🤖 EA इन्हीं ON pair पर 1 MIN का असली (demo) order लगाता है — एक साथ ज़्यादा से ज़्यादा 3।</small></div>
 </div>`;
 }
 function pairsTab(){
@@ -333,10 +334,6 @@ ${statBlock('🖥 VPS Paper — 1 MIN', vpsDone.filter(p => +p.tf !== 5))}
 ${maeCard(1)}
 ${wxTable(1)}
 ${cfTable(1)}
-${statBlock('🖥 VPS Paper — 5 MIN', vpsDone.filter(p => +p.tf === 5))}
-${maeCard(5)}
-${wxTable(5)}
-${cfTable(5)}
 <div class="note">🖥 VPS Paper (1.5.0): TP = signal candle की body का 50% ($0.10–$1.00) · SL $${DEF.paperSl} · trade SL तक चलता है — पहली candle पर TP या close फ़ायदे में = book; दूसरी candle से +$${DEF.bookUsd.toFixed(2)} छूते ही या किसी candle का close फ़ायदे में = <b>PROFIT BOOK</b>। एक pair पर एक समय में एक ही paper trade। 🚀 Real (EA): TP $${DEF.tp.toFixed(2)} · SL $${DEF.sl.toFixed(2)}।</div>
 <div class="card"><h3>🤖 CANDLE EA trades (Demo)</h3>${S.eaTrades.length ? S.eaTrades.slice(0, 60).map(eRow).join('') : `<div class="empty">${S.ea ? 'EA चालू — ON pair पर अगले signal का इंतज़ार' : 'अभी कोई EA trade नहीं — VPS पर नए $100 demo में "SAMUSIGNAL CANDLE EA" लगाएँ'}</div>`}</div>
 <div class="card"><h3>🚀 Real trades</h3>${S.real.length ? S.real.slice(0, 40).map(rRow).join('') : '<div class="empty">अभी कोई real trade नहीं</div>'}
@@ -377,7 +374,7 @@ document.addEventListener('click', e => { audio(); if(S.cfg.screenOn && (!WL || 
 document.addEventListener('input', e => { if(e.target.id === 'srch'){ S.q = e.target.value; const pos = e.target.selectionStart; $('main').innerHTML = pairsTab(); const i = $('srch'); i.focus(); try{ i.setSelectionRange(pos, pos) }catch(x){} } });
 function act(a, v){
   if(a === 'tab'){ S.tab = v; S.q = ''; repaint(); if(v === 'rec'){ refreshReal(true); refreshVps().then(() => { if(S.tab === 'rec') repaint() }) } return }
-  if(a === 'tf'){ S.cfg.tf = +v === 5 ? 5 : 1; saveCfg(); S.sig = {}; repaint(); poll(); return }
+  if(a === 'tf') return;   /* 1.11.0: sirf 1 MIN */
   if(a === 'auto'){ S.cfg.autoPaper = !S.cfg.autoPaper; saveCfg(); repaint(); toast(S.cfg.autoPaper ? '🖥 VPS Paper ON' : 'VPS Paper OFF'); return }
   if(a === 'confirm'){ S.cfg.confirm = !S.cfg.confirm; saveCfg(); repaint(); return }
   if(a === 'sound'){ S.cfg.sound = !S.cfg.sound; saveCfg(); repaint(); if(S.cfg.sound) beep(); return }
@@ -392,7 +389,7 @@ function act(a, v){
   if(a === 'mt5') return onMt5(v);
   if(a === 'refreal'){ refreshReal(true).then(() => toast('↻ ताज़ा किया')); return }
   if(a === 'clrvps'){   /* 1.4.0: user — purana VPS paper hatao, aaj se naya */
-    dlg('VPS paper record साफ़ करें?', '<div class="note">VPS के <b>सारे paper trade</b> (1 MIN + 5 MIN, चारों SL तरीके) हमेशा के लिए हट जाएँगे। Real trade नहीं हटेंगे। इसके बाद से नया हिसाब।</div>', 'हटाओ', 'Cancel').then(async ok => {
+    dlg('VPS paper record साफ़ करें?', '<div class="note">VPS के <b>सारे paper trade</b> (1 MIN) हमेशा के लिए हट जाएँगे। Real trade नहीं हटेंगे। इसके बाद से नया हिसाब।</div>', 'हटाओ', 'Cancel').then(async ok => {
       if(!ok) return;
       try{ const r = await fetch(fbUrl(keys(), 'candle/paper'), {method: 'DELETE'}); if(!r.ok) throw new Error('HTTP ' + r.status);
         S.vpsPaper = []; repaint(); toast('🗑 VPS paper साफ़ — अब से नया हिसाब') }catch(e){ dlg('नहीं हटा', esc(e.message), 'OK', '') }
