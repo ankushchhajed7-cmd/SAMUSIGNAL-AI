@@ -148,6 +148,10 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.32.0 — Candle 1.11.0: sirf 1 MIN (5 MIN hataya) (16 Nov)
+- User: "5 MIN ka hisaab app aur EA se remove, sirf success wala 1 MIN rakho".
+- Live: 1 / 5 MIN button hata kar sirf "1 MIN"; boot par `cfg.tf` = 1 (VPS ko bhi 1). Record se 5 MIN ke saare dabbe (paper, gehra ghata, mausam, pushti) hataye; VPS paper / EA trades me tf 5 wale nahi dikhte. Scanner v1.09 + CANDLE EA v1.01 bhi sirf 1 MIN. Candle 1.11.0, app 1.32.0.
+
 ## v1.31.0 — Candle 1.10.0: 🤖 SAMUSIGNAL CANDLE EA (demo) ka haal + record (16 Nov)
 - User: Candle strategy ka alag EA, naye $100 DEMO par, ek saath 3 trade, sirf app me ON pair par (app se manage).
 - EA (Samusignal `vps-ea/SAMUSIGNAL CANDLE EA v1.00.mq5`) `/candle/cfg` (pairs + tf) padhta hai; likhta hai `/candle/ea/state` {t, v, tf, pairs, open, max, list, dayPl, dayW, dayL, bal, eq, demo, stop, last, skip} + `/candle/ea/trades/<key>` (key = VPS paper wala; open: sym, n, dir, tf, next, at, entry, tp, sl, spread, lot; band: done, res, pl, exitT, cn, exit).
