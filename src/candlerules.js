@@ -114,6 +114,12 @@ export function paperResolve(p, bars, now = Date.now()){
   const entry = p.dir === 'BUY' ? first.o + sp : first.o;
   const tpDist = tpUsd / k, slDist = slUsd / k, beDist = (p.beAt || DEF.beAt) * tpDist;
   let armed = false, mae = 0;   /* 1.7.0: sabse gehra ghata ($, trade ke dauraan) */
+  let mfe = 0, mfe1 = 0;        /* 1.12.0: sabse zyada fayda ($) — poore trade me / sirf pehli candle me */
+  /* 1.12.0 p.trail = {arm, lock} ($, 0.01 lot): bhaav +arm tak gaya to SL +lock par pakka, TP = p.tp (door wala) tak chalao;
+     arm hone ke baad candle-close / +$0.05 wala book band. Ek hi candle me arm hua aur close lock ke neeche -> LOCK (ghaate wala maana). */
+  const tr = p.trail ? {arm: p.trail.arm * scale / k, lock: p.trail.lock * scale} : null;
+  let tArmed = false;
+  const fin = o => Object.assign(o, {mfe: round2(mfe), mfe1: round2(mfe1)});
   for(let i = 0; i < maxC; i++){
     const b = seq[i];
     if(!b || b.t + tfMs > now) return {done: false, entry, why: 'candle chal rahi hai'};
@@ -121,22 +127,36 @@ export function paperResolve(p, bars, now = Date.now()){
     if(p.dir === 'BUY'){ hitTp = b.h >= entry + tpDist; hitSl = b.l <= entry - slDist; fav = b.h - entry; adv = b.l - entry }
     else{ hitTp = b.l + sp <= entry - tpDist; hitSl = b.h + sp >= entry + slDist; fav = entry - (b.l + sp); adv = entry - (b.h + sp) }
     mae = Math.min(mae, adv * k);                                    /* is candle ka sabse bura bhaav (pakka kram nahi pata, isliye ghaate wala) */
-    if(armed && adv <= 0) return {done: true, entry, res: 'BE', pl: 0, exitT: b.t, mae: round2(mae)};          /* pichhli candle me 60% hua tha */
-    if(hitSl) return {done: true, entry, res: hitTp ? 'SL?' : 'SL', pl: -round2(slUsd), exitT: b.t, mae: -round2(slUsd)};
-    if(hitTp) return {done: true, entry, res: 'TP', pl: round2(tpUsd), exitT: b.t, mae: round2(mae)};
+    mfe = Math.max(mfe, fav * k); if(i === 0) mfe1 = mfe;           /* 1.12.0: candle ka sabse achha bhaav */
+    if(armed && adv <= 0) return fin({done: true, entry, res: 'BE', pl: 0, exitT: b.t, mae: round2(mae)});          /* pichhli candle me 60% hua tha */
+    if(tr && tArmed){                                                 /* 1.12.0: lock laga hua — +lock tak wapas = LOCK, warna TP */
+      if(adv * k <= tr.lock) return fin({done: true, entry, res: 'LOCK', pl: round2(tr.lock), exitT: b.t, n: i + 1, mae: round2(mae)});
+      if(hitTp) return fin({done: true, entry, res: 'TP', pl: round2(tpUsd), exitT: b.t, n: i + 1, mae: round2(mae)});
+      const cl = p.dir === 'BUY' ? (b.c - entry) * k : (entry - (b.c + sp)) * k;
+      if(i === maxC - 1) return fin({done: true, entry, res: 'TIME', pl: round2(cl), exitT: b.t + tfMs, n: i + 1, mae: round2(mae)});
+      continue;
+    }
+    if(hitSl) return fin({done: true, entry, res: hitTp ? 'SL?' : 'SL', pl: -round2(slUsd), exitT: b.t, mae: -round2(slUsd)});
+    if(hitTp) return fin({done: true, entry, res: 'TP', pl: round2(tpUsd), exitT: b.t, n: i + 1, mae: round2(mae)});
     const closePl = p.dir === 'BUY' ? (b.c - entry) * k : (entry - (b.c + sp)) * k;
+    if(tr && fav >= tr.arm){                                          /* 1.12.0: abhi arm hua */
+      tArmed = true;
+      if(closePl <= tr.lock) return fin({done: true, entry, res: 'LOCK', pl: round2(tr.lock), exitT: b.t, n: i + 1, mae: round2(mae)});
+      if(i === maxC - 1) return fin({done: true, entry, res: 'TIME', pl: round2(closePl), exitT: b.t + tfMs, n: i + 1, mae: round2(mae)});
+      continue;
+    }
     if(p.be && fav >= beDist){
-      if(closePl < 0) return {done: true, entry, res: 'BE', pl: 0, exitT: b.t, mae: round2(mae)};
+      if(closePl < 0) return fin({done: true, entry, res: 'BE', pl: 0, exitT: b.t, mae: round2(mae)});
       armed = true;
     }
     if(p.hold){                                                       /* 1.5.0: SL tak ruko, profit dikhte hi book */
       const bookUsd = (p.book === undefined ? DEF.bookUsd : p.book) * scale;
-      if(i >= 1 && fav * k >= bookUsd) return {done: true, entry, res: 'PROFIT BOOK', pl: round2(bookUsd), exitT: b.t, n: i + 1, mae: round2(mae)};
-      if(closePl > 0.004) return {done: true, entry, res: 'PROFIT BOOK', pl: round2(closePl), exitT: b.t + tfMs, n: i + 1, mae: round2(mae)};
-      if(i === maxC - 1) return {done: true, entry, res: 'TIME', pl: round2(closePl), exitT: b.t + tfMs, n: i + 1, mae: round2(mae)};
+      if(i >= 1 && fav * k >= bookUsd) return fin({done: true, entry, res: 'PROFIT BOOK', pl: round2(bookUsd), exitT: b.t, n: i + 1, mae: round2(mae)});
+      if(closePl > 0.004) return fin({done: true, entry, res: 'PROFIT BOOK', pl: round2(closePl), exitT: b.t + tfMs, n: i + 1, mae: round2(mae)});
+      if(i === maxC - 1) return fin({done: true, entry, res: 'TIME', pl: round2(closePl), exitT: b.t + tfMs, n: i + 1, mae: round2(mae)});
       continue;
     }
-    if(i === maxC - 1) return {done: true, entry, res: 'CANDLE CLOSE', pl: round2(closePl), exitT: b.t + tfMs, mae: round2(mae)};
+    if(i === maxC - 1) return fin({done: true, entry, res: 'CANDLE CLOSE', pl: round2(closePl), exitT: b.t + tfMs, mae: round2(mae)});
   }
   return {done: false, entry};
 }
@@ -215,6 +235,38 @@ export function paperVariants(p, bars, now = Date.now()){
     v[x.id] = {res: r.res, pl: r.pl};
   }
   return {done, entry, v};
+}
+
+/* 1.12.0 (user "① naap Final"): TP KI TULNA — sirf naap (paper ka asli niyam / EA nahi badla). Har paper trade par wahi
+   candle, wahi entry, wahi SL $10 / hold niyam, sirf TP / book alag:
+   T30 / T50 (abhi) / T75 / T100 = TP body ka 30 / 50 / 75 / 100% (kam se kam $0.10, zyada se zyada $1.00 x pct/50%);
+   TR = 50% chhoote hi SL +$0.05 par pakka, TP 100% tak chalao; B25 = dusri candle se book body ka 25% (kam se kam $0.05). */
+export const TPV = [
+  {id: 'T30', name: 'TP body 30%', pct: 0.30},
+  {id: 'T50', name: 'TP body 50% (abhi)', pct: 0.50},
+  {id: 'T75', name: 'TP body 75%', pct: 0.75},
+  {id: 'T100', name: 'TP body 100%', pct: 1.00},
+  {id: 'TR', name: '50% par +$0.05 lock, 100% tak', trail: true},
+  {id: 'B25', name: 'Book body 25% (+$0.05 ki jagah)', book25: true}
+];
+export function tpAt(body, k, pct, cfg = DEF){
+  const c = Object.assign({}, DEF, cfg), max = c.tpMax * pct / c.tpBodyPct;
+  const v = (body > 0 && k > 0) ? body * k * pct : c.tp;
+  return round2(Math.min(max, Math.max(c.tpMin, v)));
+}
+export function tpVariants(p, bars, now = Date.now()){
+  const v = {}; let done = true;
+  if(!(p && p.body > 0 && p.k > 0)) return {done: false, v, why: 'body nahi'};
+  for(const x of TPV){
+    const q = Object.assign({}, p, {be: false, trail: null});
+    if(x.pct) q.tp = tpAt(p.body, p.k, x.pct);
+    if(x.trail){ q.tp = tpAt(p.body, p.k, 1.0); q.trail = {arm: tpAt(p.body, p.k, 0.5), lock: DEF.bookUsd} }
+    if(x.book25){ q.tp = tpAt(p.body, p.k, 0.5); q.book = Math.max(DEF.bookUsd, round2(p.body * p.k * 0.25)) }
+    const r = paperResolve(q, bars, now);
+    if(!r.done){ done = false; continue }
+    v[x.id] = {res: r.res, pl: r.pl};
+  }
+  return {done, v};
 }
 
 /* [{pl}] -> {n, win, loss, flat, net, wr} — sirf poore hue */
