@@ -12,8 +12,12 @@ import {SPECS, PAIRS, fmt, pipUsd} from './symbols.js';
 import {accounts, orderKey} from './bridge.js';
 import {DEF, signal, closedBars, stats, sendWindowMs, dynTp, CONFIRMS} from './candlerules.js';
 
-export const CANDLE_VERSION = '1.8.0';
+export const CANDLE_VERSION = '1.9.0';
 const MAX_ON = 6;
+/* 1.9.0 (user 16 Nov): XAUUSD Candle se hataya — na pair list me, na history me (real / paper / VPS paper) */
+const NO_PAIR = new Set(['XAU/USD']);
+const okSym = p => !NO_PAIR.has(p);
+const CPAIRS = PAIRS.filter(okSym);
 const $ = id => document.getElementById(id);
 const esc = s => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const IST = {timeZone: 'Asia/Kolkata'};
@@ -24,7 +28,7 @@ const usd = v => (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(2);
 
 const S = {
   tab: 'live', q: '',
-  cfg: Object.assign({tf: 1, pairs: ['XAU/USD'], autoPaper: false, confirm: true, sound: true, screenOn: true}, LS.get('candle_cfg', {})),
+  cfg: Object.assign({tf: 1, pairs: ['BTC/USD'], autoPaper: false, confirm: true, sound: true, screenOn: true}, LS.get('candle_cfg', {})),
   paper: LS.get('candle_paper', []),
   real: LS.get('candle_real', []),
   seen: LS.get('candle_seen', {}),
@@ -32,6 +36,14 @@ const S = {
   vps: null, vpsPaper: [], wx: {}   /* 1.1.0; 1.8.0 mausam */
 };
 const saveCfg = () => { LS.set('candle_cfg', S.cfg); cfgSync() };
+/* 1.9.0: purani XAUUSD settings / history phone se hamesha ke liye saaf */
+(() => {
+  const p0 = S.cfg.pairs.length, r0 = S.real.length, q0 = S.paper.length;
+  S.cfg.pairs = S.cfg.pairs.filter(okSym); S.real = S.real.filter(r => okSym(r.sym)); S.paper = S.paper.filter(r => okSym(r.sym));
+  if(S.cfg.pairs.length !== p0) LS.set('candle_cfg', S.cfg);
+  if(S.real.length !== r0) LS.set('candle_real', S.real);
+  if(S.paper.length !== q0) LS.set('candle_paper', S.paper);
+})();
 /* 1.1.0: VPS ko batao kaunse pair / tf / Auto Paper (app band ho tab bhi wahi chale) */
 function cfgSync(){
   clearTimeout(cfgSync.h);
@@ -44,7 +56,7 @@ async function refreshVps(){
   try{ const r = await fetch(fbUrl(s, 'candle/vps'), {cache: 'no-store'}); S.vps = r.ok ? await r.json() : null }catch(e){}
   try{ const r = await fetch(fbUrl(s, 'candle/wx'), {cache: 'no-store'}); if(r.ok) S.wx = (await r.json()) || {} }catch(e){}   /* 1.8.0 */
   try{ const u = fbUrl(s, 'candle/paper'), r = await fetch(u + (u.includes('?') ? '&' : '?') + 'orderBy=%22%24key%22&limitToLast=600', {cache: 'no-store'});
-    if(r.ok){ const j = (await r.json()) || {}; S.vpsPaper = Object.values(j).filter(p => p && p.sym).sort((a, b) => b.next - a.next) } }catch(e){}
+    if(r.ok){ const j = (await r.json()) || {}; S.vpsPaper = Object.values(j).filter(p => p && p.sym && okSym(p.sym)).sort((a, b) => b.next - a.next) } }catch(e){}
 }
 const saveReal = () => { S.real = S.real.slice(0, 300); LS.set('candle_real', S.real) };
 const saveSeen = () => { const k = Object.keys(S.seen); if(k.length > 80) k.slice(0, k.length - 80).forEach(x => delete S.seen[x]); LS.set('candle_seen', S.seen) };
@@ -241,11 +253,11 @@ ${on.length ? on.map(pairCard).join('') : `<div class="empty">कोई pair ON 
 }
 function pairsTab(){
   const q = S.q.trim().toUpperCase().replace(/[^A-Z]/g, '');
-  const list = PAIRS.filter(p => !q || SPECS[p].n.includes(q));
+  const list = CPAIRS.filter(p => !q || SPECS[p].n.includes(q));
   const on = S.cfg.pairs;
   const row = p => `<div class="prow"><span>${esc(SPECS[p].n)}<small>${esc(SPECS[p].title)}</small></span><button data-act="pair" data-v="${esc(p)}" class="${on.includes(p) ? 'on' : ''}">${on.includes(p) ? 'ON' : 'OFF'}</button></div>`;
-  return `<div class="wrap"><div class="card"><h3>Pairs (${on.length}/${MAX_ON} ON)</h3><div class="note" style="margin-bottom:8px">सिर्फ़ ON वाले pair पर signal आएगा। Gold पर $0.25 सबसे आसान (spread ~$0.26 जोड़कर ~$0.51 का move चाहिए)।</div>
-<input class="srch" id="srch" placeholder="खोजें: XAU, EUR…" value="${esc(S.q)}">
+  return `<div class="wrap"><div class="card"><h3>Pairs (${on.length}/${MAX_ON} ON)</h3><div class="note" style="margin-bottom:8px">सिर्फ़ ON वाले pair पर signal आएगा। (XAUUSD Candle से हटा दिया गया है।)</div>
+<input class="srch" id="srch" placeholder="खोजें: BTC, EUR…" value="${esc(S.q)}">
 ${on.length ? `<div style="margin-top:10px">${on.filter(p => SPECS[p]).map(row).join('')}</div>` : ''}
 <div style="margin-top:10px">${list.filter(p => !on.includes(p)).map(row).join('')}</div></div></div>`;
 }
