@@ -1,6 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ema, rsi, signal, closedBars, paperResolve, stats, DEF, sendWindowMs, dynTp, dynSl, paperVariants, confirms, weather} from '../src/candlerules.js';
+import {ema, rsi, signal, closedBars, paperResolve, stats, DEF, sendWindowMs, dynTp, dynSl, paperVariants, confirms, weather, tpVariants, tpAt, TPV} from '../src/candlerules.js';
+
+test('1.12.0 tpVariants: TP ki tulna + mfe', () => {
+  const M_ = 60000, t = Date.UTC(2026, 10, 17, 6, 0);
+  /* BUY, k = 1 ($ per 1.0 price, 0.01 lot), body 1.0 -> T30 0.30, T50 0.50, T75 0.75, T100 1.00 */
+  const p = {dir: 'BUY', next: t, tf: 1, spread: 0, k: 1, body: 1.0, sl: 10, hold: true, maxCandles: 200, lot: 0.01};
+  assert.equal(tpAt(1.0, 1, 0.5), 0.5); assert.equal(tpAt(1.0, 1, 1.0), 1.0); assert.equal(tpAt(0.05, 1, 0.3), 0.1);
+  /* candle 1: high +0.8, close +0.6 ; candle 2: high +1.2 */
+  const bars = [{t, o: 100, h: 100.8, l: 99.9, c: 100.6}, {t: t + M_, o: 100.6, h: 101.2, l: 100.5, c: 101.1}];
+  const r = tpVariants(p, bars, t + 2 * M_ + 1);
+  assert.equal(r.done, true);
+  assert.deepEqual(r.v.T30, {res: 'TP', pl: 0.3}); assert.deepEqual(r.v.T50, {res: 'TP', pl: 0.5}); assert.deepEqual(r.v.T75, {res: 'TP', pl: 0.75});
+  assert.deepEqual(r.v.T100, {res: 'PROFIT BOOK', pl: 0.6});          /* pehli candle close fayde me = book */
+  assert.deepEqual(r.v.TR, {res: 'TP', pl: 1});                        /* 50% chhua (arm), close 0.6 > lock, agli candle 100% */
+  assert.deepEqual(r.v.B25, {res: 'TP', pl: 0.5});
+  /* TR: arm ke baad wapas +$0.05 tak -> LOCK */
+  const bars2 = [{t, o: 100, h: 100.7, l: 99.9, c: 100.4}, {t: t + M_, o: 100.4, h: 100.45, l: 99.9, c: 100}];
+  assert.deepEqual(tpVariants(p, bars2, t + 2 * M_ + 1).v.TR, {res: 'LOCK', pl: 0.05});
+  /* mfe: poore trade me sabse achha */
+  const rr = paperResolve(Object.assign({}, p, {tp: 0.5}), [{t, o: 100, h: 100.3, l: 99.8, c: 99.9}, {t: t + M_, o: 99.9, h: 100.2, l: 99.7, c: 100.1}], t + 2 * M_ + 1);
+  assert.equal(rr.res, 'PROFIT BOOK'); assert.equal(rr.mfe1, 0.3); assert.equal(rr.mfe, 0.3);
+  assert.equal(TPV.length, 6);
+  assert.equal(tpVariants({dir: 'BUY'}, bars).done, false);           /* body nahi -> nahi */
+});
 
 test('1.8.0 weather: mausam', () => {
   const M_ = 60000, t0 = Date.UTC(2026, 10, 16, 6, 0);            /* 11:30 IST — koi session nahi */
