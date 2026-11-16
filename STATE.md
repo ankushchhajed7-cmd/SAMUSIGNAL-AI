@@ -148,6 +148,11 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.31.0 — Candle 1.10.0: 🤖 SAMUSIGNAL CANDLE EA (demo) ka haal + record (16 Nov)
+- User: Candle strategy ka alag EA, naye $100 DEMO par, ek saath 3 trade, sirf app me ON pair par (app se manage).
+- EA (Samusignal `vps-ea/SAMUSIGNAL CANDLE EA v1.00.mq5`) `/candle/cfg` (pairs + tf) padhta hai; likhta hai `/candle/ea/state` {t, v, tf, pairs, open, max, list, dayPl, dayW, dayL, bal, eq, demo, stop, last, skip} + `/candle/ea/trades/<key>` (key = VPS paper wala; open: sym, n, dir, tf, next, at, entry, tp, sl, spread, lot; band: done, res, pl, exitT, cn, exit).
+- App: `refreshVps` me EA state + trades (aakhri 300); Live note me `eaLine()` (chalu / ruka, khule x/3, aaj $); Record me sabse upar "🤖 CANDLE EA (Demo) — असली order" Aaj / Kul + EA trades list (har trade ke saath usi candle ka paper nateeja); Pairs note: EA bhi inhi ON pair par. Candle 1.10.0, app 1.31.0.
+
 ## v1.30.0 — Candle 1.9.0: XAUUSD Candle se hataya (16 Nov)
 - User: "Candle me XAUUSD ki trade history remove karna aur pair me bhi XAUUSD remove karna".
 - `NO_PAIR` {XAU/USD}: Pairs list (`CPAIRS`) me nahi; boot par phone se `cfg.pairs` / `candle_real` / `candle_paper` ke XAU hamesha ke liye saaf; VPS paper list me XAU nahi dikhta. Default pair BTC/USD. Page khulte hi `cfgSync` → `/candle/cfg` se XAU hat jaata hai, VPS scanner XAU par signal / paper / push band. Baaki app (Scan, Signal) me XAU waisa hi. Candle 1.9.0, app 1.30.0.

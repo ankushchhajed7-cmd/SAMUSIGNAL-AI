@@ -12,7 +12,7 @@ import {SPECS, PAIRS, fmt, pipUsd} from './symbols.js';
 import {accounts, orderKey} from './bridge.js';
 import {DEF, signal, closedBars, stats, sendWindowMs, dynTp, CONFIRMS} from './candlerules.js';
 
-export const CANDLE_VERSION = '1.9.0';
+export const CANDLE_VERSION = '1.10.0';
 const MAX_ON = 6;
 /* 1.9.0 (user 16 Nov): XAUUSD Candle se hataya — na pair list me, na history me (real / paper / VPS paper) */
 const NO_PAIR = new Set(['XAU/USD']);
@@ -33,7 +33,8 @@ const S = {
   real: LS.get('candle_real', []),
   seen: LS.get('candle_seen', {}),
   bars: {}, live: {}, sig: {}, feed: null, err: '', busy: false, lastPoll: 0, sending: false,
-  vps: null, vpsPaper: [], wx: {}   /* 1.1.0; 1.8.0 mausam */
+  vps: null, vpsPaper: [], wx: {},   /* 1.1.0; 1.8.0 mausam */
+  ea: null, eaTrades: []             /* 1.10.0: SAMUSIGNAL CANDLE EA (demo) */
 };
 const saveCfg = () => { LS.set('candle_cfg', S.cfg); cfgSync() };
 /* 1.9.0: purani XAUUSD settings / history phone se hamesha ke liye saaf */
@@ -57,6 +58,17 @@ async function refreshVps(){
   try{ const r = await fetch(fbUrl(s, 'candle/wx'), {cache: 'no-store'}); if(r.ok) S.wx = (await r.json()) || {} }catch(e){}   /* 1.8.0 */
   try{ const u = fbUrl(s, 'candle/paper'), r = await fetch(u + (u.includes('?') ? '&' : '?') + 'orderBy=%22%24key%22&limitToLast=600', {cache: 'no-store'});
     if(r.ok){ const j = (await r.json()) || {}; S.vpsPaper = Object.values(j).filter(p => p && p.sym && okSym(p.sym)).sort((a, b) => b.next - a.next) } }catch(e){}
+  /* 1.10.0: CANDLE EA ki haalat + uske trade */
+  try{ const r = await fetch(fbUrl(s, 'candle/ea/state'), {cache: 'no-store'}); if(r.ok) S.ea = await r.json() }catch(e){}
+  try{ const u = fbUrl(s, 'candle/ea/trades'), r = await fetch(u + (u.includes('?') ? '&' : '?') + 'orderBy=%22%24key%22&limitToLast=300', {cache: 'no-store'});
+    if(r.ok){ const j = (await r.json()) || {}; S.eaTrades = Object.values(j).filter(t => t && t.dir).sort((a, b) => b.next - a.next) } }catch(e){}
+}
+/* 1.10.0: EA ek line me — chalu? kitne trade, aaj ka P/L */
+const eaAlive = () => !!(S.ea && S.ea.t && Date.now() - S.ea.t * 1000 < 120000);
+function eaLine(){
+  if(!S.ea) return '🤖 CANDLE EA: अभी कोई ख़बर नहीं (VPS पर नए $100 demo में EA लगाएँ)';
+  const e = S.ea, pl = +e.dayPl || 0;
+  return `🤖 CANDLE EA v${esc(e.v)} ${e.demo === false ? 'REAL' : 'DEMO'}: ${eaAlive() ? (e.stop ? '⏸ रुका — ' + esc(e.stop) : '✅ चालू') : '⚠ 2 min से ख़बर नहीं'} · खुले trade ${+e.open || 0}/${+e.max || 3} · आज <b class="${pl > 0 ? 'up' : pl < 0 ? 'dn' : ''}">${usd(pl)}</b> (${+e.dayW || 0}/${+e.dayL || 0})`;
 }
 const saveReal = () => { S.real = S.real.slice(0, 300); LS.set('candle_real', S.real) };
 const saveSeen = () => { const k = Object.keys(S.seen); if(k.length > 80) k.slice(0, k.length - 80).forEach(x => delete S.seen[x]); LS.set('candle_seen', S.seen) };
@@ -248,7 +260,7 @@ function liveTab(){
 <div class="tg" style="margin-top:8px"><span>☀️ Screen ON<small>${esc(S.wlTxt || 'ON = जब तक ये page खुला है, screen अपने आप बंद नहीं होगी')}</small></span><button data-act="screen" class="${S.cfg.screenOn ? 'on' : ''}">${S.cfg.screenOn ? 'ON' : 'OFF'}</button></div></div>
 ${S.feed && !S.feed.ok ? `<div class="warn">⚠ ${esc(S.err || 'Data Feed band')} — VPS पर "SamuSignal Data Feed" EA चालू करें।</div>` : ''}
 ${on.length ? on.map(pairCard).join('') : `<div class="empty">कोई pair ON नहीं — नीचे <b>Pairs</b> में जाकर ON करें</div>`}
-<div class="note">Signal सिर्फ़ <b>बंद candle</b> पर बनता है। MT5 button: 1m में 20 sec, 5m में 60 sec तक।<br>🖥 <b>App बंद हो तब भी:</b> VPS scanner इन्हीं ON pair पर <b>1 MIN और 5 MIN दोनों</b> का paper जोड़ता है (VPS Paper ON हो तो), और ऊपर चुने हुए MIN का signal AI AUTO EA (v1.12) से phone पर push। ${S.vps ? (vpsAlive() ? '✅ VPS चालू' : '⚠ VPS से 2 min से ख़बर नहीं') : '⚠ VPS से अभी कोई ख़बर नहीं (scanner v1.01 चाहिए)'}</div>
+<div class="note">Signal सिर्फ़ <b>बंद candle</b> पर बनता है। MT5 button: 1m में 20 sec, 5m में 60 sec तक।<br>🖥 <b>App बंद हो तब भी:</b> VPS scanner इन्हीं ON pair पर <b>1 MIN और 5 MIN दोनों</b> का paper जोड़ता है (VPS Paper ON हो तो), और ऊपर चुने हुए MIN का signal AI AUTO EA (v1.12) से phone पर push। ${S.vps ? (vpsAlive() ? '✅ VPS चालू' : '⚠ VPS से 2 min से ख़बर नहीं') : '⚠ VPS से अभी कोई ख़बर नहीं (scanner v1.01 चाहिए)'}<br>${eaLine()}<br><small>🤖 EA इन्हीं ON pair पर और ऊपर चुने हुए MIN पर असली (demo) order लगाता है — एक साथ ज़्यादा से ज़्यादा 3।</small></div>
 </div>`;
 }
 function pairsTab(){
@@ -256,7 +268,7 @@ function pairsTab(){
   const list = CPAIRS.filter(p => !q || SPECS[p].n.includes(q));
   const on = S.cfg.pairs;
   const row = p => `<div class="prow"><span>${esc(SPECS[p].n)}<small>${esc(SPECS[p].title)}</small></span><button data-act="pair" data-v="${esc(p)}" class="${on.includes(p) ? 'on' : ''}">${on.includes(p) ? 'ON' : 'OFF'}</button></div>`;
-  return `<div class="wrap"><div class="card"><h3>Pairs (${on.length}/${MAX_ON} ON)</h3><div class="note" style="margin-bottom:8px">सिर्फ़ ON वाले pair पर signal आएगा। (XAUUSD Candle से हटा दिया गया है।)</div>
+  return `<div class="wrap"><div class="card"><h3>Pairs (${on.length}/${MAX_ON} ON)</h3><div class="note" style="margin-bottom:8px">सिर्फ़ ON वाले pair पर signal आएगा। (XAUUSD Candle से हटा दिया गया है।)<br>🤖 <b>CANDLE EA (demo) भी सिर्फ़ इन्हीं ON pair पर trade लगाता है</b> — OFF किया तो उस pair पर नया trade नहीं (चालू trade अपने नियम से बंद होगा)।</div>
 <input class="srch" id="srch" placeholder="खोजें: BTC, EUR…" value="${esc(S.q)}">
 ${on.length ? `<div style="margin-top:10px">${on.filter(p => SPECS[p]).map(row).join('')}</div>` : ''}
 <div style="margin-top:10px">${list.filter(p => !on.includes(p)).map(row).join('')}</div></div></div>`;
@@ -310,7 +322,12 @@ function recTab(){
   const vpsDone = S.vpsPaper.filter(p => p.done && isFinite(p.pl) && p.pl !== null);   /* 1.1.0 */
   const rRow = r => `<div class="hrow"><div><b class="${r.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[r.sym] ? SPECS[r.sym].n : r.sym)} ${r.dir}</b> · ${r.tf}m · ${hm(r.next)}${r.acct ? ` · ${r.real ? 'REAL' : 'DEMO'} ${esc(r.acct)}` : ''}<small>${esc((ST_TXT[r.status] || [r.status])[0])}${r.res ? ' · ' + esc(r.res) : ''}${r.msg && r.status !== 'CLOSED' ? ' · ' + esc(String(r.msg).slice(0, 80)) : ''}</small></div><div class="r ${isFinite(r.pl) ? (+r.pl > 0 ? 'up' : +r.pl < 0 ? 'dn' : '') : 'gd'}">${isFinite(r.pl) && r.pl !== undefined ? usd(+r.pl) : OPEN_ST.includes(r.status) ? '…' : '—'}</div></div>`;
   const pRow = p => `<div class="hrow"><div><b class="${p.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[p.sym] ? SPECS[p.sym].n : p.sym)} ${p.dir}</b> · ${p.tf}m · ${hm(p.next)}${p.auto ? ' · auto' : ''}<small>${p.done ? esc(p.res) + (p.n > 1 ? ' · ' + p.n + ' candle' : '') + (isFinite(p.mae) && p.mae !== null ? ' · गहरा ' + usd(+p.mae) : '') : 'चल रहा है'}${p.wx && p.wx.c ? ' · ' + (WXI[p.wx.c] || '') : ''}${p.cf ? ' · पुष्टि ' + ['1', '2', '3', '4'].map(id => p.cf[id] === true ? id : p.cf[id] === false ? '✗' : '·').join('') : ''}${p.entry ? ' · entry ' + fmt(p.sym, p.entry) : ''}${isFinite(p.tp) ? ' · TP $' + (+p.tp).toFixed(2) : ''}${isFinite(p.slDyn) ? ' · cSL $' + (+p.slDyn).toFixed(2) : ''}${p.v ? '<br>' + ['B', 'C', 'D'].map(id => p.v[id] ? id + ' ' + (p.v[id].pl >= 0 ? '+' : '') + (+p.v[id].pl).toFixed(2) : '').filter(Boolean).join(' · ') : ''}</small></div><div class="r ${p.done && isFinite(p.pl) ? (p.pl > 0 ? 'up' : p.pl < 0 ? 'dn' : '') : 'gd'}">${p.done && isFinite(p.pl) ? usd(p.pl) : '…'}</div></div>`;
+  const eaDone = S.eaTrades.filter(t => t.done && isFinite(t.pl) && t.pl !== null).map(t => ({at: t.at, pl: +t.pl}));   /* 1.10.0 */
+  const eRow = t => { const pp = S.vpsPaper.find(p => p.id === t.id);
+    return `<div class="hrow"><div><b class="${t.dir === 'BUY' ? 'up' : 'dn'}">${esc(t.n || t.sym)} ${t.dir}</b> · ${t.tf}m · ${hm(t.next)}<small>${t.done ? esc(t.res || '') + (t.cn > 1 ? ' · ' + t.cn + ' candle' : '') : 'चल रहा है'}${isFinite(t.tp) ? ' · TP $' + (+t.tp).toFixed(2) : ''}${isFinite(t.spread) ? ' · spread $' + (+t.spread).toFixed(2) : ''}${pp && pp.done && isFinite(pp.pl) ? ' · paper ' + usd(+pp.pl) : ''}</small></div><div class="r ${t.done && isFinite(t.pl) ? (t.pl > 0 ? 'up' : t.pl < 0 ? 'dn' : '') : 'gd'}">${t.done && isFinite(t.pl) ? usd(+t.pl) : '…'}</div></div>` };
   return `<div class="wrap">
+${statBlock('🤖 CANDLE EA (Demo) — असली order', eaDone)}
+${S.ea ? `<div class="note">${eaLine()}${S.ea.bal ? ' · Balance $' + (+S.ea.bal).toFixed(2) : ''}</div>` : ''}
 ${statBlock('🚀 Real (MT5 · EA का नतीजा)', realDone)}
 ${statBlock('🖥 VPS Paper — 1 MIN', vpsDone.filter(p => +p.tf !== 5))}
 ${maeCard(1)}
@@ -321,6 +338,7 @@ ${maeCard(5)}
 ${wxTable(5)}
 ${cfTable(5)}
 <div class="note">🖥 VPS Paper (1.5.0): TP = signal candle की body का 50% ($0.10–$1.00) · SL $${DEF.paperSl} · trade SL तक चलता है — पहली candle पर TP या close फ़ायदे में = book; दूसरी candle से +$${DEF.bookUsd.toFixed(2)} छूते ही या किसी candle का close फ़ायदे में = <b>PROFIT BOOK</b>। एक pair पर एक समय में एक ही paper trade। 🚀 Real (EA): TP $${DEF.tp.toFixed(2)} · SL $${DEF.sl.toFixed(2)}।</div>
+<div class="card"><h3>🤖 CANDLE EA trades (Demo)</h3>${S.eaTrades.length ? S.eaTrades.slice(0, 60).map(eRow).join('') : `<div class="empty">${S.ea ? 'EA चालू — ON pair पर अगले signal का इंतज़ार' : 'अभी कोई EA trade नहीं — VPS पर नए $100 demo में "SAMUSIGNAL CANDLE EA" लगाएँ'}</div>`}</div>
 <div class="card"><h3>🚀 Real trades</h3>${S.real.length ? S.real.slice(0, 40).map(rRow).join('') : '<div class="empty">अभी कोई real trade नहीं</div>'}
 <button class="btn ghost" data-act="refreal" style="width:100%;margin-top:10px">↻ EA से नतीजा लाओ</button></div>
 <div class="card"><h3>🖥 VPS paper trades</h3>${S.vpsPaper.length ? S.vpsPaper.slice(0, 60).map(pRow).join('') : `<div class="empty">${vpsAlive() ? 'VPS चालू है — अगले signal का इंतज़ार (VPS Paper ON होना चाहिए)' : 'VPS से अभी कोई paper नहीं — VPS पर scanner v1.04 चाहिए'}</div>`}
