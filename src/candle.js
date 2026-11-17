@@ -12,7 +12,7 @@ import {SPECS, PAIRS, fmt, pipUsd} from './symbols.js';
 import {accounts, orderKey} from './bridge.js';
 import {DEF, signal, closedBars, stats, sendWindowMs, dynTp, CONFIRMS, TPV, tpAt} from './candlerules.js';
 
-export const CANDLE_VERSION = '1.13.0';
+export const CANDLE_VERSION = '1.14.0';
 const MAX_ON = 6;
 /* 1.9.0 (user 16 Nov): XAUUSD Candle se hataya — na pair list me, na history me (real / paper / VPS paper) */
 const NO_PAIR = new Set(['XAU/USD']);
@@ -87,7 +87,7 @@ const eaAlive = () => !!(S.ea && S.ea.t && Date.now() - S.ea.t * 1000 < 120000);
 function eaLine(){
   if(!S.ea) return '🤖 CANDLE EA: अभी कोई ख़बर नहीं (VPS पर नए $100 demo में EA लगाएँ)';
   const e = S.ea, pl = +e.dayPl || 0;
-  return `🤖 CANDLE EA v${esc(e.v)} ${e.demo === false ? 'REAL' : 'DEMO'}: ${eaAlive() ? (e.stop ? '⏸ रुका — ' + esc(e.stop) : '✅ चालू') : '⚠ 2 min से ख़बर नहीं'} · खुले trade ${+e.open || 0}/${+e.max || 3} · आज <b class="${pl > 0 ? 'up' : pl < 0 ? 'dn' : ''}">${usd(pl)}</b> (${+e.dayW || 0}/${+e.dayL || 0})`;
+  return `🤖 CANDLE EA v${esc(e.v)} ${e.demo === false ? 'REAL' : 'DEMO'}: ${eaAlive() ? (e.stop ? '⏸ रुका — ' + esc(e.stop) : '✅ चालू') : '⚠ 2 min से ख़बर नहीं'} · खुले trade ${+e.open || 0}/${+e.max || 3}${e.steps ? ' (सीढ़ी ' + esc(e.steps) + ')' : ''}${isFinite(e.target) ? ' · target $' + (+e.target).toFixed(2) : ''} · आज <b class="${pl > 0 ? 'up' : pl < 0 ? 'dn' : ''}">${usd(pl)}</b> (${+e.dayW || 0}/${+e.dayL || 0})`;
 }
 const saveReal = () => { S.real = S.real.slice(0, 300); LS.set('candle_real', S.real) };
 const saveSeen = () => { const k = Object.keys(S.seen); if(k.length > 80) k.slice(0, k.length - 80).forEach(x => delete S.seen[x]); LS.set('candle_seen', S.seen) };
@@ -279,7 +279,7 @@ function liveTab(){
 <div class="tg" style="margin-top:8px"><span>☀️ Screen ON<small>${esc(S.wlTxt || 'ON = जब तक ये page खुला है, screen अपने आप बंद नहीं होगी')}</small></span><button data-act="screen" class="${S.cfg.screenOn ? 'on' : ''}">${S.cfg.screenOn ? 'ON' : 'OFF'}</button></div></div>
 ${S.feed && !S.feed.ok ? `<div class="warn">⚠ ${esc(S.err || 'Data Feed band')} — VPS पर "SamuSignal Data Feed" EA चालू करें।</div>` : ''}
 ${on.length ? on.map(pairCard).join('') : `<div class="empty">कोई pair ON नहीं — नीचे <b>Pairs</b> में जाकर ON करें</div>`}
-<div class="note">Signal सिर्फ़ <b>बंद candle</b> पर बनता है। MT5 button: candle खुलने के 20 sec तक।<br>🖥 <b>App बंद हो तब भी:</b> VPS scanner इन्हीं ON pair पर <b>1 MIN</b> का paper जोड़ता है (VPS Paper ON हो तो), और signal AI AUTO EA (v1.12) से phone पर push। ${S.vps ? (vpsAlive() ? '✅ VPS चालू' : '⚠ VPS से 2 min से ख़बर नहीं') : '⚠ VPS से अभी कोई ख़बर नहीं (scanner v1.01 चाहिए)'}<br>${eaLine()}<br><small>🤖 EA इन्हीं ON pair पर 1 MIN का असली (demo) order लगाता है — एक साथ ज़्यादा से ज़्यादा 3।</small></div>
+<div class="note">Signal सिर्फ़ <b>बंद candle</b> पर बनता है। MT5 button: candle खुलने के 20 sec तक।<br>🖥 <b>App बंद हो तब भी:</b> VPS scanner इन्हीं ON pair पर <b>1 MIN</b> का paper जोड़ता है (VPS Paper ON हो तो), और signal AI AUTO EA (v1.12) से phone पर push। ${S.vps ? (vpsAlive() ? '✅ VPS चालू' : '⚠ VPS से 2 min से ख़बर नहीं') : '⚠ VPS से अभी कोई ख़बर नहीं (scanner v1.01 चाहिए)'}<br>${eaLine()}<br><small>${S.ea && S.ea.auto ? '🎯 <b>AUTO PICK</b>: EA (v1.09+) ख़ुद ~15 pair हर minute जाँचकर सबसे अच्छे pair पर 1 MIN का demo order लगाता है (ये ON pair सिर्फ़ paper के लिए)।' + (S.ea.pick ? '<br>आख़िरी जाँच: ' + esc(S.ea.pick) : '') : '🤖 EA इन्हीं ON pair पर 1 MIN का असली (demo) order लगाता है।'}</small></div>
 </div>`;
 }
 function pairsTab(){
@@ -362,7 +362,7 @@ function recTab(){
   const pRow = p => `<div class="hrow"><div><b class="${p.dir === 'BUY' ? 'up' : 'dn'}">${esc(SPECS[p.sym] ? SPECS[p.sym].n : p.sym)} ${p.dir}</b> · ${p.tf}m · ${hm(p.next)}${p.auto ? ' · auto' : ''}<small>${p.done ? esc(p.res) + (p.n > 1 ? ' · ' + p.n + ' candle' : '') + (isFinite(p.mae) && p.mae !== null ? ' · गहरा ' + usd(+p.mae) : '') + (isFinite(p.mfe) && p.mfe !== null ? ' · ऊपर ' + usd(+p.mfe) : '') : 'चल रहा है'}${p.wx && p.wx.c ? ' · ' + (WXI[p.wx.c] || '') : ''}${p.cf ? ' · पुष्टि ' + ['1', '2', '3', '4'].map(id => p.cf[id] === true ? id : p.cf[id] === false ? '✗' : '·').join('') : ''}${p.entry ? ' · entry ' + fmt(p.sym, p.entry) : ''}${isFinite(p.tp) ? ' · TP $' + (+p.tp).toFixed(2) : ''}${isFinite(p.slDyn) ? ' · cSL $' + (+p.slDyn).toFixed(2) : ''}${p.v ? '<br>' + ['B', 'C', 'D'].map(id => p.v[id] ? id + ' ' + (p.v[id].pl >= 0 ? '+' : '') + (+p.v[id].pl).toFixed(2) : '').filter(Boolean).join(' · ') : ''}</small></div><div class="r ${p.done && isFinite(p.pl) ? (p.pl > 0 ? 'up' : p.pl < 0 ? 'dn' : '') : 'gd'}">${p.done && isFinite(p.pl) ? usd(p.pl) : '…'}</div></div>`;
   const eaDone = S.eaTrades.filter(t => t.done && isFinite(t.pl) && t.pl !== null).map(t => ({at: t.at, pl: +t.pl}));   /* 1.10.0 */
   const eRow = t => { const pp = S.vpsPaper.find(p => p.id === t.id);
-    return `<div class="hrow"><div><b class="${t.dir === 'BUY' ? 'up' : 'dn'}">${esc(t.n || t.sym)} ${t.dir}</b> · ${t.tf}m · ${hm(t.next)}<small>${t.done ? esc(t.res || '') + (t.cn > 1 ? ' · ' + t.cn + ' candle' : '') : 'चल रहा है'}${isFinite(t.tp) ? ' · TP $' + (+t.tp).toFixed(2) : ''}${isFinite(t.spread) ? ' · spread $' + (+t.spread).toFixed(2) : ''}${pp && pp.done && isFinite(pp.pl) ? ' · paper ' + usd(+pp.pl) : ''}</small></div><div class="r ${t.done && isFinite(t.pl) ? (t.pl > 0 ? 'up' : t.pl < 0 ? 'dn' : '') : 'gd'}">${t.done && isFinite(t.pl) ? usd(+t.pl) : '…'}</div></div>` };
+    return `<div class="hrow"><div><b class="${t.dir === 'BUY' ? 'up' : 'dn'}">${esc(t.n || t.sym)} ${t.dir}</b> · ${t.tf}m · ${hm(t.next)}<small>${t.done ? esc(t.res || '') + (t.cn > 1 ? ' · ' + t.cn + ' candle' : '') : 'चल रहा है'}${isFinite(t.tp) ? ' · TP $' + (+t.tp).toFixed(2) : ''}${isFinite(t.spread) ? ' · spread $' + (+t.spread).toFixed(2) : ''}${pp && pp.done && isFinite(pp.pl) ? ' · paper ' + usd(+pp.pl) : ''}${t.why && /^AUTO/.test(t.why) ? '<br>🎯 ' + esc(String(t.why).split(' | ')[0]) : ''}</small></div><div class="r ${t.done && isFinite(t.pl) ? (t.pl > 0 ? 'up' : t.pl < 0 ? 'dn' : '') : 'gd'}">${t.done && isFinite(t.pl) ? usd(+t.pl) : '…'}</div></div>` };
   return `<div class="wrap">
 ${statBlock('🤖 CANDLE EA (Demo) — असली order', eaDone)}
 ${S.ea ? `<div class="note">${eaLine()}${S.ea.bal ? ' · Balance $' + (+S.ea.bal).toFixed(2) : ''}</div>` : ''}
