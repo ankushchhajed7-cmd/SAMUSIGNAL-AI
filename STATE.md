@@ -148,6 +148,10 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.35.0 — Candle 1.14.0: CANDLE EA v1.09 AUTO PICK dikhana (17 Nov)
+- EA v1.09 (Samusignal repo): AUTO PICK (EA khud ~15 pair me se score se chune), seedhi slot 8/6/4, target $3 + TARGET LOCK, BOOK $0.10, TIME 300.
+- App: `eaLine()` me "(सीढ़ी 8,6,4) · target $3.00"; Candle note me `S.ea.auto` ho to "🎯 AUTO PICK …" + aakhri jaanch (`S.ea.pick`); EA trade row me `why` "AUTO <score> (…)" ka pehla hissa. Paper (VPS) abhi bhi app ke ON pair par. Candle 1.14.0, app 1.35.0.
+
 ## v1.34.0 — Candle 1.13.0: EA ka badle ka pair app me (16 Nov)
 - User: CANDLE EA me koi pair floating −$2 se neeche = us din band; uski jagah dusra pair apne aap ON + notification (4 pair chalte rahein). EA v1.03 (Samusignal) `/candle/cfg` `pairs` me badla pair PATCH karta hai + `/candle/cfg/auto/<NAME>` {d, for, t}; agle din hata deta hai.
 - App: `cfgSync` ab PATCH (PUT nahi — `auto` na mite); `pullCfg()` boot par aur har 20 sec Firebase ke pair maanta hai (user ke badlav ke 15 sec tak nahi), naya auto pair aaye to toast; Pairs me "🤖 auto — X आज बंद है, उसकी जगह…"; Pairs note me niyam. Candle 1.13.0, app 1.34.0.
