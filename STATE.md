@@ -148,6 +148,10 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.36.0 — 🕯️ Candle page hataya (24 Nov)
+- User: "Candle wala option kaafi safal nahi, app se hata do, uski jagah naya strategy daalenge".
+- Header se 🕯️ Candle button + uska CSS hataya; `candle.html` + `src/candle.js` delete; sw.js SHELL se hataye. `src/candlerules.js` + `tests/candle.test.mjs` rehte hain (VPS scanner Pages se candlerules.js leta hai; scanner v1.12 me Candle band).
+
 ## v1.35.0 — Candle 1.14.0: CANDLE EA v1.09 AUTO PICK dikhana (17 Nov)
 - EA v1.09 (Samusignal repo): AUTO PICK (EA khud ~15 pair me se score se chune), seedhi slot 8/6/4, target $3 + TARGET LOCK, BOOK $0.10, TIME 300.
 - App: `eaLine()` me "(सीढ़ी 8,6,4) · target $3.00"; Candle note me `S.ea.auto` ho to "🎯 AUTO PICK …" + aakhri jaanch (`S.ea.pick`); EA trade row me `why` "AUTO <score> (…)" ka pehla hissa. Paper (VPS) abhi bhi app ke ON pair par. Candle 1.14.0, app 1.35.0.
