@@ -148,6 +148,26 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.37.0 (branch feature-sentinel-v1.37.0) — 🛡️ FX SENTINEL page (Kadam 1: PAPER) (25 Nov)
+- User: 24/7 forex bot — major pairs watch, live news + deep technical, high-probability setup par proper reasoning + TP + SL, EMA/ADX me kuch naya. Choices: Auto Trade, 7 Majors + XAUUSD, nateeje SAMUSIGNAL AI me, news = MT5 Calendar + Gemini. Phir: "pehle SAMUSIGNAL app me naya page, shuru me isi par check karenge".
+- Naya alag page `sentinel.html` + `src/sentinel.js` (UI + scan loop) + `src/sentinelrules.js` (pure niyam) + `tests/sentinel.test.mjs` (14 test). Home tools me 7va button 🛡️ **Sentinel** (kaala + sunehra). Baaki app nahi chhua.
+- Data: sirf MT5 Data Feed (`/feed/bars/15min`, `/feed/bars/1h`, `/feed/live`) — 0 TwelveData credit. H4 = 1H se joda.
+- Scan: page khula ho to har nayi 15m candle ke 25 sec baad (aur "📡 अभी Scan"). Score 0–100:
+  Trend H4+H1 (25) · ADX ≥ 20 + BADHTA + DI gap (15) · Efficiency Ratio chop filter (15) · Currency Strength Meter saare feed pair (20) · EMA20 stretch / pullback ATR me (15) · M15 trigger candle + MACD + RSI (10) · Gemini news bias +10 / −15 · self-learning (pair ke 8+ trade: jeet % se −10..+5).
+  Rok: H4/H1 alag, DI ulta, ER < 0.12, strength ulta, RSI extreme, session OFF (Asia / raat / weekend / Friday 19 UTC ke baad), High news ±30 min (MT5 cal + Forex Factory), spread > SL ka 15%.
+- Order: sirf BUY / SELL LIMIT (REAL jaisa), entry EMA20 pullback / live se 0.2 ATR, SL = 12 candle swing + 0.3 ATR (kam se kam 1 ATR M15 aur ½ ATR H1, zyada se zyada 2.5 ATR), TP = 1.8R (Setting), expiry 60 min.
+- Default minScore 75. Risk: ek pair ek trade, ek saath 3, daily loss $5, SL ke baad us pair par 2 ghante aaram. Paper lot 0.01.
+- Paper nateeja: 15m candle (bid + spread): BUY fill = low ≤ entry − spread; ek candle me SL + TP = SL; fill wali candle me sirf SL; 24h = TIME; na bhara = EXPIRED. Har minute jaanch.
+- Gemini (SamuSignal key) + Google Search: 8 currency STRONG / WEAK / NEUTRAL + XAU; sirf jab koi setup kareeb ho aur pichhla > 30 min purana (60 min tak maana jaata hai).
+- Tabs: Radar (Currency Strength, 8 pair score + tap = har hissa ka point aur wajah) · Trades (chalu + aaj ke) · History (net $, win %, R, pair-wise) · Setting. Screen ON (wake lock) + phone notification toggle.
+- localStorage: `sai_sen_*`. MT5 par koi order NAHI jaata.
+- App 1.36.0 -> **1.37.0** (app.js, sw.js, package.json; sw SHELL me sentinel files; npm test me sentinel tests). Kul 82 test pass. Playwright (mock feed) se jaancha: radar, 3 trade ki seema, trades / history / setting, side-scroll nahi.
+### Pending
+- Kuch din ka paper record (kam se kam 30–50 band trade) dekh kar minScore / RR parakhna.
+- Kadam 2: VPS EA `SAMU FX Sentinel` (24/7, asli auto trade, Gold Luxe full-screen dashboard, nateeje isi page par Firebase se) — paper achha chalne ke baad, demo pehle.
+- Backtest technical core ka SAMU Backtest Lab me.
+- Feed ke `sp` ki unit pakki nahi — ajeeb ho to aam spread maana jaata hai (DEF_SPREAD).
+
 ## v1.36.0 — 🕯️ Candle page hataya (24 Nov)
 - User: "Candle wala option kaafi safal nahi, app se hata do, uski jagah naya strategy daalenge".
 - Header se 🕯️ Candle button + uska CSS hataya; `candle.html` + `src/candle.js` delete; sw.js SHELL se hataye. `src/candlerules.js` + `tests/candle.test.mjs` rehte hain (VPS scanner Pages se candlerules.js leta hai; scanner v1.12 me Candle band).
