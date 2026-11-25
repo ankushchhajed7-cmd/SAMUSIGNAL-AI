@@ -1,4 +1,4 @@
-/* 🛡️ FX SENTINEL v1.0.0 — rule-book (pure functions, koi network nahi — test hota hai)
+/* 🛡️ FX SENTINEL v1.1.0 — rule-book (pure functions, koi network nahi — test hota hai)
    7 major + XAUUSD. H4 (1H se banaya) trend -> H1 structure -> M15 entry. Har pair ko 0–100 score.
    EMA/ADX ke upar naye filter:
      1) Currency Strength Meter (saare pair ke 1H move ATR me) — sirf mazboot vs kamzor
@@ -8,10 +8,12 @@
      5) Structure SL (swing + ATR buffer), TP = RR x risk
      6) Session + spread + high-impact news (±30 min) rok
      7) Gemini news bias (har currency) + self-learning (pair ka apna jeet %)
-   Order sirf BUY LIMIT / SELL LIMIT (user ki REAL trading LIMIT pe chalti hai). */
+   Order sirf BUY LIMIT / SELL LIMIT (user ki REAL trading LIMIT pe chalti hai).
+   v1.1.0 — runScan / newTrade / applyEval / dayReport yahin: app page AUR VPS scanner (app band ho tab bhi) dono
+   bilkul isi code se chalte hain (scanner ye file GitHub Pages se leta hai). */
 import {ema, atrSeries, rsi, trendScore, macdHist} from './engine.js';
 
-export const SEN_VERSION = '1.0.0';
+export const SEN_VERSION = '1.1.0';
 export const SEN_PAIRS = ['EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD', 'USD/CAD', 'NZD/USD', 'XAU/USD'];
 export const CURS = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'NZD'];
 export const M15 = 900e3, H1 = 3600e3, H4 = 4 * H1;
@@ -338,3 +340,62 @@ NZD: STRONG ya WEAK ya NEUTRAL
 XAU: UP ya DOWN ya NEUTRAL
 SAAR: 2-3 chhote Hinglish vaakya — kaunsi ख़बर kis currency ko hila rahi hai.
 Pakki ख़बर na ho to NEUTRAL likho. Guess mat karo.`;
+
+/* ==================================================================
+   v1.1.0 — saanjha kaam (page + VPS scanner)
+   ================================================================== */
+export const nameOf = sym => sym.replace('/', '');
+export const digitsOf = sym => sym === 'XAU/USD' ? 2 : sym.endsWith('JPY') ? 3 : 5;
+const IST_MS = 5.5 * 3600e3;
+export const dayKeyIST = t => new Date(t + IST_MS).toISOString().slice(0, 10);
+
+/* A15 / A1 = feedAllBars() {EURUSD: {bars, live}}; q = quotes() {sym: {sp}} (sp = points) */
+export function runScan({A15, A1, q = {}, events = [], bias = null, history = [], cfg = {}, now}){
+  const all = {};
+  Object.entries(A1 || {}).forEach(([k, v]) => { if(v && v.bars) all[k] = closedOnly(v.bars, H1, now) });
+  const cs = strength(all);
+  const list = SEN_PAIRS.map(sym => {
+    const k = nameOf(sym), a = (A15 || {})[k], b = (A1 || {})[k];
+    if(!a || !b || !a.bars || !b.bars) return {sym, dir: null, score: 0, parts: [], blocks: [`Feed में ${k} नहीं`], why: [], ok: false};
+    const sp = q[sym] && q[sym].sp > 0 ? q[sym].sp * Math.pow(10, -digitsOf(sym)) : 0;
+    return score({sym, b15: closedOnly(a.bars, M15, now), b1h: closedOnly(b.bars, H1, now), live: a.live, spread: sp, cs, events, bias, history, now, cfg});
+  });
+  list.sort((x, y) => (y.ok - x.ok) || (y.score - x.score));
+  return {cs, list};
+}
+/* koi setup banne ke kareeb? (tab hi Gemini poochho — quota bachao) */
+export const nearSetup = (list, cfg) => (list || []).some(r => r.dir && !r.blocks.length && r.score >= (cfg.minScore || 75) - 15);
+
+/* radar ka chhota roop (Firebase / localStorage) */
+export const slimRadar = r => ({sym: r.sym, dir: r.dir, dirHint: r.dirHint || null, score: r.score, ok: !!r.ok, blocks: r.blocks || [], why: (r.why || []).slice(0, 6),
+  parts: (r.parts || []).map(p => ({k: p.k, pts: p.pts, max: p.max, txt: p.txt})), order: r.order || null, skip: r.skip || '', taken: r.taken || ''});
+
+/* naya paper trade (risk = $ jo SL par jaayega, caller pipUsd se deta hai) */
+export function newTrade(r, cfg, now, risk, aiSum, src){
+  cfg = Object.assign({}, DEF_CFG, cfg || {});
+  const o = r.order;
+  return {id: 'SN' + now.toString(36) + nameOf(r.sym), sym: r.sym, dir: r.dir, type: o.type, entry: o.entry, sl: o.sl, tp: o.tp, rr: o.rr, dist: o.dist, spread: o.spread,
+    score: r.score, why: (r.why || []).slice(0, 6), parts: (r.parts || []).map(p => ({k: p.k, pts: p.pts, max: p.max})), at: now, expiryMin: cfg.expiryMin, maxHoldH: cfg.maxHoldH,
+    lot: cfg.lot, risk: r2(risk), reward: r2(risk * o.rr), state: 'PENDING', done: false, ai: aiSum || '', src: src || 'app', v: SEN_VERSION};
+}
+/* evalTrade ka nateeja trade par lagao; badla to purani halat lautao, warna null */
+export function applyEval(t, res, now){
+  const was = t.state;
+  if(res.state === 'OPEN'){ t.state = 'OPEN'; t.fillAt = res.fillAt; t.cur = res.cur; t.r = res.r; t.usd = r2(res.r * (t.risk || 0)) }
+  else if(res.done){ Object.assign(t, {state: res.state, res: res.state, done: true, exit: res.exit === undefined ? null : res.exit, fillAt: res.fillAt || null, exitAt: res.exitAt || now, r: res.r || 0, usd: r2((res.r || 0) * (t.risk || 0))}) }
+  return was !== t.state ? was : null;
+}
+/* aaj (IST) ka hisaab */
+export function todayUsd(trades, now){ const d = dayKeyIST(now); return r2((trades || []).filter(t => t.done && t.exitAt && dayKeyIST(t.exitAt) === d).reduce((a, t) => a + (+t.usd || 0), 0)) }
+export function dayReport(trades, day){
+  const T = trades || [];
+  const closed = T.filter(t => t.done && t.exitAt && dayKeyIST(t.exitAt) === day && t.state !== 'EXPIRED');
+  const made = T.filter(t => dayKeyIST(t.at) === day);
+  const st = stats(closed), all = stats(T.filter(t => t.done));
+  const byPair = {};
+  closed.forEach(t => { const k = nameOf(t.sym), b = byPair[k] = byPair[k] || {n: 0, win: 0, usd: 0, R: 0}; b.n++; if(t.r > 0) b.win++; b.usd = r2(b.usd + (+t.usd || 0)); b.R = r2(b.R + (+t.r || 0)) });
+  return {day, made: made.length, expired: made.filter(t => t.state === 'EXPIRED').length, open: T.filter(t => t.state === 'OPEN').length, pending: T.filter(t => t.state === 'PENDING').length,
+    n: st.n, win: st.win, loss: st.loss, pct: st.pct, usd: st.usd, R: st.R, tp: st.tp, sl: st.sl, time: st.time, byPair,
+    trades: closed.sort((a, b) => a.exitAt - b.exitAt).map(t => ({sym: nameOf(t.sym), dir: t.dir, score: t.score, res: t.res, r: t.r, usd: t.usd, at: t.at, exitAt: t.exitAt})),
+    total: {n: all.n, pct: all.pct, usd: all.usd, R: all.R}};
+}

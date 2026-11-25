@@ -146,3 +146,28 @@ test('closedOnly bann rahi candle hatata hai', () => {
   const b = [{t: NOW - 2 * M15}, {t: NOW - M15}, {t: NOW - 60e3}];
   assert.equal(closedOnly(b, M15, NOW).length, 2);
 });
+
+test('v1.1: newTrade + applyEval + dayReport', async () => {
+  const {newTrade, applyEval, dayReport, dayKeyIST, todayUsd} = await import('../src/sentinelrules.js');
+  const now = Date.UTC(2026, 10, 25, 9, 0);
+  const r = {sym: 'EUR/USD', dir: 'BUY', score: 80, why: ['a'], parts: [], order: {type: 'BUY LIMIT', entry: 1.1, sl: 1.099, tp: 1.1018, rr: 1.8, dist: 0.001, spread: 0}};
+  const t = newTrade(r, {}, now, 1, '', 'vps');
+  assert.equal(t.state, 'PENDING'); assert.equal(t.src, 'vps'); assert.equal(t.reward, 1.8);
+  assert.equal(applyEval(t, {state: 'OPEN', fillAt: now, cur: 1.1005, r: 0.5}, now), 'PENDING');
+  assert.equal(t.usd, 0.5);
+  assert.equal(applyEval(t, {state: 'TP', done: true, exit: 1.1018, fillAt: now, exitAt: now + 3600e3, r: 1.8}, now), 'OPEN');
+  assert.equal(applyEval(t, {state: 'TP', done: true, r: 1.8}, now), null);
+  const day = dayKeyIST(now);
+  const rep = dayReport([t, {sym: 'GBP/USD', dir: 'SELL', state: 'SL', res: 'SL', done: true, at: now, exitAt: now + 60e3, r: -1, usd: -1}], day);
+  assert.equal(rep.n, 2); assert.equal(rep.pct, 50); assert.equal(rep.usd, 0.8); assert.equal(rep.byPair.EURUSD.win, 1);
+  assert.equal(todayUsd([t], now + 3600e3), 1.8);
+});
+
+test('v1.1: runScan sab 8 pair lautata hai', async () => {
+  const {runScan, SEN_PAIRS} = await import('../src/sentinelrules.js');
+  const mk = (n, tf, d) => { const t0 = NOW - n * tf - 30e3; return {bars: bars(n, tf, 1.1, d, 0.0004, 3, t0), live: 1.1} };
+  const A15 = {EURUSD: mk(200, M15, 0.0001)}, A1 = {EURUSD: mk(250, H1, 0.0004)};
+  const {list} = runScan({A15, A1, now: NOW});
+  assert.equal(list.length, SEN_PAIRS.length);
+  assert.ok(list.find(x => x.sym === 'GBP/USD').blocks[0].includes('Feed'));
+});

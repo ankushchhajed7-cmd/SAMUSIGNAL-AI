@@ -1,0 +1,30 @@
+name: Sentinel Daily Report
+
+# 🛡️ FX SENTINEL ka roz ka report (sirf padhta hai, kuch nahi likhta).
+# Claude ka scheduled task raat 9:55 IST par ise chalata hai aur nateeja phone par bhejta hai.
+# Haath se: Actions tab → "Sentinel Daily Report" → Run workflow (din khaali = aaj).
+on:
+  workflow_dispatch:
+    inputs:
+      day:
+        description: 'Din YYYY-MM-DD (khaali = aaj IST)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Report
+        env:
+          DAY: ${{ inputs.day }}
+          FB_AUTH: ${{ secrets.FB_AUTH }}
+        run: node tools/sentinel-report.mjs "$DAY"

@@ -148,6 +148,18 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.38.0 (branch feature-sentinel-vps-v1.38.0) — 🛡️ SENTINEL 1.1.0: VPS auto paper (app band ho tab bhi) + roz raat 9:55 report (25 Nov)
+- User: "auto paper trade chahiye, app band ho tab bhi chalta rahe; roz raat 9:55 daily result check karenge, aap auto bhejna".
+- `sentinelrules.js` 1.1.0: saanjha kaam yahin — `runScan`, `nearSetup`, `slimRadar`, `newTrade`, `applyEval`, `todayUsd`, `dayReport`, `dayKeyIST`. App page AUR VPS scanner bilkul isi code se (scanner ye file GitHub Pages se leta hai). Tests +2 (kul 84).
+- VPS: Samusignal `vps-scanner/scanner.mjs` **v1.13** (Task Scheduler har 1 min): `sentinelRun()` — har minute chalu paper ka nateeja (15m bars), har nayi 15m candle ke 25 sec baad 8 pair scan -> score >= minScore + koi rok nahi -> paper trade. Gemini (VPS config ki key) sirf jab setup kareeb, 30 min me ek baar. AI AUTO / EA se alag (EA chup ho tab bhi).
+  Firebase: `/sentinel/vps` (heartbeat {t, v, rv, scanAt, last, open, why}), `/sentinel/radar` {at, list, cs, ai}, `/sentinel/paper/<SN…>` (trade), `/sentinel/daily/<IST din>` (dayReport), `/sentinel/cfg` (app ki Setting).
+- Page 1.1.0: VPS heartbeat < 150 sec = **VPS mode** — page khud scan / paper NAHI karta, VPS ka radar + trades + history dikhata hai (har 20 sec). Chip "🖥 VPS चालू · scan HH:MM". VPS band = pehle jaisa 📱 Phone mode. Setting -> `/sentinel/cfg` (VPS bhi wahi). Reset VPS mode me `/sentinel/paper` + `/sentinel/daily` DELETE.
+- Report: `tools/sentinel-report.mjs` + workflow `.github/workflows/sentinel-report.yml` ("Sentinel Daily Report", sirf workflow_dispatch, Firebase sirf padhta hai). Markdown + `REPORT_JSON:` line. Claude ka scheduled task roz (Som–Shukra) 21:55 IST workflow chala kar report phone par bhejta hai.
+- App 1.37.0 -> **1.38.0**. Jaancha: scanner nakli Firebase + nakli Gemini ke saath (3 paper, XAUUSD TP 1.8R), page VPS mode (Playwright), report script.
+### Pending
+- VPS par scanner v1.13 apne aap aata hai (6 ghante me engine / self update) — turant ke liye VPS PowerShell: `Remove-Item C:\SamuScanner\engine\engine.js` (agle 1–2 min me naya engine + scanner).
+- 30–50 band trade ke baad minScore / RR review. Phir Kadam 2: asli auto trade EA (demo pehle).
+
 ## v1.37.0 (branch feature-sentinel-v1.37.0) — 🛡️ FX SENTINEL page (Kadam 1: PAPER) (25 Nov)
 - User: 24/7 forex bot — major pairs watch, live news + deep technical, high-probability setup par proper reasoning + TP + SL, EMA/ADX me kuch naya. Choices: Auto Trade, 7 Majors + XAUUSD, nateeje SAMUSIGNAL AI me, news = MT5 Calendar + Gemini. Phir: "pehle SAMUSIGNAL app me naya page, shuru me isi par check karenge".
 - Naya alag page `sentinel.html` + `src/sentinel.js` (UI + scan loop) + `src/sentinelrules.js` (pure niyam) + `tests/sentinel.test.mjs` (14 test). Home tools me 7va button 🛡️ **Sentinel** (kaala + sunehra). Baaki app nahi chhua.

@@ -1,11 +1,16 @@
-/* 🛡️ FX SENTINEL v1.0.0 — page (UI + scan loop). Niyam sentinelrules.js me.
+/* 🛡️ FX SENTINEL v1.1.0 — page (UI + scan loop). Niyam sentinelrules.js me.
+   v1.1.0 — VPS mode: VPS scanner (Samusignal vps-scanner v1.13) isi niyam se 24×5 scan + paper karta hai
+   (Firebase /sentinel/vps heartbeat, /sentinel/radar, /sentinel/paper, /sentinel/daily). VPS chalu (< 150 sec) ho to
+   page khud scan / paper NAHI karta — VPS wala dikhata hai (har 20 sec). Setting -> /sentinel/cfg (VPS bhi wahi maanta hai).
+   VPS band ho to pehle jaisa phone mode.
    Page khula ho to: har nayi 15m candle ke 25 sec baad 8 pair scan -> score 75+ aur koi rok nahi = apne aap PAPER trade
    (BUY / SELL LIMIT, 60 min expiry, structure SL, TP = 1.8R). Har minute paper trade ka nateeja (TP / SL / TIME).
    Data: sirf MT5 Data Feed (Firebase /feed, 0 TwelveData credit). News: MT5 calendar (/feed/news/cal) + Forex Factory, Gemini + Google Search.
    MT5 par koi order NAHI jaata (Kadam 1 — pehle yahan parakhna). localStorage: sai_sen_* */
 import {LS, keys, feedStatus, feedAllBars, quotes, fbUrl} from './data.js';
 import {SPECS, fmt, pipUsd} from './symbols.js';
-import {SEN_VERSION, SEN_PAIRS, CURS, M15, H1, DEF_CFG, AI_PROMPT, score, strength, closedOnly, evalTrade, stats, canOpen, session, parseCurBias} from './sentinelrules.js';
+import {SEN_VERSION, SEN_PAIRS, CURS, M15, DEF_CFG, AI_PROMPT, evalTrade, stats, canOpen, session, parseCurBias,
+  runScan, nearSetup, slimRadar, newTrade, applyEval, todayUsd as tUsd} from './sentinelrules.js';
 
 const MIN = 60e3;
 const $ = id => document.getElementById(id);
@@ -27,9 +32,43 @@ const S = {
   ai: LS.get('sen_ai', null), aiErr: '', aiBusy: false,
   events: [], calAt: 0, calSrc: '',
   feed: {ok: false, why: 'जाँच रहे हैं…'}, busy: false, err: '',
-  lastScan: LS.get('sen_lastScan', 0), nextAt: 0, lastTick: 0, rates: {}, openD: {}, cs: LS.get('sen_cs', null)
+  lastScan: LS.get('sen_lastScan', 0), nextAt: 0, lastTick: 0, rates: {}, openD: {}, cs: LS.get('sen_cs', null),
+  vps: {alive: false, hb: null, at: 0}, vTrades: [], vRadar: null, vAt: 0
 };
-const saveCfg = () => LS.set('sen_cfg', S.cfg);
+const VPS = () => S.vps.alive;
+const TR = () => VPS() ? S.vTrades : S.trades;   /* dikhane wale trade */
+const RAD = () => VPS() && S.vRadar ? S.vRadar : S.radar;
+const CSV = () => VPS() && S.vRadar && S.vRadar.cs ? S.vRadar.cs : S.cs;
+const AIV = () => { const v = VPS() && S.vRadar && S.vRadar.ai && S.vRadar.ai.at ? S.vRadar.ai : null; return v && (!S.ai || v.at > S.ai.at) ? v : S.ai };
+const CFG_KEYS = ['minScore', 'rr', 'lot', 'maxOpen', 'dayLoss', 'expiryMin', 'ai'];
+const saveCfg = () => { S.cfg.at = Date.now(); LS.set('sen_cfg', S.cfg); cfgPush() };
+/* VPS ko bhi wahi setting */
+async function cfgPush(){
+  const u = fbUrl(keys(), 'sentinel/cfg'); if(!u) return;
+  const o = {at: S.cfg.at || Date.now()}; CFG_KEYS.forEach(k => { o[k] = S.cfg[k] });
+  try{ await fetch(u, {method: 'PUT', body: JSON.stringify(o), headers: {'Content-Type': 'application/json'}}) }catch(e){}
+}
+async function cfgPull(){
+  const u = fbUrl(keys(), 'sentinel/cfg'); if(!u) return;
+  try{ const r = await fetch(u, {cache: 'no-store'}); const j = r.ok ? await r.json() : null;
+    if(j && j.at > (S.cfg.at || 0)){ CFG_KEYS.forEach(k => { if(j[k] !== undefined) S.cfg[k] = j[k] }); S.cfg.at = j.at; LS.set('sen_cfg', S.cfg) }
+    else if(!j || !j.at) cfgPush();
+  }catch(e){}
+}
+/* VPS ka haal + uske trade / radar (har 20 sec) */
+async function refreshVps(){
+  const s = keys(), get = async (p, q) => { const u = fbUrl(s, p); if(!u) return null; const r = await fetch(u + (q ? (u.includes('?') ? '&' : '?') + q : ''), {cache: 'no-store'}); return r.ok ? r.json() : null };
+  try{
+    const hb = await get('sentinel/vps');
+    S.vps = {hb, at: Date.now(), alive: !!(hb && hb.t && Date.now() - hb.t * 1000 < 150e3)};
+    if(S.vps.alive){
+      const [rad, pap] = await Promise.all([get('sentinel/radar'), get('sentinel/paper', 'orderBy=%22%24key%22&limitToLast=300')]);
+      if(rad && rad.list){ rad.list = Object.values(rad.list).map(r => Object.assign({blocks: [], why: [], parts: []}, r)); S.vRadar = rad }   /* Firebase khaali array hata deta hai */
+      S.vTrades = Object.values(pap || {}).filter(t => t && t.sym && SPECS[t.sym]).map(t => Object.assign({why: [], parts: []}, t));
+      S.vAt = Date.now();
+    }
+  }catch(e){}
+}
 const saveTrades = () => { if(S.trades.length > 400) S.trades = S.trades.filter(t => !t.done).concat(S.trades.filter(t => t.done).slice(-380)); LS.set('sen_trades', S.trades) };
 
 /* ---------- toast / alert ---------- */
@@ -104,15 +143,12 @@ async function askAi(){
 }
 
 /* ---------- trades ---------- */
-const todayUsd = () => S.trades.filter(t => t.done && t.exitAt && dayKey(t.exitAt) === dayKey(Date.now())).reduce((a, t) => a + (+t.usd || 0), 0);
+const todayUsd = () => tUsd(TR(), Date.now());
 function riskUsd(sym, dist, lot){ const sp = SPECS[sym]; return sp ? dist / sp.pip * pipUsd(sym, lot, S.rates) : 0 }
 function openTrade(r, now){
-  const why = canOpen(r, S.trades, S.cfg, now, todayUsd());
+  const why = canOpen(r, S.trades, S.cfg, now, tUsd(S.trades, now));
   if(why){ r.skip = why; return false }
-  const o = r.order, risk = riskUsd(r.sym, o.dist, S.cfg.lot);
-  const t = {id: 'SN' + now.toString(36) + nm(r.sym), sym: r.sym, dir: r.dir, type: o.type, entry: o.entry, sl: o.sl, tp: o.tp, rr: o.rr, dist: o.dist, spread: o.spread,
-    score: r.score, why: r.why.slice(0, 6), parts: r.parts.map(p => ({k: p.k, pts: p.pts, max: p.max})), at: now, expiryMin: S.cfg.expiryMin, maxHoldH: S.cfg.maxHoldH,
-    lot: S.cfg.lot, risk, reward: risk * o.rr, state: 'PENDING', done: false, ai: S.ai && aiFresh() ? S.ai.sum : '', v: SEN_VERSION};
+  const o = r.order, t = newTrade(r, S.cfg, now, riskUsd(r.sym, o.dist, S.cfg.lot), S.ai && aiFresh() ? S.ai.sum : '', 'app');
   S.trades.push(t); r.taken = t.id;
   alertUser(`🛡️ ${nm(r.sym)} ${o.type} · Score ${r.score}`, `Entry ${fmt(r.sym, o.entry)} · SL ${fmt(r.sym, o.sl)} · TP ${fmt(r.sym, o.tp)}\n${r.why.slice(0, 2).join(' · ')}`);
   return true;
@@ -122,23 +158,24 @@ function resolveAll(A15, now){
   S.trades.forEach(t => {
     if(t.done) return;
     const a = A15[nm(t.sym)]; if(!a || !a.bars) return;
-    const res = evalTrade(t, a.bars, now), was = t.state;
-    if(res.state === 'OPEN'){ t.state = 'OPEN'; t.fillAt = res.fillAt; t.cur = res.cur; t.r = res.r; t.usd = Math.round(res.r * t.risk * 100) / 100 }
-    else if(res.done){ Object.assign(t, {state: res.state, res: res.state, done: true, exit: res.exit, fillAt: res.fillAt, exitAt: res.exitAt || now, r: res.r, usd: Math.round(res.r * t.risk * 100) / 100}) }
-    if(was !== t.state){ ch = true;
-      if(t.state === 'OPEN') alertUser(`🟢 ${nm(t.sym)} ${t.type} भर गया`, `Entry ${fmt(t.sym, t.entry)}`);
-      else if(t.state === 'TP') alertUser(`✅ ${nm(t.sym)} TP ${usd(t.usd)}`, `${t.r}R`);
-      else if(t.state === 'SL') alertUser(`❌ ${nm(t.sym)} SL ${usd(t.usd)}`, `${t.r}R`);
-      else if(t.state === 'TIME') alertUser(`⏱ ${nm(t.sym)} समय पूरा ${usd(t.usd)}`, `${t.r}R`);
-    }
+    const was = applyEval(t, evalTrade(t, a.bars, now), now);
+    if(was !== null){ ch = true; stateAlert(t) }
   });
   if(ch || S.trades.some(t => t.state === 'OPEN')) saveTrades();
+}
+function stateAlert(t){
+  if(t.state === 'OPEN') alertUser(`🟢 ${nm(t.sym)} ${t.type} भर गया`, `Entry ${fmt(t.sym, t.entry)}`);
+  else if(t.state === 'TP') alertUser(`✅ ${nm(t.sym)} TP ${usd(t.usd)}`, `${t.r}R`);
+  else if(t.state === 'SL') alertUser(`❌ ${nm(t.sym)} SL ${usd(t.usd)}`, `${t.r}R`);
+  else if(t.state === 'TIME') alertUser(`⏱ ${nm(t.sym)} समय पूरा ${usd(t.usd)}`, `${t.r}R`);
 }
 
 /* ---------- scan ---------- */
 const nextSlot = now => Math.floor(now / M15) * M15 + M15 + 25e3;
 async function scan(manual){
-  if(S.busy) return; S.busy = true; S.err = ''; render();
+  if(S.busy) return;
+  if(VPS()){ S.busy = true; render(); await refreshVps(); S.busy = false; S.nextAt = nextSlot(Date.now()); render(); if(manual) toast('🖥 VPS हर 15 min scan कर रहा है — ताज़ा data ले आया'); return }
+  S.busy = true; S.err = ''; render();
   try{
     const s = keys();
     S.feed = await feedStatus(s, true);
@@ -146,27 +183,18 @@ async function scan(manual){
     const [A15, A1, q] = await Promise.all([feedAllBars(s, '15min'), feedAllBars(s, '1h'), quotes(s, SEN_PAIRS).catch(() => ({}))]);
     const now = Date.now();
     Object.entries(q).forEach(([k, v]) => { if(v && v.p > 0) S.rates[k] = v.p });
-    const all = {}; Object.entries(A1).forEach(([k, v]) => { all[k] = closedOnly(v.bars, H1, now) });
-    S.cs = strength(all); LS.set('sen_cs', S.cs);
     await loadCal().catch(() => {});
     resolveAll(A15, now);
-    const hist = S.trades.filter(t => t.done);
-    const run = bias => SEN_PAIRS.map(sym => {
-      const k = nm(sym), a = A15[k], b = A1[k];
-      if(!a || !b) return {sym, dir: null, score: 0, parts: [], blocks: [`Feed में ${k} नहीं`], why: []};
-      const sp = q[sym] && q[sym].sp > 0 ? q[sym].sp * Math.pow(10, -SPECS[sym].d) : 0;
-      return score({sym, b15: closedOnly(a.bars, M15, now), b1h: closedOnly(b.bars, H1, now), live: a.live, spread: sp, cs: S.cs, events: S.events, bias, history: hist, now, cfg: S.cfg});
-    });
-    let res = run(aiFresh());
+    const base = {A15, A1, q, events: S.events, history: S.trades.filter(t => t.done), cfg: S.cfg, now};
+    let res = runScan(Object.assign({bias: aiFresh()}, base));
     /* Gemini sirf tab jab koi setup banne ke kareeb ho aur purana bias 30 min se zyada ho (quota bachao) */
-    const near = res.some(r => r.dir && !r.blocks.length && r.score >= S.cfg.minScore - 15);
-    if(S.cfg.ai && s.gKey && near && (!S.ai || Date.now() - S.ai.at > 30 * MIN)){
-      try{ await askAi(); res = run(aiFresh()) }catch(e){ S.aiErr = e.message }
+    if(S.cfg.ai && s.gKey && nearSetup(res.list, S.cfg) && (!S.ai || Date.now() - S.ai.at > 30 * MIN)){
+      try{ await askAi(); res = runScan(Object.assign({bias: aiFresh()}, base)) }catch(e){ S.aiErr = e.message }
     }
-    res.sort((a, b) => (b.ok - a.ok) || (b.score - a.score));
-    let n = 0; res.forEach(r => { if(r.ok && openTrade(r, now)) n++ });
+    S.cs = res.cs; LS.set('sen_cs', S.cs);
+    let n = 0; res.list.forEach(r => { if(r.ok && openTrade(r, now)) n++ });
     if(n) saveTrades();
-    S.radar = {at: now, list: res.map(r => ({sym: r.sym, dir: r.dir, dirHint: r.dirHint, score: r.score, ok: r.ok, blocks: r.blocks, why: r.why, parts: r.parts, order: r.order, skip: r.skip, taken: r.taken}))};
+    S.radar = {at: now, list: res.list.map(slimRadar)};
     LS.set('sen_radar', S.radar);
     S.lastScan = now; LS.set('sen_lastScan', now);
     if(manual) toast(n ? `${n} नया paper trade` : 'Scan पूरा — अभी कोई high-probability setup नहीं');
@@ -175,6 +203,7 @@ async function scan(manual){
 }
 /* har minute: chalu trade ka nateeja (halka — sirf 15m bars) */
 async function tick(){
+  if(VPS()) return;
   if(S.busy || !S.trades.some(t => !t.done)) return;
   try{ const s = keys(); S.feed = await feedStatus(s); if(!S.feed.ok) return;
     const A15 = await feedAllBars(s, '15min'); resolveAll(A15, Date.now()); render() }catch(e){}
@@ -183,9 +212,11 @@ async function tick(){
 /* ---------- render ---------- */
 const TABS = [['radar', '📡', 'Radar'], ['trades', '🎯', 'Trades'], ['hist', '📜', 'History'], ['set', '⚙️', 'Setting']];
 function chips(){
-  const ss = session(Date.now()), live = S.trades.filter(t => !t.done).length, td = todayUsd(), nn = nextNews();
-  const aiP = !S.cfg.ai ? ['', 'Gemini OFF'] : S.aiBusy ? ['warn', 'Gemini…'] : S.aiErr ? ['bad', 'Gemini ✗'] : S.ai ? [Date.now() - S.ai.at < 60 * MIN ? 'ok' : 'warn', 'Gemini ' + ago(S.ai.at)] : ['', 'Gemini तैयार'];
+  const ss = session(Date.now()), live = TR().filter(t => !t.done).length, td = todayUsd(), nn = nextNews(), ai = AIV();
+  const aiP = !S.cfg.ai ? ['', 'Gemini OFF'] : S.aiBusy ? ['warn', 'Gemini…'] : (S.aiErr && !VPS()) ? ['bad', 'Gemini ✗'] : ai ? [Date.now() - ai.at < 60 * MIN ? 'ok' : 'warn', 'Gemini ' + ago(ai.at)] : ['', 'Gemini तैयार'];
+  const hb = S.vps.hb;
   return [
+    VPS() ? ['ok', '🖥 VPS चालू' + (hb && hb.scanAt ? ' · scan ' + hm(hb.scanAt * 1000) : '')] : ['warn', S.vps.at ? '📱 Phone mode (VPS बंद)' : '🖥 VPS जाँच…'],
     [S.feed.ok ? 'ok' : 'bad', S.feed.ok ? '● MT5 LIVE' : '● FEED OFF'],
     [ss.ok ? 'ok' : 'warn', ss.name],
     [S.busy ? 'warn' : '', S.busy ? 'Scanning…' : 'अगला scan ' + mmss(S.nextAt - Date.now())],
@@ -196,7 +227,7 @@ function chips(){
   ].filter(Boolean).map(([c, t]) => `<span class="pill ${c}">${esc(t)}</span>`).join('');
 }
 function csmHtml(){
-  const cs = S.cs; if(!cs || !cs.ok) return '<div class="note">Currency strength के लिए feed data नहीं</div>';
+  const cs = CSV(); if(!cs || !cs.ok) return '<div class="note">Currency strength के लिए feed data नहीं</div>';
   const mx = Math.max(1, ...CURS.map(c => Math.abs(cs.str[c])));
   return '<div class="csm">' + [...CURS].sort((a, b) => cs.rank[a] - cs.rank[b]).map(c => {
     const v = cs.str[c], h = Math.round(Math.abs(v) / mx * 50), pos = v >= 0;
@@ -222,15 +253,16 @@ function radarCard(r){
     ${st}${det}</div>`;
 }
 function radar(){
-  const R = S.radar, ai = S.ai;
+  const R = RAD(), ai = AIV();
   let h = '';
-  if(S.err) h += `<div class="alert">⚠️ ${esc(S.err)}</div>`;
-  h += `<div class="alert g">🧪 अभी <b>PAPER</b> — MT5 पर कोई order नहीं जाता। Page खुला रहे (screen on) तो हर 15 min पर 8 pair scan होते हैं और score ${S.cfg.minScore}+ पर अपने आप paper trade लगता है। अच्छा चला तो अगला कदम: VPS EA (24/7 असली auto trade).</div>`;
+  if(S.err && !VPS()) h += `<div class="alert">⚠️ ${esc(S.err)}</div>`;
+  if(VPS()) h += `<div class="alert g">🖥 <b>VPS AUTO PAPER चालू</b> — app बंद हो तब भी VPS हर 15 min पर 8 pair scan करता है और score ${S.cfg.minScore}+ पर अपने आप paper trade लगाता है। MT5 पर कोई असली order नहीं। रोज़ रात 9:55 को दिन का report।${S.vps.hb && S.vps.hb.why ? '<br>⚠️ ' + esc(S.vps.hb.why) : ''}</div>`;
+  else h += `<div class="alert g">📱 <b>Phone mode</b> — VPS scanner का Sentinel अभी नहीं चल रहा, इसलिए page खुला रहने तक यही phone scan + paper करता है (हर 15 min, score ${S.cfg.minScore}+). MT5 पर कोई order नहीं।</div>`;
   h += `<div class="card"><h3>Currency Strength</h3>${csmHtml()}
     ${ai && ai.sum ? `<div class="note" style="margin-top:10px">🤖 <b>Gemini (${ago(ai.at)}):</b> ${esc(ai.sum)}</div>` : ''}${S.aiErr ? `<div class="note" style="color:#ff9aa3;margin-top:6px">Gemini: ${esc(S.aiErr)}</div>` : ''}</div>`;
   h += `<div class="btns"><button class="btn gold" data-act="scan">${S.busy ? '<span class="spin">⟳</span> Scanning…' : '📡 अभी Scan करो'}</button><button class="btn ghost" data-act="ai" ${S.aiBusy ? 'disabled' : ''}>🤖 News अभी</button></div>`;
   if(!R) return h + '<div class="empty">अभी scan नहीं हुआ</div>';
-  h += `<div class="lbl" style="padding:0 2px">Scan ${hm(R.at)} IST · tap करो = पूरी वजह</div>`;
+  h += `<div class="lbl" style="padding:0 2px">${VPS() ? '🖥 VPS ' : ''}Scan ${hm(R.at)} IST · tap करो = पूरी वजह</div>`;
   return h + R.list.map(radarCard).join('');
 }
 function tradeCard(t){
@@ -245,13 +277,13 @@ function tradeCard(t){
     ${t.ai ? `<div class="note">🤖 ${esc(t.ai)}</div>` : ''}</div>`;
 }
 function trades(){
-  const L = S.trades.filter(t => !t.done).sort((a, b) => b.at - a.at);
-  const D = S.trades.filter(t => t.done && dayKey(t.at) === dayKey(Date.now())).sort((a, b) => b.at - a.at);
+  const L = TR().filter(t => !t.done).sort((a, b) => b.at - a.at);
+  const D = TR().filter(t => t.done && dayKey(t.at) === dayKey(Date.now())).sort((a, b) => b.at - a.at);
   return (L.length ? L.map(tradeCard).join('') : '<div class="empty">अभी कोई चालू paper trade नहीं।<br>Score ' + S.cfg.minScore + '+ वाला setup बनते ही अपने आप लगेगा।</div>')
     + (D.length ? '<div class="lbl" style="padding:4px 2px 0">आज के बंद</div>' + D.map(tradeCard).join('') : '');
 }
 function hist(){
-  const all = S.trades.filter(t => t.done), st = stats(all), td = stats(all.filter(t => dayKey(t.exitAt || t.at) === dayKey(Date.now())));
+  const all = TR().filter(t => t.done), st = stats(all), td = stats(all.filter(t => dayKey(t.exitAt || t.at) === dayKey(Date.now())));
   const exp = all.filter(t => t.state === 'EXPIRED').length;
   let h = `<div class="card"><div class="hero"><div><div class="lbl">Net</div><div class="big mono" style="color:${st.usd >= 0 ? 'var(--up)' : '#ff8a95'}">${usd(st.usd)}</div></div>
     <div><div class="lbl">Win</div><div class="big mono mt">${st.pct === null ? '—' : st.pct + '%'}</div></div><div><div class="lbl">Total R</div><div class="big mono">${st.R >= 0 ? '+' : ''}${st.R}</div></div></div>
@@ -298,7 +330,7 @@ function renderTop(){
 function render(){
   renderTop();
   $('main').innerHTML = '<div class="wrap">' + ({radar, trades, hist, set: setting}[S.tab] || radar)() + '</div>';
-  $('nav').innerHTML = TABS.map(([k, i, t]) => `<button class="${S.tab === k ? 'on' : ''}" data-act="tab" data-k="${k}"><b>${i}</b>${t}${k === 'trades' && S.trades.some(x => !x.done) ? ' •' : ''}</button>`).join('');
+  $('nav').innerHTML = TABS.map(([k, i, t]) => `<button class="${S.tab === k ? 'on' : ''}" data-act="tab" data-k="${k}"><b>${i}</b>${t}${k === 'trades' && TR().some(x => !x.done) ? ' •' : ''}</button>`).join('');
 }
 
 document.addEventListener('click', async e => {
@@ -318,7 +350,10 @@ document.addEventListener('click', async e => {
     render();
   }
   else if(a === 'reset'){
-    if(confirm('सारा paper history (चालू trade भी) मिटा दें?')){ S.trades = []; saveTrades(); render(); toast('साफ़ — नया शुरू') }
+    if(confirm(VPS() ? 'VPS का सारा paper history (चालू trade भी) मिटा दें?' : 'सारा paper history (चालू trade भी) मिटा दें?')){
+      S.trades = []; saveTrades();
+      if(VPS()){ try{ await fetch(fbUrl(keys(), 'sentinel/paper'), {method: 'DELETE'}); await fetch(fbUrl(keys(), 'sentinel/daily'), {method: 'DELETE'}) }catch(err){} await refreshVps() }
+      render(); toast('साफ़ — नया शुरू') }
   }
 });
 document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible'){ wakeSet(); if(Date.now() >= S.nextAt) scan(false) } });
@@ -328,12 +363,19 @@ S.nextAt = nextSlot(Date.now());
 render();
 wakeSet();
 loadCal().catch(() => {});
-/* pichhla scan is candle ka nahi = abhi scan */
-if(Date.now() - S.lastScan > 2 * MIN && Math.floor(S.lastScan / M15) !== Math.floor((Date.now() - 25e3) / M15)) scan(false);
-else feedStatus(keys(), true).then(f => { S.feed = f; render() }).catch(() => {});
+(async () => {
+  await cfgPull();
+  await refreshVps();
+  S.feed = await feedStatus(keys(), true).catch(() => S.feed);
+  render();
+  /* phone mode: pichhla scan is candle ka nahi = abhi scan */
+  if(!VPS() && Date.now() - S.lastScan > 2 * MIN && Math.floor(S.lastScan / M15) !== Math.floor((Date.now() - 25e3) / M15)) scan(false);
+})();
+let vpsT = Date.now();
 setInterval(() => {
   const now = Date.now();
-  if(!S.busy && now >= S.nextAt) scan(false);
+  if(now - vpsT >= 20e3){ vpsT = now; const was = VPS(); refreshVps().then(() => { if(S.tab !== 'set' && (VPS() || was)) render() }) }
+  if(!S.busy && now >= S.nextAt){ if(VPS()) S.nextAt = nextSlot(now); else scan(false) }
   else if(now - S.lastTick >= MIN){ S.lastTick = now; tick() }
   if(S.tab === 'trades') render(); else renderTop();   /* baaki tab sirf badlav par (scroll / tap na toote) */
 }, 1000);
