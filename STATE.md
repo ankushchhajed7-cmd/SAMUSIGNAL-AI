@@ -148,6 +148,12 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.41.0 — 📝 Paper trade (EA v10.5 ke niyam) BUY ya SELL page par (27 Nov 2026 raat, user)
+- User: MT5 button rahe, saath me paper trading — niyam wahi jo EA (PERSONAL FX v10.5 Strategy 6) me; har trade ka record: kitna chala, kitna DD, kab hit / loss.
+- Naya `src/s6paper.js` (pure): newPaper / tick / feedBar / snapshot / paperStats. Bhaav = bid, ask = bid + spread; main 0.01 Judge ki disha; hedge har $3 (STOP, level main se), naya hedge sirf jab upar wale us bhaav par profit me + 1.5 doori; lock +$2 -> +$1 neeche se, jodi (aakhri 2) / tikdi (aakhri 3) +$1, jodi lock bharte hi (v8.8); band ke baad wahi bhaav (aadhe gap tak); doosra trade main ke bhaav par (cycle me hedge khula tha, ek baar); NET / CYCLE / BASKET $2, main (+ doosra) TP $2, SL −$60. Candle: o -> l/h -> c, gap/40 ke kadam.
+- decide.js: "📝 Paper trade — BUY/SELL" button (MT5 ke neeche). Page khula ho to har 30 sec band 1-min candles se aage; band tha to khulte hi 1-min (~4 ghante) + usse purana 5-min (~20 ghante, ⚠ nishaan). Ek pair ek cycle. Card: band / jeete / SL / kul $, ausat + sabse bura DD, ausat samay; har trade: chalu ho to live net / khule / pakka / DD / hedges + ✖ band; band: kitna chala, DD (kab, kis bhaav), hedge, lock / jodi / tikdi, AI %; 📜 har ghatna (samay + bhaav). localStorage `sai_dc_papers`.
+- Tests `tests/s6paper.test.mjs` 8 (kul 99). Playwright: paper shuru, 90 min ka catch-up (3 hedge, NET +$2.13), MT5 button wahi.
+
 ## v1.40.0 — BUY ya SELL 1.1.0: 2 trend agent + Judge sudhaar (27 Nov 2026 raat, user Final)
 - User: 21:53 ka pehla faisla (SELL 62%) "100% galat" + "2 top agent trend wale". Agent ab 7: + 🏔 Structure (15m/5m/1m swing HH/HL vs LH/LL, Break of Structure) + 🧭 Alignment (har tf EMA20/50 dhalaan, EMA200 ke upar?, EMA20 se doori ATR me, RSI divergence, aakhri candle wick).
 - deciderules: swingPts, structure, candleShape, alignment, isSplit; tfSummary me ye sab + lastCandle/prevCandle. Candles 250.
