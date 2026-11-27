@@ -1,4 +1,4 @@
-/* 🎯 BUY YA SELL? v1.1.0 (app v1.40.0: + 🏔 Structure + 🧭 Alignment agent, Judge 1m rejection, bante agent = ⏸) · v1.0.0 (app v1.39.0) — user 27 Nov 2026: trade lene se pehle — 5 AI agent (Gemini) apni raay,
+/* 🎯 BUY YA SELL? v1.2.0 (app v1.41.0: + 📝 Paper trade, EA v10.5 niyam) · v1.1.0 (app v1.40.0: + 🏔 Structure + 🧭 Alignment agent, Judge 1m rejection, bante agent = ⏸) · v1.0.0 (app v1.39.0) — user 27 Nov 2026: trade lene se pehle — 5 AI agent (Gemini) apni raay,
    phir aapas me BEHES, phir ⚖️ JUDGE ek faisla: abhi BUY ya SELL, +$1 / +$2 scalp (0.01 lot), kitni sambhavna.
    Data: MT5 feed (1m / 5m / 15m / 1H), na mile to TwelveData. 🚀 MT5: /personalfx/orders MARKET (PERSONAL FX EA, lot = EA ka).
    Record: 1-min candles se pehle +$T ya −$T (60 min). localStorage: sai_dc_* . SamuSignal app me bhi yahi page hai (v10.10.0). */
@@ -6,6 +6,7 @@ import {LS, keys, series, quotes, feedStatus, fbUrl} from './data.js';
 import {SPECS, PAIRS, fmt, pipUsd} from './symbols.js';
 import {accounts, orderKey, ORDER_ST, EXP_MIN} from './bridge.js';
 import {AGENTS, TFS, MAX_MS, tfSummary, candleStr, session, parseVote, parseJudge, outcome, stats, isSplit} from './deciderules.js';
+import {newPaper, feedBar, snapshot, paperStats} from './s6paper.js';   /* v1.41.0: 📝 paper trade (EA v10.5 niyam) */
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -14,7 +15,7 @@ const hm = t => new Date(t).toLocaleTimeString('en-GB', {...IST, hour: '2-digit'
 const vc = v => v === 'SELL' ? 'var(--dn)' : 'var(--up)';
 function toast(m){ const t = $('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', 2600) }
 
-const S = {sym: LS.get('dc_sym', 'XAU/USD'), tgt: LS.get('dc_tgt', 1), busy: false, step: '', last: LS.get('dc_last', null),
+const S = {papers: LS.get('dc_papers', []), popen: new Set(), pNote: '', sym: LS.get('dc_sym', 'XAU/USD'), tgt: LS.get('dc_tgt', 1), busy: false, step: '', last: LS.get('dc_last', null),
   hist: LS.get('dc_hist', []), accts: [], pick: LS.get('dc_acct', []), send: null};
 if(!SPECS[S.sym]) S.sym = 'XAU/USD';
 
@@ -171,6 +172,88 @@ function renderSend(){
     (S.send.slow ? '<p class="note">2 min me EA ka jawab nahi — PERSONAL FX chalu hai? (WebRequest / AppPollSec)</p>' : '');
 }
 
+/* ---------- 📝 PAPER TRADE — EA v10.5 (Strategy 6) ke niyam, asli paisa nahi ----------
+   Page khula ho to har 30 sec MT5 feed ki BAND 1-min candles se aage chalta hai. App band tha to khulte hi pichhla hisaab:
+   1-min candles (~4 ghante tak), usse purana 5-min candles (~20 ghante tak; thoda kam sateek). */
+const DT = t => new Date(t).toLocaleString('en-GB', {...IST, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false});
+const DUR = ms => { const m = Math.max(0, Math.round(ms / 60000)); return m < 60 ? m + ' मि' : Math.floor(m / 60) + ' घं ' + (m % 60) + ' मि' };
+const usd2 = v => (v >= 0 ? '+$' : '−$') + Math.abs(+v || 0).toFixed(2);
+const savePapers = () => { S.papers = S.papers.slice(0, 100); LS.set('dc_papers', S.papers) };
+async function paperStart(){
+  const d = S.last, s = keys();
+  if(!d){ toast('Pehle ANALYZE karo'); return }
+  if(Date.now() - d.at > MAX_MS){ toast('Faisla 5 min se purana — dobara ANALYZE'); return }
+  if(S.papers.some(p => !p.done && p.sym === d.sym)){ toast(SPECS[d.sym].n + ' par paper cycle pehle se chalu (EA jaisa: ek pair ek cycle)'); return }
+  const q = (await quotes(s, [d.sym], true))[d.sym] || {}, bid = q.p > 0 ? q.p : d.live;
+  const sp = q.sp > 0 ? q.sp : (d.spread > 0 ? d.spread : SPECS[d.sym].pip * 2);
+  const P = newPaper({id: 'P' + Date.now().toString(36), sym: d.sym, name: SPECS[d.sym].n, dir: d.verdict === 'BUY' ? 1 : -1, at: Date.now(), bid,
+    k: d.usdU, sp, d: SPECS[d.sym].d, ai: {prob: d.prob, hold: !!(d.prob < 60 || d.wait || d.split), tgt: d.tgt}});
+  P.lastBarT = Math.floor(Date.now() / 60000) * 60000;      /* is minute ki bann rahi candle ke baad se */
+  P.live = bid;
+  S.papers.unshift(P); S.popen.add(P.id); savePapers(); render();
+  toast(`📝 Paper ${d.verdict} ${SPECS[d.sym].n} @ ${fmt(d.sym, P.open)} — EA v10.5 niyam`);
+}
+async function paperUpdate(){
+  const open = S.papers.filter(p => !p.done); if(!open.length) return;
+  const s = keys(), fs = await feedStatus(s);
+  if(!fs.ok){ S.pNote = '⚠ MT5 feed band (' + (fs.why || '') + ') — paper ruka hai, feed aate hi aage chalega'; render(); return }
+  S.pNote = '';
+  for(const sym of [...new Set(open.map(p => p.sym))]){
+    let b1; try{ b1 = (await series(s, sym, '1min', 250)).bars }catch(e){ continue }
+    const now = Date.now(), c1 = b1.filter(b => b.t + 60000 <= now);
+    for(const P of open.filter(p => p.sym === sym)){
+      if(c1.length && P.lastBarT < c1[0].t - 60000){          /* bahut der band tha -> beech ka 5-min candles se */
+        try{
+          const b5 = (await series(s, sym, '5min', 250)).bars.filter(b => b.t + 300000 <= now && b.t > P.lastBarT && b.t + 300000 <= c1[0].t);
+          if(!b5.length || b5[0].t - P.lastBarT > 450000) P.gap = true;
+          b5.forEach(b => feedBar(P, b)); if(b5.length) P.coarse = true;
+        }catch(e){ P.gap = true }
+      }
+      c1.filter(b => b.t > P.lastBarT).forEach(b => feedBar(P, b));
+      try{ const q = (await quotes(s, [sym]))[sym]; if(q && q.p > 0) P.live = q.p }catch(e){}
+    }
+  }
+  savePapers(); render();
+}
+function paperClose(id){
+  const P = S.papers.find(p => p.id === id); if(!P || P.done) return;
+  if(!confirm('Ye paper cycle abhi ke bhaav par band karein?')) return;
+  const sn = snapshot(P, P.live || P.lastPx);
+  P.done = true; P.res = 'HAATH SE'; P.endT = Date.now(); P.pl = sn.net;
+  P.ev.push({t: P.endT, m: `🏁 HAATH SE band @ ${(+(P.live || P.lastPx)).toFixed(P.d)} · kul ${usd2(P.pl)}`});
+  savePapers(); render();
+}
+function paperCard(){
+  const L = S.papers, st = paperStats(L);
+  const row = P => {
+    const dn = P.dir > 0 ? 'BUY' : 'SELL', col = P.dir > 0 ? 'var(--up)' : 'var(--dn)';
+    let head, body = '';
+    if(!P.done){
+      const sn = snapshot(P, P.live || P.lastPx);
+      head = `<b style="color:${col}">${dn}</b> ${esc(P.name)} @ ${P.open.toFixed(P.d)} · <span style="color:var(--gold)">chalu ${DUR(Date.now() - P.at)}</span> · <b style="color:${sn.net >= 0 ? 'var(--up)' : 'var(--dn)'}">net ${usd2(sn.net)}</b>`;
+      body = `<div class="lv"><div>Khule<b>${usd2(sn.total)}</b></div><div class="t">Pakka<b>${usd2(sn.banked)}</b></div><div class="s">Sabse gehra DD<b>${usd2(P.minTot)}</b></div></div>
+        <div class="note" style="margin-top:6px">Main ${usd2(sn.main)}${sn.b2 !== null ? ' · doosra ' + usd2(sn.b2) : ''} · bhaav ${(+(P.live || P.lastPx)).toFixed(P.d)}</div>
+        ${sn.hedges.length ? sn.hedges.map(h => `<div class="row mono"><span>#${h.n} ${P.dir > 0 ? 'SELL' : 'BUY'} ${h.o.toFixed(P.d)}</span><span>${h.armed ? '🔒 lock' : ''}</span><b style="color:${h.pl >= 0 ? 'var(--up)' : 'var(--dn)'}">${usd2(h.pl)}</b></div>`).join('') : '<div class="note">Koi hedge khula nahi</div>'}
+        <button class="btn red" data-pclose="${esc(P.id)}" style="width:100%;margin-top:8px;height:38px">✖ Paper cycle abhi band karo</button>`;
+    }else{
+      const win = P.pl > 0;
+      head = `${win ? '✅' : '❌'} <b style="color:${col}">${dn}</b> ${esc(P.name)} · ${esc(P.res)} · <b style="color:${win ? 'var(--up)' : 'var(--dn)'}">${usd2(P.pl)}</b>`;
+      body = `<div class="lv"><div>Kitna chala<b>${DUR(P.endT - P.at)}</b></div><div class="s">Sabse gehra DD<b>${usd2(P.minTot)}</b></div><div class="e">Hedge<b>${P.used}</b></div></div>
+        <div class="note" style="margin-top:6px">Shuru ${DT(P.at)} @ ${P.open.toFixed(P.d)} · band ${DT(P.endT)} · DD ${DT(P.minAt)} par (bhaav ${(+P.minPx).toFixed(P.d)})<br>Lock ${P.locks} · jodi ${P.pairs} · tikdi ${P.trips} · ek saath max ${P.maxH} hedge${P.b2used ? ' · doosra trade khula' : ''}${P.ai ? ' · AI ' + P.ai.prob + '%' + (P.ai.hold ? ' (⏸ tha)' : '') : ''}</div>`;
+    }
+    const evs = P.ev.slice().reverse().map(e => `<div class="row mono" style="font-size:11.5px"><span class="l2">${DT(e.t)}</span><span style="flex:1;text-align:right">${esc(e.m)}</span></div>`).join('');
+    return `<div class="pr" style="margin-bottom:8px"><div style="font-size:13px">${head}</div>
+      <div class="note">${DT(P.at)}${P.coarse ? ' · ⚠ kuch hissa 5-min candles se' : ''}${P.gap ? ' · ⚠ beech me data nahi mila' : ''}</div>
+      ${body}<details data-pid="${esc(P.id)}" ${S.popen.has(P.id) ? 'open' : ''}><summary class="note" style="margin-top:6px;cursor:pointer">📜 Har ghatna (${P.ev.length})</summary>${evs}</details></div>`;
+  };
+  return `<div class="card"><h3>📝 Paper trades — EA v10.5 niyam <button id="pClr" style="float:right;background:none;border:0;color:#ff8a95;font-size:10px;font-weight:800">RESET</button></h3>
+    <div class="tiles"><div class="tile">Band<b>${st.n}</b></div><div class="tile">Jeete<b style="color:var(--up)">${st.w}</b></div><div class="tile">SL<b style="color:var(--dn)">${st.sl}</b></div><div class="tile">Kul<b>${usd2(st.sum)}</b></div></div>
+    <div class="note" style="margin:8px 0">Ausat DD ${usd2(st.avgDD)} · sabse bura DD ${usd2(st.worstDD)} · ausat samay ${st.avgMin} मि · chalu ${st.open}</div>
+    ${S.pNote ? `<div class="alert g">${esc(S.pNote)}</div>` : ''}
+    ${L.length ? L.slice(0, 30).map(row).join('') : '<div class="empty">Abhi koi paper trade nahi. ANALYZE ke baad "📝 Paper trade" dabao.</div>'}
+    <div class="note" style="margin-top:6px">Niyam EA v10.5 jaise: main 0.01 · har $3 hedge 0.01 (naya sirf jab upar wale profit me) · lock +$2 → +$1 neeche se, phir jodi / tikdi · doosra trade main ke bhaav par · NET / CYCLE / BASKET $2 · SL −$60. Bhaav MT5 feed ki 1-min candles, spread gina. Page band ho to khulte hi pichhla hisaab (1-min ~4 ghante, 5-min ~20 ghante).</div></div>`;
+}
+
 /* ---------- 📒 record ---------- */
 async function check(){
   const todo = S.hist.filter(h => !h.done && Date.now() - h.at > 3 * 60e3); if(!todo.length) return;
@@ -217,6 +300,7 @@ function render(){
         S.accts.length === 1 ? `<div class="note" style="margin-top:10px">Account: <b style="color:${S.accts[0].real ? 'var(--dn)' : '#7cc4f0'}">${S.accts[0].real ? 'REAL' : 'DEMO'} ${esc(S.accts[0].login)}</b></div>` : ''}
       <button class="btn" id="dcSendBtn" style="width:100%;margin-top:12px;background:${col};color:#000;font-size:16px;font-weight:900" ${old ? 'disabled' : ''}>${old ? '⏱ 5 min purana — dobara ANALYZE' : `🚀 ${hold ? 'phir bhi ' : ''}MT5 pe ${d.verdict} lagao (MARKET)`}</button>
       <div class="note" style="margin-top:6px">Lot = PERSONAL FX ka lot (0.01) · baaki niyam EA ke (Strategy 6 = hedge, $2 cycle).</div>
+      <button class="btn ghost" id="dcPaperBtn" style="width:100%;margin-top:8px" ${old ? 'disabled' : ''}>📝 Paper trade — ${d.verdict} (EA v10.5 niyam, asli paisa nahi)</button>
       <div id="dcSend"></div></div>
     <div class="card"><h3>🗣 Round 1 — har agent</h3>
       ${d.r1.map(x => { const a = AGENTS.find(z => z.k === x.k);
@@ -233,6 +317,7 @@ function render(){
   }
   const H = S.hist, st = (k, f) => { const x = stats(H, k, f); return x.n ? `${x.w}/${x.n} (${x.pct}%)` : '—' };
   const ic = r => r === 'W' ? '<b style="color:var(--up)">✓</b>' : r === 'L' ? '<b style="color:var(--dn)">✗</b>' : r === '0' ? '<span class="note">–</span>' : '<span class="note">…</span>';
+  h += paperCard();
   h += `<div class="card"><h3>📒 Record — AI kitna sahi <button id="dcClr" style="float:right;background:none;border:0;color:#ff8a95;font-size:10px;font-weight:800">RESET</button></h3>
     <div class="tiles" style="grid-template-columns:1fr 1fr"><div class="tile">JUDGE · pehle +$1<b>${st('r1')}</b></div><div class="tile">JUDGE · pehle +$2<b>${st('r2')}</b></div></div>
     <div class="note" style="margin:8px 0">60% se upar wale: $1 ${st('r1', x => x.prob >= 60)}. Spread nahi gina — asli thoda kam.</div>
@@ -244,11 +329,17 @@ function render(){
   document.querySelectorAll('[data-tgt]').forEach(b => b.onclick = () => { S.tgt = +b.dataset.tgt; LS.set('dc_tgt', S.tgt); render() });
   $('dcRun').onclick = run;
   if($('dcSendBtn')) $('dcSendBtn').onclick = send;
+  if($('dcPaperBtn')) $('dcPaperBtn').onclick = paperStart;
+  document.querySelectorAll('[data-pclose]').forEach(b => b.onclick = () => paperClose(b.dataset.pclose));
+  document.querySelectorAll('details[data-pid]').forEach(x => x.ontoggle = () => { if(x.open) S.popen.add(x.dataset.pid); else S.popen.delete(x.dataset.pid) });
+  if($('pClr')) $('pClr').onclick = () => { if(!confirm('Saare paper trade saaf karein?')) return; S.papers = []; savePapers(); render() };
   document.querySelectorAll('[data-acct]').forEach(c => c.onchange = () => { const l = c.dataset.acct; S.pick = c.checked ? [...new Set([...S.pick, l])] : S.pick.filter(x => x !== l); LS.set('dc_acct', S.pick) });
   $('dcClr').onclick = () => { if(!confirm('Record saaf karein?')) return; S.hist = []; LS.set('dc_hist', S.hist); render() };
   renderSend();
 }
 function clock(){ const c = $('clock'); if(c) c.innerHTML = `<b>${hm(Date.now())}</b><br>IST` }
 
-render(); clock(); loadAccts(); check();
+render(); clock(); loadAccts(); check(); paperUpdate();
+setInterval(() => { if(!document.hidden) paperUpdate() }, 30e3);
+document.addEventListener('visibilitychange', () => { if(!document.hidden) paperUpdate() });
 setInterval(() => { clock(); check(); if(S.last && !S.last.oldShown && Date.now() - S.last.at > MAX_MS){ S.last.oldShown = true; if(!S.send) render() } }, 60e3);
