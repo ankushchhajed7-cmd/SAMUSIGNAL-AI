@@ -148,6 +148,15 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.39.0 — 🎯 BUY YA SELL? page (27 Nov 2026 raat)
+- User: "SamuSignal app me jo page bana (v10.10.0) wo SAMUSIGNAL AI me bhi chahiye" — scalping $1/$2 se pehle 5 AI agent aapas me baat karke batayein abhi BUY ya SELL (high probability) + MT5 button. SamuSignal wala bhi rehta hai.
+- Home: tools pankti ke neeche poori chaudai ka peela button "🎯 BUY YA SELL? · 5 AI AGENT" -> alag page `decide.html` + `src/decide.js` (UI, Gemini, MT5) + `src/deciderules.js` (pure: tfSummary, effRatio, parseVote/Judge, outcome, stats) + `tests/decide.test.mjs` (5 test; kul 89 pass). Baaki app nahi chhua.
+- Timeframe (scalp $1–2, 0.01 lot): 1H mahaul · 15m disha · 5m setup · 1m trigger (4H/Daily nahi). Data `series()` (MT5 feed, na mile to TwelveData). Feed ki haalat pehle (`feedStatus(s, true)`), warna 4 saath-saath call me race -> feed "band" dikhta.
+- 7 Gemini sawaal: 5 agent (Trend, Momentum, Level, News + Google Search + MT5 calendar `/feed/news/cal`, Risk/chop) -> behes -> Judge {verdict, prob 50–85, why, against, waitBetter, minutes}.
+- 🚀 MT5: online PERSONAL FX account (REAL laal + confirm) -> `/personalfx/orders/<-SG…>` {type BUY/SELLMARKET, src "SAMUSIGNAL AI DECIDE"}; EA status page par. Faisla 5 min tak.
+- 📒 Record `sai_dc_hist`: 1-min feed candles se 60 min me pehle +$1/−$1, +$2/−$2 (ek candle me dono = haar); sirf MT5 feed (TwelveData credit nahi).
+- App 1.38.0 -> **1.39.0** (app.js, sw.js + SHELL, package.json). Playwright (nakli feed + Gemini + Firebase): home button, 7 call, faisla, MT5 PUT + PLACED, 390px side-scroll nahi, JS error nahi.
+
 ## v1.38.0 (branch feature-sentinel-vps-v1.38.0) — 🛡️ SENTINEL 1.1.0: VPS auto paper (app band ho tab bhi) + roz raat 9:55 report (25 Nov)
 - User: "auto paper trade chahiye, app band ho tab bhi chalta rahe; roz raat 9:55 daily result check karenge, aap auto bhejna".
 - `sentinelrules.js` 1.1.0: saanjha kaam yahin — `runScan`, `nearSetup`, `slimRadar`, `newTrade`, `applyEval`, `todayUsd`, `dayReport`, `dayKeyIST`. App page AUR VPS scanner bilkul isi code se (scanner ye file GitHub Pages se leta hai). Tests +2 (kul 84).

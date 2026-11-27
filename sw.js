@@ -1,10 +1,12 @@
 /* SAMUSIGNAL AI — service worker. App shell cache; data (Firebase / TwelveData / Gemini) kabhi cache nahi. */
-const VERSION = '1.38.0';
+const VERSION = '1.39.0';
 const CACHE = 'sai-' + VERSION;
 const SHELL = ['./', 'index.html', 'manifest.json', 'src/app.js', 'src/engine.js', 'src/data.js', 'src/symbols.js', 'src/bridge.js', 'src/ai.js', 'src/flow.js',
   'news.html', 'src/news.js', 'src/newsrules.js', 'src/newsbrief.js',   /* v1.17.1: NEWS page bhi offline */
   'src/candlerules.js',
-  'sentinel.html', 'src/sentinel.js', 'src/sentinelrules.js',            /* v1.37.0: FX SENTINEL page */                                               /* v1.36.0: Candle page hataya; candlerules sirf VPS scanner ke liye */
+  'sentinel.html', 'src/sentinel.js', 'src/sentinelrules.js',
+  'decide.html', 'src/decide.js', 'src/deciderules.js',                  /* v1.39.0: 🎯 BUY YA SELL? page */
+             /* v1.37.0: FX SENTINEL page */                                               /* v1.36.0: Candle page hataya; candlerules sirf VPS scanner ke liye */
   'vendor/lightweight-charts-4.2.0.js', 'icon-192.png', 'icon-512.png', 'favicon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())) });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== CACHE).map(x => caches.delete(x)))).then(() => self.clients.claim())) });
