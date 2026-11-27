@@ -148,6 +148,13 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.40.0 — BUY ya SELL 1.1.0: 2 trend agent + Judge sudhaar (27 Nov 2026 raat, user Final)
+- User: 21:53 ka pehla faisla (SELL 62%) "100% galat" + "2 top agent trend wale". Agent ab 7: + 🏔 Structure (15m/5m/1m swing HH/HL vs LH/LL, Break of Structure) + 🧭 Alignment (har tf EMA20/50 dhalaan, EMA200 ke upar?, EMA20 se doori ATR me, RSI divergence, aakhri candle wick).
+- deciderules: swingPts, structure, candleShape, alignment, isSplit; tfSummary me ye sab + lastCandle/prevCandle. Candles 250.
+- Judge: 1m/5m ki taaza rejection / BOS / divergence ko purane trend se zyada wazan; agents bante (4-3) ya saaf nahi -> prob 50-58 + waitBetter.
+- Page: kamzor (<60%) / bante agent / Judge "ruko" -> bada "⏸ ABHI MAT LO" (verdict halka), button "phir bhi MT5 pe…". 9 Gemini sawaal. Data table me Structure + EMA20 dhalaan.
+- Tests +2 (kul 91). Playwright: 9 call, ⏸ banner, MT5 PUT + PLACED, 390px theek.
+
 ## v1.39.0 — 🎯 BUY YA SELL? page (27 Nov 2026 raat)
 - User: "SamuSignal app me jo page bana (v10.10.0) wo SAMUSIGNAL AI me bhi chahiye" — scalping $1/$2 se pehle 5 AI agent aapas me baat karke batayein abhi BUY ya SELL (high probability) + MT5 button. SamuSignal wala bhi rehta hai.
 - Home: tools pankti ke neeche poori chaudai ka peela button "🎯 BUY YA SELL? · 5 AI AGENT" -> alag page `decide.html` + `src/decide.js` (UI, Gemini, MT5) + `src/deciderules.js` (pure: tfSummary, effRatio, parseVote/Judge, outcome, stats) + `tests/decide.test.mjs` (5 test; kul 89 pass). Baaki app nahi chhua.

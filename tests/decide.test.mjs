@@ -36,3 +36,18 @@ test('stats + session', () => {
   assert.deepEqual(s, {n: 3, w: 2, pct: 67});
   assert.equal(session(Date.UTC(2026, 10, 27, 13)), 'London + New York (sabse tez)');
 });
+import {structure, alignment, candleShape, isSplit} from '../src/deciderules.js';
+test('structure: upar ki seedhi = UP, neeche = DOWN, BOS', () => {
+  const zig = (dir) => Array.from({length: 80}, (_, i) => { const c = 100 + dir * i * 0.3 + (i % 6 < 3 ? 1 : -1); return {t: i, o: c, h: c + 0.4, l: c - 0.4, c} });
+  assert.match(structure(zig(1)).structure, /^UP/);
+  assert.match(structure(zig(-1)).structure, /^DOWN/);
+  const b = zig(1); b.push({t: 99, o: 140, h: 160, l: 139, c: 159});
+  assert.match(structure(b).bos, /^BOS UP/);
+});
+test('alignment + candleShape + isSplit', () => {
+  const up = Array.from({length: 120}, (_, i) => ({t: i, o: 100 + i * 0.5, h: 100.6 + i * 0.5, l: 99.6 + i * 0.5, c: 100.3 + i * 0.5}));
+  const a = alignment(up); assert.equal(a.ema20Slope, 'UP'); assert.equal(a.above200, true);
+  const cs = candleShape({o: 10, h: 14, l: 9.5, c: 10.5}); assert.ok(cs.upperWickPct > 60); assert.equal(cs.dir, 'green');
+  assert.equal(isSplit([{vote: 'BUY'}, {vote: 'SELL'}, {vote: 'BUY'}, {vote: 'SELL'}, {vote: 'BUY'}, {vote: 'SELL'}, {vote: 'BUY'}]), true);
+  assert.equal(isSplit([{vote: 'BUY'}, {vote: 'BUY'}, {vote: 'BUY'}, {vote: 'SELL'}, {vote: 'BUY'}, {err: 'x'}]), false);
+});

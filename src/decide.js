@@ -1,11 +1,11 @@
-/* 🎯 BUY YA SELL? v1.0.0 (app v1.39.0) — user 27 Nov 2026: trade lene se pehle — 5 AI agent (Gemini) apni raay,
+/* 🎯 BUY YA SELL? v1.1.0 (app v1.40.0: + 🏔 Structure + 🧭 Alignment agent, Judge 1m rejection, bante agent = ⏸) · v1.0.0 (app v1.39.0) — user 27 Nov 2026: trade lene se pehle — 5 AI agent (Gemini) apni raay,
    phir aapas me BEHES, phir ⚖️ JUDGE ek faisla: abhi BUY ya SELL, +$1 / +$2 scalp (0.01 lot), kitni sambhavna.
    Data: MT5 feed (1m / 5m / 15m / 1H), na mile to TwelveData. 🚀 MT5: /personalfx/orders MARKET (PERSONAL FX EA, lot = EA ka).
    Record: 1-min candles se pehle +$T ya −$T (60 min). localStorage: sai_dc_* . SamuSignal app me bhi yahi page hai (v10.10.0). */
 import {LS, keys, series, quotes, feedStatus, fbUrl} from './data.js';
 import {SPECS, PAIRS, fmt, pipUsd} from './symbols.js';
 import {accounts, orderKey, ORDER_ST, EXP_MIN} from './bridge.js';
-import {AGENTS, TFS, MAX_MS, tfSummary, candleStr, session, parseVote, parseJudge, outcome, stats} from './deciderules.js';
+import {AGENTS, TFS, MAX_MS, tfSummary, candleStr, session, parseVote, parseJudge, outcome, stats, isSplit} from './deciderules.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -70,7 +70,7 @@ async function run(){
   try{
     step('<span class="spin">◐</span> 1/4 · candles (1m · 5m · 15m · 1H)…');
     await feedStatus(s, true);                                 /* pehle feed ki haalat (warna 4 saath-saath call me race: feed 'band' dikhta) */
-    const got = await Promise.all(TFS.map(([, tf]) => series(s, sym, tf, 150, true)));
+    const got = await Promise.all(TFS.map(([, tf]) => series(s, sym, tf, 250, true)));
     const B = {}; TFS.forEach(([l], i) => B[l] = got[i].bars);
     if(B['15m'].length < 60 || B['1H'].length < 60) throw new Error('Candles poori nahi mili');
     const q = (await quotes(s, [sym], true))[sym] || {};
@@ -86,7 +86,7 @@ async function run(){
     const base = `Tum ek trading team ke agent ho. Data (asli, abhi ka):\n${JSON.stringify(ctx)}\n\n`;
     const fmtQ = '\n\nSirf JSON do: {"vote":"BUY" ya "SELL","conf":50-95 (kitna pakka),"why":"1-2 chhoti line simple Hinglish, numbers ke saath","watch":"ek line: kis baat se tumhari raay galat ho sakti hai"}';
 
-    step('<span class="spin">◐</span> 2/4 · 5 agent apni raay de rahe hain…');
+    step('<span class="spin">◐</span> 2/4 · 7 agent apni raay de rahe hain…');
     const r1 = await Promise.all(AGENTS.map(a => gem(s.gKey, base + a.job + (a.k === 'news' ? `\nMT5 calendar (raw): ${cal || 'nahi mila'}` : '') + fmtQ, a.search)
       .then(o => Object.assign({k: a.k, search: !!o._search}, parseVote(o))).catch(e => ({k: a.k, err: e.message}))));
     const ok1 = r1.filter(x => !x.err);
@@ -99,20 +99,22 @@ async function run(){
     try{
       const o = await gem(s.gKey, base + `Pehle round me agents ne ye kaha:\n${round1}\n\nAb BEHES: har agent doosron ke tark padh kar seedha jawab de — kisse sehmat, kisse nahi aur kyun; chahe to apni raay badle (sirf achhe tark par). ` +
         'Sirf JSON: {"agents":[{"name":"<wahi naam>","reply":"1-2 line Hinglish, kisi aur agent ka naam lekar","vote":"BUY|SELL","conf":50-95}]}', false);
-      r2 = Array.isArray(o.agents) ? o.agents.slice(0, 6).map(x => ({name: String(x.name || '').slice(0, 40), reply: String(x.reply || '').slice(0, 300), vote: /SELL/i.test(x.vote) ? 'SELL' : 'BUY', conf: Math.round(+x.conf || 0)})) : null;
+      r2 = Array.isArray(o.agents) ? o.agents.slice(0, 8).map(x => ({name: String(x.name || '').slice(0, 40), reply: String(x.reply || '').slice(0, 300), vote: /SELL/i.test(x.vote) ? 'SELL' : 'BUY', conf: Math.round(+x.conf || 0)})) : null;
     }catch(e){ r2err = e.message }
     const round2 = r2 ? r2.map(x => `${x.name}: ${x.vote} ${x.conf}% — ${x.reply}`).join('\n') : '(behes nahi ho payi)';
 
     step('<span class="spin">◐</span> 4/4 · ⚖️ Judge faisla de raha hai…');
     const jd = parseJudge(await gem(s.gKey, base + `Tum JUDGE ho (head trader). Round 1:\n${round1}\n\nBehes ke baad:\n${round2}\n\n` +
       `Ab ek hi faisla do: ABHI MARKET par +$${tgt} ke scalp ke liye BUY ya SELL — jisme pehle +$${tgt} aane ki sambhavna zyada ho (pehle −$${tgt} aane se). ` +
+      `Scalp ke liye 1m (aur 5m) ki TAAZA rejection / palatne wali candle (lambi ulti wick, BOS, divergence) ko PURANE trend se ZYADA wazan do — purana trend ulta ho aur 1m palat raha ho to us disha me mat jao, ya waitBetter true. ` +
+      `Agents bante hon (jaise 4-3) ya saaf na ho to prob 50-58 aur waitBetter true. ` +
       `Sach bolo: bazaar saaf na ho to prob kam (50-58) rakho. prob = tumhara andaza ki pehle +$${tgt} aayega (50-85).\n` +
       'Sirf JSON: {"verdict":"BUY|SELL","prob":50-85,"why":"2-3 line Hinglish, sabse mazboot tark + numbers","against":"1 line: ulta kya ho sakta hai","waitBetter":true/false (abhi ruk jaana behtar? jaise High news paas, bahut chop),"minutes":"andaza, target me kitne min (jaise 3-10)"}', false));
-    S.last = Object.assign({at: Date.now(), sym, tgt, live, usdU, src, spread: q.sp > 0 ? q.sp : null, tf, r1, r2, r2err}, jd);
+    S.last = Object.assign({at: Date.now(), sym, tgt, live, usdU, src, spread: q.sp > 0 ? q.sp : null, tf, r1, r2, r2err, split: isSplit(r1)}, jd);
     LS.set('dc_last', S.last);
-    S.hist.unshift({at: S.last.at, sym, tgt, dir: jd.verdict, prob: jd.prob, px: live, usdU, wait: jd.wait, ag: ok1.filter(x => x.vote === jd.verdict).length + '/' + ok1.length});
+    S.hist.unshift({at: S.last.at, sym, tgt, dir: jd.verdict, prob: jd.prob, px: live, usdU, wait: jd.wait || S.last.split, ag: ok1.filter(x => x.vote === jd.verdict).length + '/' + ok1.length});
     S.hist = S.hist.slice(0, 150); LS.set('dc_hist', S.hist);
-    step(`✓ ${hm(S.last.at)} · ${esc(src)} · 7 AI sawaal`);
+    step(`✓ ${hm(S.last.at)} · ${esc(src)} · 9 AI sawaal`);
   }catch(e){
     step(`<span style="color:var(--dn)">❌ ${esc(e.message || String(e))}</span>`);
   }finally{ S.busy = false; render(); loadAccts() }
@@ -135,7 +137,7 @@ async function send(){
   const q = (await quotes(s, [d.sym], true))[d.sym] || {}, live = q.p > 0 ? q.p : d.live;
   const msg = `🎯 ${sp.n} ${dir} MARKET\nAI: ${dir} ${d.prob}% (+$${d.tgt} scalp)\nLive ${fmt(d.sym, live)}\n` +
     (chosen.length ? 'Account: ' + chosen.map(a => (a.real ? 'REAL ' : 'DEMO ') + a.login).join(', ') : '⚠ Koi PERSONAL FX account online nahi dikha — bina account ke jayega') +
-    (real ? '\n\n🔴🔴 REAL ACCOUNT — asli paisa! Pakka?' : '') + (d.prob < 60 ? '\n\n⚠ Sambhavna 60% se kam.' : '') + (d.wait ? '\n⚠ Judge ne rukne ko kaha tha.' : '') +
+    (real ? '\n\n🔴🔴 REAL ACCOUNT — asli paisa! Pakka?' : '') + (d.prob < 60 ? '\n\n⚠ Sambhavna 60% se kam.' : '') + (d.wait ? '\n⚠ Judge ne rukne ko kaha tha.' : '') + (d.split ? '\n⚠ Agents bante hue the (⏸ ABHI MAT LO).' : '') +
     '\n\nLot, TP, hedge: PERSONAL FX ke niyam (us pair pe trade pehle se ho to EA SKIP karega).\n\nMT5 pe bhejein?';
   if(!confirm(msg)) return;
   const now = Date.now(), batch = 'D' + now.toString(36), keysSent = [];
@@ -190,28 +192,30 @@ function render(){
   const d = S.last, sp = SPECS[S.sym];
   const pairs = ['XAU/USD'].concat(PAIRS.filter(p => p !== 'XAU/USD'));
   let h = `<div class="card">
-    <div class="note" style="margin-bottom:10px">5 AI agent (Trend · Momentum · Level · News · Risk) apni raay dete hain, aapas me behes karte hain, phir ⚖️ Judge ek faisla deta hai.<br>Timeframe: <b>1H</b> mahaul · <b>15m</b> disha · <b>5m</b> setup · <b>1m</b> trigger. Analysis hai, guarantee nahi.</div>
+    <div class="note" style="margin-bottom:10px">7 AI agent (Trend · Momentum · Level · News · Structure · Alignment · Risk) apni raay dete hain, aapas me behes karte hain, phir ⚖️ Judge ek faisla deta hai.<br>Timeframe: <b>1H</b> mahaul · <b>15m</b> disha · <b>5m</b> setup · <b>1m</b> trigger. Analysis hai, guarantee nahi.</div>
     <div class="sg">Pair</div>
     <select id="dcPair" style="width:100%;height:42px;margin-top:6px;border-radius:12px;background:#0d0d0d;color:var(--tx);border:1px solid var(--line);padding:0 10px;font-weight:800;font-size:15px">
       ${pairs.map(p => `<option value="${esc(p)}" ${p === S.sym ? 'selected' : ''}>${esc(SPECS[p].n)}</option>`).join('')}</select>
     <div class="sg" style="margin-top:10px">Target (0.01 lot)</div>
     <div class="seg">${[1, 2].map(t => `<button data-tgt="${t}" class="${+S.tgt === t ? 'on' : ''}">+$${t}</button>`).join('')}</div>
     <button class="btn gold" id="dcRun" style="width:100%;margin-top:12px" ${S.busy ? 'disabled' : ''}>🧠 ANALYZE — abhi BUY ya SELL?</button>
-    <div class="note mono" id="dcStep" style="margin-top:8px">${S.step || 'Gemini key (SamuSignal Settings) chahiye · ek analysis = 7 AI sawaal'}</div></div>`;
+    <div class="note mono" id="dcStep" style="margin-top:8px">${S.step || 'Gemini key (SamuSignal Settings) chahiye · ek analysis = 9 AI sawaal'}</div></div>`;
   if(d){
     const up = d.verdict === 'BUY', col = vc(d.verdict), old = Date.now() - d.at > MAX_MS, dsp = SPECS[d.sym];
+    const hold = d.prob < 60 || d.wait || d.split;               /* v1.40.0: kamzor / bante agent / Judge "ruko" -> ⏸ */
     h += `<div class="card" style="border-color:${col}">
-      <div style="text-align:center"><div class="lbl">${esc(dsp.n)} · +$${d.tgt} SCALP · ${hm(d.at)}</div>
+      ${hold ? `<div style="text-align:center;border:2px solid var(--gold);border-radius:14px;padding:10px;margin-bottom:10px"><div style="font-family:Cinzel,serif;font-size:26px;font-weight:700;color:var(--gold)">⏸ ABHI MAT LO</div>
+        <div class="note" style="color:#f1dfaa">${[d.split ? 'agents bante hue' : '', d.prob < 60 ? 'sambhavna 60% se kam' : '', d.wait ? 'Judge: rukna behtar' : ''].filter(Boolean).join(' · ')}</div></div>` : ''}
+      <div style="text-align:center;${hold ? 'opacity:.55' : ''}"><div class="lbl">${esc(dsp.n)} · +$${d.tgt} SCALP · ${hm(d.at)}</div>
         <div style="font-family:Cinzel,serif;font-size:38px;font-weight:700;letter-spacing:3px;color:${col};margin:4px 0">${up ? '🟢 BUY' : '🔴 SELL'}</div>
         <b style="font-size:20px;color:${col}">${d.prob}% sambhavna</b>
         <div class="note">pehle +$${d.tgt} aayega (−$${d.tgt} se pehle) · ${esc(d.minutes)} min</div></div>
-      ${d.prob < 60 || d.wait ? `<div class="alert g" style="margin-top:10px">⚠ ${d.wait ? 'Judge: abhi rukna behtar. ' : ''}${d.prob < 60 ? 'Kamzor (60% se kam) — trade na lo to behtar.' : ''}</div>` : ''}
       <p style="margin:10px 0 4px;font-size:13.5px;line-height:1.55"><b>⚖️ Judge:</b> ${esc(d.why)}</p>
       <div class="note">↩ Ulta: ${esc(d.against)}</div>
       ${S.accts.length > 1 ? `<div class="sg" style="margin-top:12px">Account</div>${S.accts.map(a => `<label class="row" style="align-items:center"><span><b style="color:${a.real ? 'var(--dn)' : '#7cc4f0'}">${a.real ? 'REAL' : 'DEMO'} ${esc(a.login)}</b> <span class="note">${esc(a.server || '')} · lot ${(+a.lot || 0).toFixed(2)}</span></span>
         <input type="checkbox" data-acct="${esc(a.login)}" ${S.pick.includes(a.login) ? 'checked' : ''} style="width:22px;height:22px;accent-color:#e8c35a"></label>`).join('')}` :
         S.accts.length === 1 ? `<div class="note" style="margin-top:10px">Account: <b style="color:${S.accts[0].real ? 'var(--dn)' : '#7cc4f0'}">${S.accts[0].real ? 'REAL' : 'DEMO'} ${esc(S.accts[0].login)}</b></div>` : ''}
-      <button class="btn" id="dcSendBtn" style="width:100%;margin-top:12px;background:${col};color:#000;font-size:16px;font-weight:900" ${old ? 'disabled' : ''}>${old ? '⏱ 5 min purana — dobara ANALYZE' : `🚀 MT5 pe ${d.verdict} lagao (MARKET)`}</button>
+      <button class="btn" id="dcSendBtn" style="width:100%;margin-top:12px;background:${col};color:#000;font-size:16px;font-weight:900" ${old ? 'disabled' : ''}>${old ? '⏱ 5 min purana — dobara ANALYZE' : `🚀 ${hold ? 'phir bhi ' : ''}MT5 pe ${d.verdict} lagao (MARKET)`}</button>
       <div class="note" style="margin-top:6px">Lot = PERSONAL FX ka lot (0.01) · baaki niyam EA ke (Strategy 6 = hedge, $2 cycle).</div>
       <div id="dcSend"></div></div>
     <div class="card"><h3>🗣 Round 1 — har agent</h3>
@@ -223,8 +227,8 @@ function render(){
         : `<div class="note">Behes nahi ho payi${d.r2err ? ' — ' + esc(d.r2err) : ''} (Judge ne Round 1 se faisla kiya)</div>`}
       <h3 style="margin-top:12px">📊 Data jo agents ne dekha <span class="note" style="text-transform:none;letter-spacing:0">${esc(d.src)}</span></h3>
       <table class="mono"><tr><th></th>${TFS.map(([l]) => `<th>${l}</th>`).join('')}</tr>
-        ${[['Disha', 'bias'], ['RSI', 'rsi'], ['ADX', 'adx'], ['Saaf chaal (ER)', 'effRatio20'], ['ATR $', 'atrUsd'], ['Range %', 'rangePos']].map(([l, k]) =>
-          `<tr><td>${l}</td>${TFS.map(([z]) => `<td>${esc(String(d.tf[z][k]))}</td>`).join('')}</tr>`).join('')}</table>
+        ${[['Disha', 'bias'], ['Structure', 'structure'], ['EMA20 dhalaan', 'ema20Slope'], ['RSI', 'rsi'], ['ADX', 'adx'], ['Saaf chaal (ER)', 'effRatio20'], ['ATR $', 'atrUsd'], ['Range %', 'rangePos']].map(([l, k]) =>
+          `<tr><td>${l}</td>${TFS.map(([z]) => `<td>${esc(String(d.tf[z][k] === undefined ? '—' : d.tf[z][k]).replace(/ \(.*\)/, ''))}</td>`).join('')}</tr>`).join('')}</table>
       <div class="note" style="margin-top:6px">Live ${fmt(d.sym, d.live)} · spread ${d.spread != null ? '$' + (d.spread * d.usdU).toFixed(2) : '—'}</div></div>`;
   }
   const H = S.hist, st = (k, f) => { const x = stats(H, k, f); return x.n ? `${x.w}/${x.n} (${x.pct}%)` : '—' };
