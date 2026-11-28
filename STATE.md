@@ -148,6 +148,10 @@ Link: `.../SAMUSIGNAL-AI/news.html`
 - Pairs page tabs: ★ Favourites · Majors · EUR Cross · GBP Cross · AUD / NZD · CAD / CHF / JPY · Metals · Crypto (search pehle jaisa sab me).
 - Scanner: naya chips row (sab + 7 group, har ek me ginti — upar wale AI sahmat / achhe / saare filter ke hisaab se), LS `sxG`. Sirf dikhane ka filter — scan / AI check / paper / alert saare pair par wahi.
 
+## v1.41.1 — BUY ya SELL: Gemini model / limit fix (28 Nov 2026)
+- User screenshot: "Sirf 0 agent ne jawab diya — This model models/gemini-2.5-flash-lite is no longer available to new users". decide.js ki model list purani thi, band model yaad nahi hota tha, aur aakhri (bekaar) galti dikhti thi.
+- Ab: model list key se (`/models`, 6 ghante cache `sai_gList`, sirf flash), band model 24 ghante yaad (`sai_gDead`, ai.js ke saath saanjha), 429 par agla model, aakhri galti me sabse kaam ki wajah (limit > vyast > band). 7 agent ek saath nahi — max 3 (per-minute limit). Playwright: band + limit wale model chhod kar agla; sab par limit -> "Gemini ki limit poori (free key) — 1-2 min baad dobara, ya kal".
+
 ## v1.41.0 — 📝 Paper trade (EA v10.5 ke niyam) BUY ya SELL page par (27 Nov 2026 raat, user)
 - User: MT5 button rahe, saath me paper trading — niyam wahi jo EA (PERSONAL FX v10.5 Strategy 6) me; har trade ka record: kitna chala, kitna DD, kab hit / loss.
 - Naya `src/s6paper.js` (pure): newPaper / tick / feedBar / snapshot / paperStats. Bhaav = bid, ask = bid + spread; main 0.01 Judge ki disha; hedge har $3 (STOP, level main se), naya hedge sirf jab upar wale us bhaav par profit me + 1.5 doori; lock +$2 -> +$1 neeche se, jodi (aakhri 2) / tikdi (aakhri 3) +$1, jodi lock bharte hi (v8.8); band ke baad wahi bhaav (aadhe gap tak); doosra trade main ke bhaav par (cycle me hedge khula tha, ek baar); NET / CYCLE / BASKET $2, main (+ doosra) TP $2, SL −$60. Candle: o -> l/h -> c, gap/40 ke kadam.

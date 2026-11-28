@@ -21,16 +21,37 @@ if(!SPECS[S.sym]) S.sym = 'XAU/USD';
 
 /* ---------- Gemini: JSON; News agent Google Search ke saath (tab JSON mime nahi chalta, isliye text se JSON nikaalte) ---------- */
 const GB = 'https://generativelanguage.googleapis.com/v1beta';
-const MODELS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-3.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest'];
+/* v1.41.1: model list key se (Google jo chalu rakhe wahi), band model yaad (24 ghante), quota (429) par agla model,
+   aakhri galti me sabse kaam ki wajah (limit > vyast > baaki), ek saath max 3 sawaal (per-minute limit na bhare) */
+const MODELS = ['gemini-flash-latest', 'gemini-3.5-flash', 'gemini-flash-lite-latest', 'gemini-3.5-flash-lite', 'gemini-2.5-flash'];
+const DEAD = /no longer available|not found|is not supported|deprecat|update your code/i;
 const think = m => { const v = parseFloat((m.match(/gemini-(\d+(?:\.\d+)?)/) || [])[1] || 0); return v >= 3 ? {thinkingLevel: 'low'} : /2\.5|flash-latest/.test(m) ? {thinkingBudget: 0} : null };
 function pickJson(txt){
   const m = String(txt || '').replace(/```json|```/g, '').match(/\{[\s\S]*\}/); if(!m) return null;
   try{ return JSON.parse(m[0]) }catch(e){ return null }
 }
+const rank = m => { const v = parseFloat((m.match(/gemini-(\d+(?:\.\d+)?)/) || [])[1] || 0); return v * 10 + (/latest/.test(m) ? 25 : 0) - (/lite/.test(m) ? 3 : 0) - (/preview|exp|thinking/.test(m) ? 8 : 0) - (/pro/.test(m) ? 12 : 0) };
+const deadList = () => { if(Date.now() - LS.get('gDeadAt', 0) > 864e5){ LS.set('gDead', []); LS.set('gDeadAt', Date.now()) } return LS.get('gDead', []) };
+const markDead = m => LS.set('gDead', [...new Set([...LS.get('gDead', []), m])].slice(-20));
+let gListP = null;
+async function models(key){
+  const c = LS.get('gList', null);
+  if(c && Date.now() - c.at < 6 * 3600e3 && c.list.length) return c.list;
+  if(!gListP) gListP = fetch(`${GB}/models?key=${encodeURIComponent(key)}&pageSize=200`).then(r => r.ok ? r.json() : {}).then(j => {
+    const list = (j.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => m.name.replace('models/', ''))
+      .filter(m => /^gemini-/.test(m) && /flash/.test(m) && !/image|tts|audio|live|embed/.test(m));
+    if(list.length) LS.set('gList', {at: Date.now(), list});
+    return list;
+  }).catch(() => []).finally(() => { gListP = null });
+  return await gListP;
+}
 async function gem(key, prompt, search){
   if(!key) throw new Error('Gemini key nahi — SamuSignal Settings me daalo');
-  const dead = LS.get('gDead', []), list = [...new Set([LS.get('gOk', ''), ...MODELS].filter(m => m && !dead.includes(m)))].slice(0, 4);
-  let err = null;
+  const dead = deadList(), avail = await models(key);
+  const pool = (avail.length ? avail : MODELS).filter(m => !dead.includes(m)).sort((a, b) => rank(b) - rank(a));
+  const list = [...new Set([LS.get('gOk', ''), ...pool].filter(m => m && pool.includes(m)))].slice(0, 5);
+  if(!list.length){ LS.set('gDead', []); throw new Error('Koi Gemini model nahi mila — thodi der baad dobara (list saaf kar di)') }
+  const errs = [];
   for(const useSearch of search ? [true, false] : [false]){
     for(const m of list){
       for(const noTh of [false, true]){
@@ -46,19 +67,29 @@ async function gem(key, prompt, search){
           if(!r.ok){
             const msg = String((j.error && j.error.message) || 'HTTP ' + r.status).split(key).join('***');
             if(th && r.status === 400 && /think/i.test(msg)) continue;          /* bina thinking ke dobara */
-            err = new Error(r.status === 429 || /quota|exhaust/i.test(msg) ? 'Gemini ki limit poori — thodi der baad' : msg.slice(0, 140));
+            if(r.status === 404 || DEAD.test(msg)){ markDead(m); if(LS.get('gOk', '') === m) LS.set('gOk', ''); errs.push({k: 3, m: m + ' band'}) }
+            else if(r.status === 429 || /quota|exhaust|rate/i.test(msg)) errs.push({k: 1, m: 'Gemini ki limit poori (free key) — 1-2 min baad dobara, ya kal'});
+            else if(r.status >= 500 || /high demand|overload|unavailable/i.test(msg)) errs.push({k: 2, m: 'Gemini abhi vyast hai — thodi der baad dobara'});
+            else errs.push({k: 4, m: msg.slice(0, 140)});
             break;
           }
           const txt = ((((j.candidates || [])[0] || {}).content || {}).parts || []).map(x => x.text || '').join('');
           const out = pickJson(txt);
           if(out){ LS.set('gOk', m); out._search = useSearch; return out }
-          err = new Error('AI ka jawab samajh nahi aaya'); break;
-        }catch(e){ err = new Error(e && e.name === 'AbortError' ? m + ' ne der kar di' : (e && e.message) || 'network'); break }
+          errs.push({k: 4, m: 'AI ka jawab samajh nahi aaya'}); break;
+        }catch(e){ errs.push({k: 2, m: e && e.name === 'AbortError' ? m + ' ne der kar di' : (e && e.message) || 'network'}); break }
         finally{ clearTimeout(tm) }
       }
     }
   }
-  throw err || new Error('Gemini nahi chala');
+  errs.sort((a, b) => a.k - b.k);
+  throw new Error(errs.length ? errs[0].m : 'Gemini nahi chala');
+}
+/* ek saath max n kaam */
+async function pool(items, n, fn){
+  const out = new Array(items.length); let i = 0;
+  await Promise.all(Array.from({length: Math.min(n, items.length)}, async () => { while(i < items.length){ const k = i++; out[k] = await fn(items[k], k) } }));
+  return out;
 }
 
 /* ---------- analysis ---------- */
@@ -88,8 +119,8 @@ async function run(){
     const fmtQ = '\n\nSirf JSON do: {"vote":"BUY" ya "SELL","conf":50-95 (kitna pakka),"why":"1-2 chhoti line simple Hinglish, numbers ke saath","watch":"ek line: kis baat se tumhari raay galat ho sakti hai"}';
 
     step('<span class="spin">◐</span> 2/4 · 7 agent apni raay de rahe hain…');
-    const r1 = await Promise.all(AGENTS.map(a => gem(s.gKey, base + a.job + (a.k === 'news' ? `\nMT5 calendar (raw): ${cal || 'nahi mila'}` : '') + fmtQ, a.search)
-      .then(o => Object.assign({k: a.k, search: !!o._search}, parseVote(o))).catch(e => ({k: a.k, err: e.message}))));
+    const r1 = await pool(AGENTS, 3, a => gem(s.gKey, base + a.job + (a.k === 'news' ? `\nMT5 calendar (raw): ${cal || 'nahi mila'}` : '') + fmtQ, a.search)
+      .then(o => Object.assign({k: a.k, search: !!o._search}, parseVote(o))).catch(e => ({k: a.k, err: e.message})));
     const ok1 = r1.filter(x => !x.err);
     if(ok1.length < 3) throw new Error('Sirf ' + ok1.length + ' agent ne jawab diya — ' + ((r1.find(x => x.err) || {}).err || ''));
     const nm = k => AGENTS.find(a => a.k === k).n;
